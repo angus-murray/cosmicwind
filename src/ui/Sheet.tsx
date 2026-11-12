@@ -2,13 +2,16 @@ import React, { useRef, useState } from 'react';
 import { ChevronDown, Plus, X } from 'lucide-react';
 import { DofEditor, type DofSpec } from './DofEditor';
 import { sym } from './Sym';
+import { ColourPicker } from './ColourPicker';
 
 export interface Col<T> {
   key: string; label: React.ReactNode; w?: number; title?: string;
-  type?: 'num' | 'text' | 'select' | 'ro' | 'dof';
+  type?: 'num' | 'text' | 'select' | 'ro' | 'dof' | 'colour';
   /** For a 'dof' column: the popover that sets each degree of freedom to F, R or S. */
   dof?: DofSpec<T>;
   options?: { value: string; label: string }[];
+  /** For a 'colour' column: whether the row is using its automatic colour. */
+  autoColour?: (row: T) => boolean;
   /** Options that depend on the row (for example x y z for a local axis and X Y Z for a global one); replaces options. */
   optionsFor?: (row: T) => { value: string; label: string }[];
   /** Suggestions for a text cell. */
@@ -28,6 +31,7 @@ export function Sheet<T extends object>({ rows, cols, onChange, newRow, selected
 }) {
   const ref = useRef<HTMLTableElement>(null);
   const [pop, setPop] = useState<{ i: number; j: number; x: number; y: number } | null>(null);
+  const [cpop, setCpop] = useState<{ i: number; j: number; x: number; y: number } | null>(null);
   const val = (r: T, c: Col<T>) => (c.get ? c.get(r) : (r as Record<string, unknown>)[c.key]) as string | number;
   const apply = (r: T, c: Col<T>, raw: string): T | null => {
     let v: string | number = raw;
@@ -69,6 +73,12 @@ export function Sheet<T extends object>({ rows, cols, onChange, newRow, selected
                         <select data-c={`${i}-${j}`} value={v} onChange={e => commit(i, c, e.target.value)}>
                           {(() => { const os = c.optionsFor ? c.optionsFor(r) : c.options!; return <>{!os.some(o => o.value === v) && <option value={v}>{v}</option>}{os.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</>; })()}
                         </select>
+                      ) : c.type === 'colour' ? (
+                        <button data-c={`${i}-${j}`} className="w-full h-6 flex items-center justify-center hover:bg-slate-50" title={c.title}
+                          onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setCpop({ i, j, x: b.left, y: b.bottom + 4 }); }}
+                          onKeyDown={e => { if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); focus(i + (e.key === 'ArrowDown' ? 1 : -1), j); } }}>
+                          <span className="inline-block w-4 h-4 rounded-[3px] border border-slate-300" style={{ background: String(v) }} />
+                        </button>
                       ) : c.type === 'dof' ? (
                         <button data-c={`${i}-${j}`} className="w-full h-6 flex items-center justify-center gap-1 tabular-nums hover:bg-slate-50" title={c.title}
                           onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setPop({ i, j, x: b.left, y: b.bottom + 4 }); }}
@@ -98,6 +108,10 @@ export function Sheet<T extends object>({ rows, cols, onChange, newRow, selected
       </div>
       {pop && cols[pop.j]?.dof && rows[pop.i] && <DofEditor spec={cols[pop.j].dof!} row={rows[pop.i]} at={pop} onClose={() => setPop(null)}
         onChange={r => onChange(rows.map((x, k) => (k === pop.i ? r : x)))} />}
+      {cpop && cols[cpop.j]?.type === 'colour' && rows[cpop.i] && (() => {
+        const c = cols[cpop.j], row = rows[cpop.i], cur = String(val(row, c));
+        return <ColourPicker value={cur} auto={!!(c.autoColour?.(row))} at={cpop} title={c.title ?? 'Colour'} onClose={() => setCpop(null)} onChange={h => { const r = c.set ? c.set(row, h ?? '') : row; onChange(rows.map((x, k) => (k === cpop.i ? r : x))); }} />;
+      })()}
       {cols.filter(c => c.list).map(c => <datalist key={c.key} id={`dl-${c.key}`}>{c.list!.map(o => <option key={o} value={o} />)}</datalist>)}
       {newRow && <button className="btn" onClick={() => onChange([...rows, newRow()])}><Plus className="w-3.5 h-3.5" /> Add Row</button>}
     </div>

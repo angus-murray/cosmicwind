@@ -8,7 +8,7 @@ export interface Node {
   /** Spring stiffnesses for the S degrees of freedom: kN/m for DX DY DZ, kNm/rad for RX RY RZ. */ k?: number[];
 }
 import type { Outline } from './sections';
-export interface Section { id: number; name: string; A: number; Iy: number; Iz: number; J: number; /** Nominal shape, for the rendered view only. */ outline?: Outline } // mm², mm⁴
+export interface Section { id: number; name: string; A: number; Iy: number; Iz: number; J: number; /** Nominal shape, for the rendered view only. */ outline?: Outline; /** Colour of its members as #rrggbb; when absent the colour follows the section number. */ colour?: string } // mm², mm⁴
 export interface Material { id: number; name: string; E: number; G: number; rho: number; alpha: number } // MPa, MPa, kg/m³, /°C
 export type MemberType = 'N' | 'T' | 'C';
 export interface Member {

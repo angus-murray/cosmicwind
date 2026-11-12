@@ -683,6 +683,8 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   });
 
   const memSec = new Map(model.members.map(m => [m.id, m.sec]));
+  const secColours = new Map(model.sections.map(s => [s.id, s.colour]));
+  const colourOf = (id: number) => { const c = secColours.get(id); return c && /^#[0-9a-f]{6}$/i.test(c) ? c : sectionColour(id); };
   const secName = new Map(model.sections.map(s => [s.id, s.name]));
   const chainNode = chain !== null ? nodeMap.get(chain) : null;
   const faded = !stressOn && !!(result || mode) && (active.length > 0 || opts.deflected || !!mode);
@@ -693,7 +695,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
         <rect width={W} height={H} fill="#f8fafc" />
         {geo.map(g => {
           const p = P(g.A), q = P(g.B), on = sel.members.has(g.m.id), off = result?.members.get(g.m.id)?.active === false;
-          const base = rgb(sectionColour(g.m.sec)), col = toHex(faded ? mixRgb(base, [148, 163, 184], 0.55) : base);
+          const base = rgb(colourOf(g.m.sec)), col = toHex(faded ? mixRgb(base, [148, 163, 184], 0.55) : base);
           return <g key={g.m.id}>
             {on && <line x1={p[0]} y1={p[1]} x2={q[0]} y2={q[1]} stroke={BLUE} strokeWidth={opts.solid ? 7 : 8} strokeOpacity={0.35} strokeLinecap="round" />}
             <line x1={p[0]} y1={p[1]} x2={q[0]} y2={q[1]} stroke={col} strokeWidth={opts.solid ? 1.25 : faded ? 1.75 : 2.75} strokeLinecap="round"
@@ -705,7 +707,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
           let col: string;
           if (stressOn) { const k = 0.72 + 0.28 * f.shade, c = f.v === undefined ? [203, 213, 225] : jetRgb((f.v - stressMesh.lo) / (stressMesh.hi - stressMesh.lo)); col = toHex(c.map(v => Math.round(v * k))); }
           else {
-            let base = rgb(sectionColour(memSec.get(f.id) ?? 1)); if (faded) base = mixRgb(base, [226, 232, 240], 0.55); if (on) base = mixRgb(base, rgb(BLUE), 0.4);
+            let base = rgb(colourOf(memSec.get(f.id) ?? 1)); if (faded) base = mixRgb(base, [226, 232, 240], 0.55); if (on) base = mixRgb(base, rgb(BLUE), 0.4);
             col = toHex(mixRgb(mixRgb(base, [15, 23, 42], 0.5), mixRgb(base, [255, 255, 255], 0.5), f.shade));
           }
           return <path key={i} d={f.d} fill={col} stroke={col} fillRule="evenodd" opacity={off ? 0.5 : 1} />;
