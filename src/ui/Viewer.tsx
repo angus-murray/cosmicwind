@@ -133,6 +133,13 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   const [measure, setMeasure] = useState<{ a: V3 | null; b: V3 | null }>({ a: null, b: null });
   const [mLive, setMLive] = useState<V3 | null>(null);
   const [pickLive, setPickLive] = useState<V3 | null>(null);
+  /** Member drawing: a length typed for the member, a global axis the member is held to, and the direction and length it has now. */
+  const [lenText, setLenText] = useState('');
+  const [lock, setLock] = useState<number | null>(null);
+  const [guide, setGuide] = useState<{ axis: number | null; len: number } | null>(null);
+  const dirRef = useRef<V3 | null>(null);
+  const keyRef = useRef({ tool, chain: null as number | null, lenText: '', lock: null as number | null });
+  const commitRef = useRef<() => void>(() => undefined);
   /** Where the drawing cursor lands (screen pixels) when a node or the snap grid captures it. */
   const [snapAt, setSnapAt] = useState<[number, number] | null>(null);
   const faceHit = useRef<{ id: number; v?: number } | null>(null);
@@ -144,15 +151,35 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   /** First corner of a selection box that is waiting for its second click. */
   const anchor = useRef<[number, number] | null>(null);
   const local = (e: { clientX: number; clientY: number }): [number, number] => { const r = svgRef.current!.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
-  const onPlane = (sx: number, sy: number): V3 | null => {
+  const onPlane = (sx: number, sy: number, snapIt = true): V3 | null => {
     const X = (sx - W / 2 - cam.px) / cam.zoom, Y = -(sy - H / 2 - cam.py) / cam.zoom;
     const [i, j, k] = opts.plane === 'XY' ? [0, 1, 2] : opts.plane === 'XZ' ? [0, 2, 1] : [1, 2, 0];
     const { rx, ry } = basis, a = rx[i], b = rx[j], c = ry[i], d = ry[j], det = a * d - b * c;
     if (Math.abs(det) < 0.05) return null;
-    const C = cam.c, ex = X - rx[k] * (opts.offset - C[k]), ey = Y - ry[k] * (opts.offset - C[k]), p: V3 = [0, 0, 0], s = opts.snap > 0 ? opts.snap : 0;
+    const C = cam.c, ex = X - rx[k] * (opts.offset - C[k]), ey = Y - ry[k] * (opts.offset - C[k]), p: V3 = [0, 0, 0], s = snapIt && opts.snap > 0 ? opts.snap : 0;
     const snap = (v: number) => (s ? Math.round(v / s) * s : v);
     p[i] = snap((ex * d - b * ey) / det + C[i]); p[j] = snap((a * ey - c * ex) / det + C[j]); p[k] = opts.offset;
     return p.map(v => Math.round(v * 1e6) / 1e6) as V3;
+  };
+  /** The end point of the member being drawn: the pointer on the working plane, pulled onto a global axis through the start when within 8 degrees of it
+   *  (as in Space Gass), or held on an axis typed with X, Y or Z. */
+  const drawTarget = (lx: number, ly: number): { pt: V3; axis: number | null } | null => {
+    const n = chain !== null ? nodeMap.get(chain) : null; if (!n) return null;
+    const st: V3 = [n.x, n.y, n.z], s = opts.snap > 0 ? opts.snap : 0, sn = (v: number) => (s ? Math.round(v / s) * s : v), r6 = (v: V3) => v.map(x => Math.round(x * 1e6) / 1e6) as V3;
+    if (lock !== null) {
+      const e: V3 = [0, 0, 0]; e[lock] = 1;
+      const o = P(st), t = P([st[0] + e[0], st[1] + e[1], st[2] + e[2]]), vx = t[0] - o[0], vy = t[1] - o[1], vv = vx * vx + vy * vy; if (vv < 1e-6) return null;
+      const pt: V3 = [...st]; pt[lock] = sn(st[lock] + ((lx - o[0]) * vx + (ly - o[1]) * vy) / vv);
+      return { pt: r6(pt), axis: lock };
+    }
+    const raw = onPlane(lx, ly, false); if (!raw) return null;
+    const [i, j, k] = opts.plane === 'XY' ? [0, 1, 2] : opts.plane === 'XZ' ? [0, 2, 1] : [1, 2, 0];
+    const di = raw[i] - st[i], dj = raw[j] - st[j], tol = Math.tan(8 * Math.PI / 180), pt: V3 = [0, 0, 0]; pt[k] = opts.offset;
+    let axis: number | null = null;
+    if (Math.abs(dj) < tol * Math.abs(di)) { axis = i; pt[i] = sn(raw[i]); pt[j] = st[j]; }
+    else if (Math.abs(di) < tol * Math.abs(dj)) { axis = j; pt[j] = sn(raw[j]); pt[i] = st[i]; }
+    else { pt[i] = sn(raw[i]); pt[j] = sn(raw[j]); }
+    return { pt: r6(pt), axis };
   };
   const down = (e: React.PointerEvent) => {
     (e.target as Element).setPointerCapture?.(e.pointerId);
@@ -171,9 +198,14 @@ export const Viewer = React.forwardRef<ViewerHandle, {
       const fh = faceHit.current, stressTip = !nr && hn === null && stressOn && fh && fh.v !== undefined ? { x: lx, y: ly, dot: [lx, ly] as [number, number], colour: '#475569', lines: [`Member ${fh.id}`, `${STRESSES.find(t => t.key === opts.stress)!.label.replace(/ \(.*\)$/, '')}: ${fmt(fh.v)} MPa`] } : null;
       setTip(nr ? { x: lx, y: ly, dot: nr.c.top[nr.i], colour: DIAGRAMS.find(d => d.key === nr.c.key)!.colour, lines: [`Member ${nr.c.id}, x = ${nr.c.xs[nr.i].toFixed(3)} m (${(100 * nr.c.xs[nr.i] / nr.c.L).toFixed(0)}%)`, ...nr.c.lines(nr.i)] } : stressTip);
       if (tool !== 'select' || pick) {
-        const nn = hn !== null ? nodeMap.get(hn) : null, pt: V3 | null = nn ? [nn.x, nn.y, nn.z] : opts.snap > 0 ? onPlane(lx, ly) : null, at = pt ? P(pt) : null;
+        const nn = hn !== null ? nodeMap.get(hn) : null, drawing = tool === 'member' && chain !== null, dt = drawing && !nn ? drawTarget(lx, ly) : null;
+        const pt: V3 | null = nn ? [nn.x, nn.y, nn.z] : dt ? dt.pt : opts.snap > 0 ? onPlane(lx, ly) : null, at = pt ? P(pt) : null;
         setSnapAt(at);
-        if (tool === 'member' && chain !== null) setCursor(at ?? [lx, ly]);
+        if (drawing) {
+          setCursor(at ?? [lx, ly]);
+          const c = nodeMap.get(chain!); // direction and length so far, kept for a typed length
+          if (c && pt) { const d = [pt[0] - c.x, pt[1] - c.y, pt[2] - c.z], len = Math.hypot(d[0], d[1], d[2]); dirRef.current = len > 1e-9 ? [d[0] / len, d[1] / len, d[2] / len] : null; setGuide({ axis: dt?.axis ?? null, len }); }
+        }
         if (tool === 'measure' && measure.a && !measure.b) setMLive(pt ?? onPlane(lx, ly));
         if (pick) setPickLive(pt ?? onPlane(lx, ly));
       }
@@ -275,10 +307,31 @@ export const Viewer = React.forwardRef<ViewerHandle, {
       return;
     }
     let id = hitN;
-    if (id === null) { const p = onPlane(sx, sy); if (!p) return; id = onAddNode(p); }
-    if (tool === 'member') { if (chain !== null && chain !== id) onAddMember(chain, id); setChain(id); }
+    if (id === null) { const dt = tool === 'member' && chain !== null ? drawTarget(sx, sy) : null, p = dt ? dt.pt : onPlane(sx, sy); if (!p) return; id = onAddNode(p); }
+    if (tool === 'member') { if (chain !== null && chain !== id) onAddMember(chain, id); setChain(id); setLock(null); setLenText(''); dirRef.current = null; setGuide(null); }
   };
-  useEffect(() => { setChain(null); setCursor(null); anchor.current = null; setMarq(null); setMeasure({ a: null, b: null }); setMLive(null); setSnapAt(null); }, [tool]);
+  useEffect(() => { setChain(null); setCursor(null); anchor.current = null; setMarq(null); setMeasure({ a: null, b: null }); setMLive(null); setSnapAt(null); setLock(null); setLenText(''); setGuide(null); dirRef.current = null; }, [tool]);
+  keyRef.current = { tool, chain, lenText, lock };
+  commitRef.current = () => { // place a member of the typed length along the current direction
+    const c = chain !== null ? nodeMap.get(chain) : null, d = dirRef.current, L = Number(lenText);
+    if (!c || !d || !(L > 0)) return;
+    const pt = [c.x + d[0] * L, c.y + d[1] * L, c.z + d[2] * L].map(v => Math.round(v * 1e6) / 1e6) as V3, id = onAddNode(pt);
+    if (id !== chain) onAddMember(chain!, id);
+    setChain(id); setLenText(''); setLock(null); dirRef.current = null; setGuide(null);
+  };
+  useEffect(() => { // typed length, and X, Y, Z to hold the member to an axis; ahead of the app's own shortcuts
+    const key = (e: KeyboardEvent) => {
+      const k = keyRef.current; if (k.tool !== 'member' || k.chain === null || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (/INPUT|SELECT|TEXTAREA/.test((e.target as HTMLElement).tagName)) return;
+      const eat = () => { e.preventDefault(); e.stopImmediatePropagation(); };
+      if (/^[0-9.]$/.test(e.key)) { eat(); setLenText(v => v + e.key); }
+      else if (e.key === 'Backspace' && k.lenText) { eat(); setLenText(v => v.slice(0, -1)); }
+      else if (e.key === 'Enter' && k.lenText) { eat(); commitRef.current(); }
+      else if (e.key === 'Escape' && (k.lenText || k.lock !== null)) { eat(); setLenText(''); setLock(null); }
+      else if (/^[xyz]$/i.test(e.key)) { eat(); const a = 'xyz'.indexOf(e.key.toLowerCase()); setLock(l => (l === a ? null : a)); }
+    };
+    window.addEventListener('keydown', key, true); return () => window.removeEventListener('keydown', key, true);
+  }, []);
   useEffect(() => {
     const key = (e: KeyboardEvent) => { if (e.key === 'Escape') { setChain(null); anchor.current = null; setMarq(null); setMeasure({ a: null, b: null }); } };
     window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key);
@@ -611,7 +664,14 @@ export const Viewer = React.forwardRef<ViewerHandle, {
             {text([mid[0], mid[1] + 14], `ΔX ${sg(d[0])}   ΔY ${sg(d[1])}   ΔZ ${sg(d[2])}`, 'mdel', '#475569')}</g>;
         })()}
         {snapAt && (tool !== 'select' || !!pick) && <g pointerEvents="none" stroke={hover.n !== null ? AMBER : BLUE} strokeWidth={1.5} fill="none"><path d={`M${snapAt[0] - 8} ${snapAt[1]}h16M${snapAt[0]} ${snapAt[1] - 8}v16`} /><rect x={snapAt[0] - 4} y={snapAt[1] - 4} width={8} height={8} /></g>}
-        {chainNode && cursor && (() => { const p = P([chainNode.x, chainNode.y, chainNode.z]); return <line x1={p[0]} y1={p[1]} x2={cursor[0]} y2={cursor[1]} stroke={BLUE} strokeWidth={1.5} strokeDasharray="5 4" pointerEvents="none" />; })()}
+        {chainNode && cursor && tool === 'member' && (() => {
+          const p = P([chainNode.x, chainNode.y, chainNode.z]), col = guide?.axis != null ? [RED, GREEN, BLUE][guide.axis] : BLUE, mid: [number, number] = [(p[0] + cursor[0]) / 2, (p[1] + cursor[1]) / 2];
+          const shown = lenText ? `${lenText} m` : guide && guide.len > 1e-9 ? `${guide.len.toFixed(3)} m` : '';
+          return <g pointerEvents="none"><line x1={p[0]} y1={p[1]} x2={cursor[0]} y2={cursor[1]} stroke={col} strokeWidth={guide?.axis != null ? 2 : 1.5} strokeDasharray={lenText ? undefined : '5 4'} />
+            {guide?.axis != null && text([cursor[0] + 10, cursor[1] - 8], `${'XYZ'[guide.axis]} axis`, 'axl', col, 'start', true)}
+            {shown && (lenText ? <g><rect x={mid[0] - 38} y={mid[1] - 24} width={76} height={18} rx={3} fill="#fff" stroke={col} />{text([mid[0], mid[1] - 11], `${shown}▏`, 'lenbox', '#0f172a', 'middle', true)}</g> : text([mid[0], mid[1] - 8], shown, 'lenlive', '#475569'))}
+          </g>;
+        })()}
         <g transform={`translate(34 ${H - 34})`}>
           {([[1, 0, 0], [0, 1, 0], [0, 0, 1]] as V3[]).map((a, i) => {
             const x = basis.rx[0] * a[0] + basis.rx[1] * a[1] + basis.rx[2] * a[2], y = -(basis.ry[0] * a[0] + basis.ry[1] * a[1] + basis.ry[2] * a[2]), c = [RED, GREEN, BLUE][i];
