@@ -158,12 +158,12 @@ export default function App() {
 
   const save = () => {
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(model, null, 1)], { type: 'application/json' }));
-    a.download = `${(model.title || 'model').replace(/[^\w-]+/g, '_')}.moondust.json`; a.click(); URL.revokeObjectURL(a.href);
+    a.download = `${(model.title || 'model').replace(/[^\w-]+/g, '_')}.cosmicwind.json`; a.click(); URL.revokeObjectURL(a.href);
   };
   const open = async (f: File | undefined) => {
     if (!f) return;
     try { const m = normalise(JSON.parse(await f.text())); if (!Array.isArray(m.nodes)) throw new Error(); setModel(() => m); setSel(noSel()); }
-    catch { alert('The file is not a MoonDust model.'); }
+    catch { alert('The file is not a CosmicWind model.'); }
   };
 
   // ---- Datasheet columns
@@ -216,7 +216,7 @@ export default function App() {
 
   return (
     <div className="fill-window min-h-screen bg-slate-100 lg:h-screen lg:overflow-hidden flex flex-col">
-      <AppHeader name="MoonDust" logoSrc="/favicon.svg" onAbout={() => setDialog('about')} onReport={() => setDialog('report')}
+      <AppHeader name="CosmicWind" logoSrc="/favicon.svg" onAbout={() => setDialog('about')} onReport={() => setDialog('report')}
         tabs={[{ key: 'structure', label: 'Structure', icon: <Box className="w-3.5 h-3.5" /> }, { key: 'loads', label: 'Loads', icon: <Weight className="w-3.5 h-3.5" /> }, { key: 'results', label: 'Analysis and Results', icon: <LineChart className="w-3.5 h-3.5" /> }]}
         activeTab={tab} onTab={setTab}
         actions={<div className="flex items-center gap-1">
