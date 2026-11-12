@@ -60,9 +60,7 @@ export const FREE = DASH, FIXED = 'FFFFFF', PIN = 'FFFRRR';
 export const restraintCode = (r: string | undefined) => (!r || r === DASH ? 'RRRRRR' : r.toUpperCase().padEnd(6, 'R'));
 /** The six-letter release code of a member end; an en-dash or blank means rigid. */
 export const releaseCode = (r: string | undefined) => (!r || r === DASH ? 'FFFFFF' : r.toUpperCase().padEnd(6, 'F'));
-export const RESTRAINTS: [string, string][] = [
-  [FREE, 'Free'], [FIXED, 'Fixed'], [PIN, 'Pinned'], ['RFRRRR', 'Roller (Y)'], ['RFFRRR', 'Roller (Y, Z)'], ['FFFFFR', 'Pin 2D (XY)'], ['RFFFFR', 'Roller 2D (XY)'], ['RRFFFR', 'Plane XY'],
-];
+export const RESTRAINTS: [string, string][] = [[FREE, 'Free'], [FIXED, 'Fixed'], [PIN, 'Pinned']];
 export const RELEASES: [string, string][] = [
   [DASH, 'Rigid'], ['FFFFRR', 'Pinned (My, Mz)'], ['FFFRRR', 'Pinned (All)'], ['FFFFFR', 'Mz Released'], ['FFFFRF', 'My Released'], ['RFFFFF', 'Axial Released'],
 ];
