@@ -56,7 +56,7 @@ export type Tool = 'select' | 'node' | 'member' | 'measure';
 /** Points clicked in empty space lie on the global XY plane (Z = 0), to the nearest millimetre. */
 export interface ViewOpts {
   notes: boolean; nodeNo: boolean; memberNo: boolean; secNames: boolean; loads: boolean; localAxes: boolean;
-  diagrams: Record<DiagramKey, boolean>; stress: StressKey; deflected: boolean; /** Global displacement components written beside each node. */ defLabels: DefLabels; reactions: boolean; scale: number; defScale: number;
+  diagrams: Record<DiagramKey, boolean>; stress: StressKey; deflected: boolean; /** Support symbols at the nodes. */ restraints: boolean; /** Symbols for the member end releases. */ releases: boolean; /** Global displacement components written beside each node. */ defLabels: DefLabels; reactions: boolean; scale: number; defScale: number;
   /** Rendered 3D view of the member cross sections instead of the wireframe. */
   solid: boolean;
 }
@@ -612,10 +612,10 @@ export const Viewer = React.forwardRef<ViewerHandle, {
       }
       defl.push(<path key={`f${g.m.id}`} d={path(pts)} fill="none" stroke={PINK} strokeWidth={1.75} strokeLinejoin="round" />);
     }
-    if (!mode && result) {
-      let worst: [number, number] | null = null; result.disp.forEach((d, id) => { const v = Math.hypot(d[0], d[1], d[2]); if (!worst || v > worst[1]) worst = [id, v]; });
-      const w = worst as [number, number] | null, n = w && nodeMap.get(w[0]), d = w && result.disp.get(w[0]);
-      if (n && d && w![1] > 0) { const p = P([n.x + d[0] * sc, n.y + d[1] * sc, n.z + d[2] * sc]); defl.push(text([p[0], p[1] - 8], `${fmt(w![1] * 1000)} mm`, 'dmax', PINK, 'middle', true)); }
+    for (const n of model.nodes) { // the nodes at their displaced positions
+      const d = shape.get(n.id); if (!d) continue;
+      const p = P([n.x + d[0] * sc, n.y + d[1] * sc, n.z + d[2] * sc]);
+      defl.push(<rect key={`dn${n.id}`} x={p[0] - 2.5} y={p[1] - 2.5} width={5} height={5} fill={PINK} />);
     }
   }
   const reacts: React.ReactNode[] = [];
@@ -679,7 +679,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
         })}</g>}
         {hover.m !== null && (() => { const g = geo.find(x => x.m.id === hover.m); if (!g) return null; const p = P(g.A), q = P(g.B); return <line x1={p[0]} y1={p[1]} x2={q[0]} y2={q[1]} stroke={AMBER} strokeWidth={9} strokeOpacity={0.4} strokeLinecap="round" pointerEvents="none" />; })()}
         {geo.flatMap(g => ([['A', g.m.relA, g.A, g.B], ['B', g.m.relB, g.B, g.A]] as const).map(([end, relRaw, at, from]) => {
-          const code6 = releaseCode(relRaw), rel = code6.replace(/S/g, 'R'), sprung = code6.includes('S'); if (!rel.includes('R')) return null;
+          if (!opts.releases) return null; const code6 = releaseCode(relRaw), rel = code6.replace(/S/g, 'R'), sprung = code6.includes('S'); if (!rel.includes('R')) return null;
           const p0 = P(at), p1 = P(from), len = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]); if (len < 28) return null;
           const u = [(p1[0] - p0[0]) / len, (p1[1] - p0[1]) / len], nx = -u[1], ny = u[0], pt = (k: number): [number, number] => [p0[0] + u[0] * k, p0[1] + u[1] * k];
           const bend = rel[4] === 'R' || rel[5] === 'R', tors = rel[3] === 'R', slide = rel.slice(0, 3).includes('R'), m = pt(8), f = pt(bend || tors ? 18 : 9);
@@ -693,13 +693,13 @@ export const Viewer = React.forwardRef<ViewerHandle, {
         {opts.localAxes && geo.map(g => { const c = along(g, g.L / 2), p = P(c); return <g key={`ax${g.m.id}`}>{[RED, GREEN, BLUE].map((col, i) => { const d = dirS(g.R[i] as V3); return d && <g key={i} strokeLinecap="round"><line x1={p[0]} y1={p[1]} x2={p[0] + d[0] * 20} y2={p[1] + d[1] * 20} stroke="#fff" strokeWidth={6} strokeOpacity={0.9} /><line x1={p[0]} y1={p[1]} x2={p[0] + d[0] * 20} y2={p[1] + d[1] * 20} stroke={col} strokeWidth={3.5} /></g>; })}</g>; })}
         {diag}{defl}{loads}
         {model.nodes.map(n => {
-          const p = P([n.x, n.y, n.z]), r = restraintCode(n.r), t = r.slice(0, 3), on = sel.nodes.has(n.id);
+          const p = P([n.x, n.y, n.z]), r = opts.restraints ? restraintCode(n.r) : 'RRRRRR', t = r.slice(0, 3), on = sel.nodes.has(n.id);
           return <g key={n.id}>
             {r === 'FFFFFF' ? <path d={`M${p[0] - 8} ${p[1] + 3}h16v6h-16z`} fill="#64748b" />
               : t.startsWith('FF') ? <path d={`M${p[0]} ${p[1] + 2}l7 11h-14z`} style={{ fill: 'var(--color-white)' }} stroke="#64748b" strokeWidth={1.5} />
                 : t[1] === 'F' ? <g stroke="#64748b" strokeWidth={1.5}><path d={`M${p[0]} ${p[1] + 2}l6 9h-12z`} style={{ fill: 'var(--color-white)' }} /><line x1={p[0] - 8} y1={p[1] + 14} x2={p[0] + 8} y2={p[1] + 14} /></g>
                   : t.includes('F') && r !== 'RRFFFR' ? <path d={`M${p[0]} ${p[1] + 2}l5 5l-5 5l-5 -5z`} style={{ fill: 'var(--color-white)' }} stroke="#64748b" strokeWidth={1.5} /> : null}
-            {springNodes.has(n.id) && <path d={`M${p[0]} ${p[1] + 2}v3l-4 2l8 3l-8 3l8 3l-4 2v2m-6 0h12`} fill="none" stroke={AMBER} strokeWidth={1.5} />}
+            {opts.restraints && springNodes.has(n.id) && <path d={`M${p[0]} ${p[1] + 2}v3l-4 2l8 3l-8 3l8 3l-4 2v2m-6 0h12`} fill="none" stroke={AMBER} strokeWidth={1.5} />}
             {hover.n === n.id && <circle cx={p[0]} cy={p[1]} r={9} fill={AMBER} fillOpacity={0.3} stroke={AMBER} strokeWidth={2} pointerEvents="none" />}
             <rect x={p[0] - (on ? 4 : 2.5)} y={p[1] - (on ? 4 : 2.5)} width={on ? 8 : 5} height={on ? 8 : 5} fill={on || chain === n.id ? BLUE : '#334155'} />
             {opts.nodeNo && text([p[0] + 6, p[1] - 6], n.id, `t${n.id}`, on ? BLUE : '#64748b', 'start')}
