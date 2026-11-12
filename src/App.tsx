@@ -3,10 +3,11 @@ import { AppHeader, Banner, useElementSize, Check, NumberField, ReportDialog, Se
 import { Axis3d, Box, Eye, Ruler, FilePlus, FolderOpen, Hash, Maximize, MousePointer2, Redo2, Save, Spline, Trash2, Type, Undo2, Weight, Dot, LineChart, Shapes, Cuboid, Waypoints, StickyNote } from 'lucide-react';
 import {
   deleteMembersAndFreeNodes, deleteNodes, DASH, FREE, MATERIAL_PRESETS, nextId, normalise, RELEASES, RESTRAINTS,
-  type Combo, type DistLoad, type LoadCase, type Material, type Member, type Model, type Node, type NodeLoad, type NodeMass, type PointLoad, type Section, type Settlement, type Spring, type ThermalLoad,
+  type Combo, type DistLoad, type LoadCase, type Material, type Member, type Model, type Node, type NodeLoad, type NodeMass, type PointLoad, type Section, type Settlement, type ThermalLoad,
 } from './model/types';
 import { defaultModel } from './model/templates';
 import { analyse } from './solver/frame';
+import { type DofSpec } from './ui/DofEditor';
 import { Sheet, type Col } from './ui/Sheet';
 import { DIAGRAMS, STRESSES, Viewer, type DiagramKey, type StressKey, type Sel, type Tool, type ViewerHandle, type ViewOpts } from './ui/Viewer';
 import { ContextMenu, PromptBox, TextPromptBox, ToolFlyout, type MenuItem, type MenuState, type PromptState, type TextPromptState } from './ui/CanvasMenu';
@@ -16,7 +17,7 @@ import type { ReportInfo } from './report';
 type Tab = 'structure' | 'loads' | 'results';
 const STORE = 'moonrock-model';
 const load = (): Model => { try { const s = localStorage.getItem(STORE); if (s) return normalise(JSON.parse(s)); } catch { /* fall through */ } return defaultModel(); };
-const code = (v: string | number, old: string) => { const s = String(v).toUpperCase().trim(); return /^[-–—]?$/.test(s) ? DASH : /^[FR]{6}$/.test(s) ? s : old; };
+const code = (v: string | number, old: string) => { const s = String(v).toUpperCase().trim(); return /^[-–—]?$/.test(s) ? DASH : /^[FRS]{6}$/.test(s) ? s : old; };
 /** The member action diagrams, grouped as the Diagrams panel lists them: [key, label]. */
 const DIAGRAM_GROUPS: { title: string; items: [DiagramKey, string][] }[] = [
   { title: 'Axial Force', items: [['N', 'N']] },
@@ -276,16 +277,26 @@ export default function App() {
   // ---- Datasheet columns
   const secOpt = opt(model.sections), secNo = model.sections.map(r => ({ value: String(r.id), label: String(r.id) })), matOpt = opt(model.materials), lcOpt = opt(model.loadCases);
   const idSel = (key: string, label: string, options: { value: string; label: string }[], w = 90): Col<any> => ({ key, label, type: 'select', options, w, set: (r: object, v: string | number) => ({ ...r, [key]: Number(v) }) }); // eslint-disable-line @typescript-eslint/no-explicit-any
+  const nodeSpec: DofSpec<Node> = {
+    title: n => `Node ${n.id}: Restraint`, names: ['DX', 'DY', 'DZ', 'RX', 'RY', 'RZ'], units: ['kN/m', 'kN/m', 'kN/m', 'kNm/rad', 'kNm/rad', 'kNm/rad'], spring: [true, true, true, true, true, true],
+    presets: RESTRAINTS, dflt: 'RRRRRR', code: n => n.r, stiffness: n => n.k ?? [],
+    apply: (n, c, k) => ({ ...n, r: c === 'RRRRRR' ? DASH : c, k: c.includes('S') ? k : undefined }),
+  };
+  const memSpec = (end: 'A' | 'B'): DofSpec<Member> => ({
+    title: m => `Member ${m.id}: Release at End ${end === 'A' ? 1 : 2}`, names: ['Fx', 'Fy', 'Fz', 'Mx', 'My', 'Mz'], units: ['kN/m', '', '', 'kNm/rad', 'kNm/rad', 'kNm/rad'], spring: [true, false, false, true, true, true],
+    presets: RELEASES, dflt: 'FFFFFF', code: m => (end === 'A' ? m.relA : m.relB), stiffness: m => (end === 'A' ? m.kA : m.kB) ?? [],
+    apply: (m, c, k) => { const rel = c === 'FFFFFF' ? DASH : c, ks = c.includes('S') ? k : undefined; return end === 'A' ? { ...m, relA: rel, kA: ks } : { ...m, relB: rel, kB: ks }; },
+  });
+  /** A release code typed or pasted into a cell: springs are not allowed on the shear forces. */
+  const relCode = (v: string | number, old: string) => { const c = code(v, old); return c !== old && (c[1] === 'S' || c[2] === 'S') ? old : c; };
   const nodeCols: Col<Node>[] = [{ key: 'x', label: 'X (m)' }, { key: 'y', label: 'Y (m)' }, { key: 'z', label: 'Z (m)' },
-    { key: 'r', label: 'Restraint', type: 'text', w: 84, list: RESTRAINTS.map(r => r[0]), title: 'F fixed or R released, for DX DY DZ RX RY RZ', set: (r, v) => ({ ...r, r: code(v, r.r) }) }];
+    { key: 'r', label: 'Restraint', type: 'dof', dof: nodeSpec, w: 96, title: 'F fixed, R released or S spring, for DX DY DZ RX RY RZ', set: (r, v) => ({ ...r, r: code(v, r.r) }) }];
   const memCols: Col<Member>[] = [{ key: 'a', label: 'End 1', title: 'Node at end 1 of the member', w: 48 }, { key: 'b', label: 'End 2', title: 'Node at end 2 of the member', w: 48 }, idSel('sec', 'Section No.', secNo, 70), idSel('mat', 'Material', matOpt, 90),
     { key: 'angle', label: 'Angle (°)', w: 50 }, { key: 'type', label: 'Type', type: 'select', w: 96, options: [{ value: 'N', label: 'Normal' }, { value: 'T', label: 'Tension Only' }, { value: 'C', label: 'Compr. Only' }] },
-    { key: 'relA', label: 'Release 1', type: 'text', w: 70, list: RELEASES.map(r => r[0]), title: 'F fixed or R released, for the local x y z forces and moments', set: (r, v) => ({ ...r, relA: code(v, r.relA) }) },
-    { key: 'relB', label: 'Release 2', type: 'text', w: 70, list: RELEASES.map(r => r[0]), set: (r, v) => ({ ...r, relB: code(v, r.relB) }) }];
+    { key: 'relA', label: 'Release 1', type: 'dof', dof: memSpec('A'), w: 96, title: 'F fixed, R released or S spring (not for the shears), for the local x y z forces and moments', set: (r, v) => ({ ...r, relA: relCode(v, r.relA) }) },
+    { key: 'relB', label: 'Release 2', type: 'dof', dof: memSpec('B'), w: 96, title: 'F fixed, R released or S spring (not for the shears), for the local x y z forces and moments', set: (r, v) => ({ ...r, relB: relCode(v, r.relB) }) }];
   const secCols: Col<Section>[] = [{ key: 'name', label: 'Section Type', type: 'text', w: 150 }, { key: 'A', label: <><i>A</i> (mm²)</>, w: 60 }, { key: 'Iz', label: <><i>I</i><sub>z</sub> (mm⁴)</>, w: 76 }, { key: 'Iy', label: <><i>I</i><sub>y</sub> (mm⁴)</>, w: 76 }, { key: 'J', label: <><i>J</i> (mm⁴)</>, w: 70 }];
   const matCols: Col<Material>[] = [{ key: 'name', label: 'Name', type: 'text', w: 110 }, { key: 'E', label: <><i>E</i> (MPa)</>, w: 60 }, { key: 'G', label: <><i>G</i> (MPa)</>, w: 60 }, { key: 'rho', label: 'Density (kg/m³)', w: 70 }, { key: 'alpha', label: <><i>α</i> (/°C)</>, w: 70 }];
-  const kCol = (i: number, label: string): Col<Spring> => ({ key: `k${i}`, label, w: 62, get: r => r.k[i] ?? 0, set: (r, v) => ({ ...r, k: r.k.map((x, j) => (j === i ? Math.max(0, Number(v)) : x)) }) });
-  const springCols: Col<Spring>[] = [{ key: 'node', label: 'Node', w: 44 }, ...['KX', 'KY', 'KZ'].map((l, i) => kCol(i, `${l} (kN/m)`)), ...['KRX', 'KRY', 'KRZ'].map((l, i) => kCol(i + 3, `${l} (kNm/rad)`))];
   const massCols: Col<NodeMass>[] = [{ key: 'node', label: 'Node' }, { key: 'm', label: 'Mass (t)' }];
   const lcCols: Col<LoadCase>[] = [{ key: 'name', label: 'Name', type: 'text', w: 130 }, { key: 'gx', label: 'Gravity X', title: 'Gravity load as a multiplier of g in global X' }, { key: 'gy', label: 'Gravity Y', title: 'Gravity load as a multiplier of g in global Y (−1 is downward)' }, { key: 'gz', label: 'Gravity Z', title: 'Gravity load as a multiplier of g in global Z' }];
   const comboCols: Col<Combo>[] = [{ key: 'name', label: 'Name', type: 'text', w: 150 }, ...model.loadCases.map((c): Col<Combo> => ({ key: `f${c.id}`, label: `× Case ${c.id}`, title: c.name, w: 58, get: r => r.f[c.id] ?? 0, set: (r, v) => ({ ...r, f: { ...r.f, [c.id]: Number(v) } }) }))];
@@ -306,7 +317,7 @@ export default function App() {
   const used = (k: 'sec' | 'mat', id: number) => model.members.some(m => m[k] === id);
 
   const SUBS = {
-    structure: [['nodes', 'Nodes'], ['members', 'Members'], ['sections', 'Sections'], ['materials', 'Materials'], ['springs', 'Springs'], ['masses', 'Masses']],
+    structure: [['nodes', 'Nodes'], ['members', 'Members'], ['sections', 'Sections'], ['materials', 'Materials'], ['masses', 'Masses']],
     loads: [['cases', 'Cases'], ['combos', 'Combinations'], ['node', 'Node Loads'], ['dist', 'Distributed'], ['point', 'Point'], ['settle', 'Settlements'], ['thermal', 'Temperature']],
   } as const;
   const st = sub.structure, ld = sub.loads;
@@ -374,7 +385,6 @@ export default function App() {
                   <select className="control" value="" onChange={e => { const p = MATERIAL_PRESETS[Number(e.target.value)]; if (p) set('materials')([...model.materials, { ...p, id: nextId(model.materials) }]); }}>
                     <option value="">Add Material…</option>{MATERIAL_PRESETS.map((p, i) => <option key={p.name} value={i}>{p.name}</option>)}</select>
                 </>}
-                {st === 'springs' && <Sheet rows={model.springs} cols={springCols} onChange={set('springs')} newRow={() => ({ node: firstNode, k: [0, 0, 0, 0, 0, 0] })} empty="No spring supports" />}
                 {st === 'masses' && <Sheet rows={model.masses} cols={massCols} onChange={set('masses')} newRow={() => ({ node: firstNode, m: 1 })} empty="No node masses (used for natural frequencies)" />}
               </>}
               {tab === 'loads' && <>
@@ -404,29 +414,48 @@ export default function App() {
                 {analysis && (analysis.errors.length ? <StatusChip kind="fail">Not Solved</StatusChip> : res?.error ? <StatusChip kind="fail">Case Not Solved</StatusChip>
                   : <StatusChip kind="pass">{model.settings.nonlinear ? 'Second-Order' : 'Linear'} Analysis Solved in {analysis.ms < 10 ? analysis.ms.toFixed(1) : analysis.ms.toFixed(0)} ms</StatusChip>)}
               </div>
+              <div className="grid grid-cols-2 gap-3">
               <div className="panel">
                 <h2 className="panel-title">Deflections</h2>
-                <div className="grid grid-cols-2 gap-2 items-end">
+                <div className="space-y-2.5">
                   <Check checked={opts.deflected} onChange={o('deflected')}>Deflected Shape</Check>
                   <NumberField label="Deflection Scale" value={opts.defScale} min={0.1} max={20} step={0.25} onChange={o('defScale')} />
                 </div>
               </div>
               <div className="panel">
                 <h2 className="panel-title">Diagrams</h2>
-                <div className="grid grid-cols-2 gap-2">
-                  <NumberField label="Diagram Scale" value={opts.scale} min={0.1} max={20} step={0.25} onChange={o('scale')} />
+                <NumberField label="Diagram Scale" value={opts.scale} min={0.1} max={20} step={0.25} onChange={o('scale')} />
+                <div className="grid grid-cols-2 gap-x-3 items-start">
+                  <div key={DIAGRAM_GROUPS[0].title}>
+                    <h3 className="label">{DIAGRAM_GROUPS[0].title}</h3>
+                    <div className="flex items-center gap-x-4 gap-y-1.5 flex-wrap">
+                      {DIAGRAM_GROUPS[0].items.map(([key, text]) => { const d = DIAGRAMS.find(x => x.key === key)!; return <Check key={key} checked={opts.diagrams[key]} onChange={v => o('diagrams')({ ...opts.diagrams, [key]: v })} title={d.label}><span className="inline-block w-2 h-2 rounded-sm mr-1.5 align-middle" style={{ background: d.colour }} />{symbol(text)}</Check>; })}
+                    </div>
+                  </div>
+                  <div key={DIAGRAM_GROUPS[1].title}>
+                    <h3 className="label">{DIAGRAM_GROUPS[1].title}</h3>
+                    <div className="flex items-center gap-x-4 gap-y-1.5 flex-wrap">
+                      {DIAGRAM_GROUPS[1].items.map(([key, text]) => { const d = DIAGRAMS.find(x => x.key === key)!; return <Check key={key} checked={opts.diagrams[key]} onChange={v => o('diagrams')({ ...opts.diagrams, [key]: v })} title={d.label}><span className="inline-block w-2 h-2 rounded-sm mr-1.5 align-middle" style={{ background: d.colour }} />{symbol(text)}</Check>; })}
+                    </div>
+                  </div>
                 </div>
-                <div className="section !space-y-2.5">
-                  {[[0], [1], [2], [3]].map(row => <div key={row.join()} className={row.length > 1 ? 'grid grid-cols-2 gap-x-4' : ''}>
-                    {row.map(n => { const g = DIAGRAM_GROUPS[n]; return <div key={g.title}>
-                      <h3 className="label">{g.title}</h3>
-                      <div className="flex items-center gap-x-4 gap-y-1.5 flex-wrap">
-                        {g.items.map(([key, text]) => { const d = DIAGRAMS.find(x => x.key === key)!; return <Check key={key} checked={opts.diagrams[key]} onChange={v => o('diagrams')({ ...opts.diagrams, [key]: v })} title={d.label}><span className="inline-block w-2 h-2 rounded-sm mr-1.5 align-middle" style={{ background: d.colour }} />{symbol(text)}</Check>; })}
-                      </div>
-                    </div>; })}
-                  </div>)}
+                <div className="space-y-2.5">
+                  <div key={DIAGRAM_GROUPS[2].title}>
+                    <h3 className="label">{DIAGRAM_GROUPS[2].title}</h3>
+                    <div className="flex items-center gap-x-4 gap-y-1.5 flex-wrap">
+                      {DIAGRAM_GROUPS[2].items.map(([key, text]) => { const d = DIAGRAMS.find(x => x.key === key)!; return <Check key={key} checked={opts.diagrams[key]} onChange={v => o('diagrams')({ ...opts.diagrams, [key]: v })} title={d.label}><span className="inline-block w-2 h-2 rounded-sm mr-1.5 align-middle" style={{ background: d.colour }} />{symbol(text)}</Check>; })}
+                    </div>
+                  </div>
+                  <div key={DIAGRAM_GROUPS[3].title}>
+                    <h3 className="label">{DIAGRAM_GROUPS[3].title}</h3>
+                    <div className="flex items-center gap-x-4 gap-y-1.5 flex-wrap">
+                      {DIAGRAM_GROUPS[3].items.map(([key, text]) => { const d = DIAGRAMS.find(x => x.key === key)!; return <Check key={key} checked={opts.diagrams[key]} onChange={v => o('diagrams')({ ...opts.diagrams, [key]: v })} title={d.label}><span className="inline-block w-2 h-2 rounded-sm mr-1.5 align-middle" style={{ background: d.colour }} />{symbol(text)}</Check>; })}
+                    </div>
+                  </div>
                 </div>
               </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
               <div className="panel">
                 <h2 className="panel-title">Reactions</h2>
                 <Check checked={opts.reactions} onChange={o('reactions')}>Show Reactions</Check>
@@ -434,6 +463,7 @@ export default function App() {
               <div className="panel">
                 <h2 className="panel-title">Stresses</h2>
                 <SelectField hint="Colours the rendered members; switches to the rendered view" label="Normal Stress" value={opts.stress} onChange={v => setOpts(q => ({ ...q, stress: v as StressKey, solid: v !== 'none' ? true : q.solid }))} options={STRESSES.map(t => ({ value: t.key, label: t.label }))} />
+              </div>
               </div>
               <div className="panel">
                 <h2 className="panel-title">Buckling</h2>

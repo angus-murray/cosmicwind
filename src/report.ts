@@ -1,6 +1,6 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import type { Model } from './model/types';
+import type { Member, Model } from './model/types';
 import type { Analysis } from './solver/frame';
 
 export interface ReportInfo { project: string; number: string; structure: string; designer: string; date: string }
@@ -45,11 +45,17 @@ export async function makeReport(model: Model, an: Analysis, info: ReportInfo, s
   para(`${model.nodes.length} nodes, ${model.members.length} members, ${model.loadCases.length} load cases, ${model.combos.length} combinations. Analysis: ${model.settings.nonlinear ? 'second-order (P-Delta)' : 'linear elastic'}. Units: m, kN, kNm; Y is vertical.`);
   const pic = svg && await svgImage(svg);
   if (pic) { const h = Math.min(W * pic.h / pic.w, 110), w = h * pic.w / pic.h; doc.addImage(pic.data, 'JPEG', M + (W - w) / 2, y, w, h); y += h + 5; }
+  /** The sprung degrees of freedom of a code, with their stiffnesses. */
+  const springs = (code: string, k: number[] | undefined, names: string[], units: string[]) => [...(code || '')].map((c, d) => (c === 'S' ? `${names[d]} ${k?.[d] ?? 0} ${units[d]}` : '')).filter(Boolean).join('; ');
+  const dn = ['DX', 'DY', 'DZ', 'RX', 'RY', 'RZ'], du = ['kN/m', 'kN/m', 'kN/m', 'kNm/rad', 'kNm/rad', 'kNm/rad'], fn = ['Fx', 'Fy', 'Fz', 'Mx', 'My', 'Mz'], fu = ['kN/m', '', '', 'kNm/rad', 'kNm/rad', 'kNm/rad'];
   heading('Nodes');
-  table(['Node', 'X (m)', 'Y (m)', 'Z (m)', 'Restraint'], model.nodes.map(v => [v.id, n(v.x, 3), n(v.y, 3), n(v.z, 3), v.r]));
+  const nodeSprings = model.nodes.some(v => v.r.includes('S'));
+  table(['Node', 'X (m)', 'Y (m)', 'Z (m)', 'Restraint', ...(nodeSprings ? ['Springs'] : [])], model.nodes.map(v => [v.id, n(v.x, 3), n(v.y, 3), n(v.z, 3), v.r, ...(nodeSprings ? [springs(v.r, v.k, dn, du) || '–'] : [])]));
   heading('Members');
   const mn = new Map(model.materials.map(s => [s.id, s.name]));
-  table(['Member', 'End 1', 'End 2', 'Section No.', 'Material', 'Angle (deg)', 'Type', 'Release 1', 'Release 2'], model.members.map(m => [m.id, m.a, m.b, m.sec, mn.get(m.mat) ?? m.mat, m.angle, { N: 'Normal', T: 'Tension only', C: 'Compression only' }[m.type], m.relA, m.relB]));
+  const memSprings = model.members.some(m => m.relA.includes('S') || m.relB.includes('S'));
+  const endSprings = (m: Member) => [springs(m.relA, m.kA, fn, fu) && `End 1 ${springs(m.relA, m.kA, fn, fu)}`, springs(m.relB, m.kB, fn, fu) && `End 2 ${springs(m.relB, m.kB, fn, fu)}`].filter(Boolean).join('; ') || '–';
+  table(['Member', 'End 1', 'End 2', 'Section No.', 'Material', 'Angle (deg)', 'Type', 'Release 1', 'Release 2', ...(memSprings ? ['Springs'] : [])], model.members.map(m => [m.id, m.a, m.b, m.sec, mn.get(m.mat) ?? m.mat, m.angle, { N: 'Normal', T: 'Tension only', C: 'Compression only' }[m.type], m.relA, m.relB, ...(memSprings ? [endSprings(m)] : [])]));
   heading('Sections and Materials');
   table(['Section No.', 'Section Type', 'A (mm2)', 'Iy (mm4)', 'Iz (mm4)', 'J (mm4)'], model.sections.map(s => [s.id, s.name, n(s.A, 0), s.Iy.toExponential(3), s.Iz.toExponential(3), s.J.toExponential(3)]));
   table(['Material', 'Name', 'E (MPa)', 'G (MPa)', 'Density (kg/m3)'], model.materials.map(s => [s.id, s.name, s.E, s.G, s.rho]));

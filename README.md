@@ -5,7 +5,7 @@ window and is solved on the user's computer; nothing is sent to a server.
 
 ## Features
 
-- Nodes, members, sections, materials, restraints, spring supports and member end releases.
+- Nodes, members, sections, materials, restraints with springs, and member end releases with axial, torsional and bending springs.
 - Section library (universal beams and columns, parallel flange channels, hollow sections, equal angles) and
   sections from a shape; material presets.
 - Load cases with gravity, node loads, distributed and point member loads (global or local axes), support

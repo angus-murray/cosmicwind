@@ -117,3 +117,29 @@ test('library sections: calculated mass agrees with the designation', () => {
   const shs = LIBRARY.find(s => s.name === '100×100×5.0 SHS')!; close(shs.A, 1810, 0.01); close(shs.Iz, 2.66e6, 0.015);
   const pfc = LIBRARY.find(s => s.name === '200PFC')!; close(pfc.A, 2920, 0.01); close(pfc.Iz, 19.1e6, 0.01);
 });
+
+test('a spring at a node in parallel with a bar', () => { // u = P / (EA/L + k)
+  const m = beam(4, 1, 'FFFFFF', 'SFFFFF'); m.nodes[1].k = [50000, 0, 0, 0, 0, 0];
+  m.nodeLoads.push({ lc: 1, node: 2, fx: 100, fy: 0, fz: 0, mx: 0, my: 0, mz: 0 });
+  const r = analyse(m); expect(r.errors).toEqual([]);
+  close(r.cases[0].disp.get(2)![0], 100 / (E * 1e3 * A * 1e-6 / 4 + 50000));
+  close(r.cases[0].reactions.get(2)![0], -100 * 50000 / (E * 1e3 * A * 1e-6 / 4 + 50000));
+});
+
+test('a rotational spring at a member end is in series with the member', () => { // fixed-roller member: rotation = M/(4EI/L) + M/k
+  const m = beam(4, 1, 'FFFFFF', 'RFFRRR'); m.members[0].relB = 'FFFFFS'; m.members[0].kB = [0, 0, 0, 0, 0, 2000];
+  m.nodes[1].r = 'RFFFFR';
+  m.nodeLoads.push({ lc: 1, node: 2, fx: 0, fy: 0, fz: 0, mx: 0, my: 0, mz: 10 });
+  const r = analyse(m); expect(r.errors).toEqual([]);
+  const c = r.cases[0];
+  close(c.disp.get(2)![5], 10 * 4 / (4 * EI) + 10 / 2000);
+  close(c.members.get(1)!.Mz[c.members.get(1)!.Mz.length - 1], 10); // the spring carries the whole moment
+});
+
+test('an axial spring at a member end is in series with the member', () => { // u = P/(EA/L) + P/k
+  const m = beam(4, 1, 'FFFFFF', 'RFFFFF'); m.members[0].relB = 'SFFFFF'; m.members[0].kB = [50000, 0, 0, 0, 0, 0];
+  m.nodeLoads.push({ lc: 1, node: 2, fx: 100, fy: 0, fz: 0, mx: 0, my: 0, mz: 0 });
+  const r = analyse(m); expect(r.errors).toEqual([]);
+  close(r.cases[0].disp.get(2)![0], 100 / (E * 1e3 * A * 1e-6 / 4) + 100 / 50000);
+  close(r.cases[0].members.get(1)!.N[0], 100);
+});

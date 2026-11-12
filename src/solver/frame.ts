@@ -75,23 +75,39 @@ function geometric(P: number, L: number): M12 {
   return k;
 }
 
-/** Condensation transform for released end DOFs: K' = TᵀKT, f' = Tᵀf. Returns null if the releases leave a mechanism. */
-function condenser(k: M12, rel: boolean[]): M12 | null {
+/** Condensation transform for the end DOFs that are released or sprung: K' = TᵀKT (+ spring term), f' = Tᵀf. rel marks the internal member-end DOFs
+ *  and kk their spring stiffness to the node (0 for a plain release). Returns null if the releases leave a mechanism. */
+function condenser(k: M12, rel: boolean[], kk: number[]): M12 | null {
   const r = rel.map((v, i) => (v ? i : -1)).filter(i => i >= 0), T = zeros12();
   for (let i = 0; i < 12; i++) if (!rel[i]) T[i][i] = 1;
   if (!r.length) return T;
-  const m = r.length, A = r.map(i => [...r.map(j => k[i][j]), ...Array.from({ length: 12 }, (_, c) => (rel[c] ? 0 : k[i][c]))]);
+  const m = r.length, W = m + 12 + m;
+  // [Krr + D | Krc | I], reduced to [I | Kss⁻¹Krc | Kss⁻¹] with Kss = Krr + D
+  const A = r.map((i, a) => [...r.map((j, b) => k[i][j] + (a === b ? kk[i] : 0)), ...Array.from({ length: 12 }, (_, c) => (rel[c] ? 0 : k[i][c])), ...r.map((_, b) => (a === b ? 1 : 0))]);
   const scale = Math.max(...r.map(i => Math.abs(k[i][i])));
-  for (let p = 0; p < m; p++) { // Gauss–Jordan on [Krr | Krc]
+  for (let p = 0; p < m; p++) {
     let best = p; for (let i = p + 1; i < m; i++) if (Math.abs(A[i][p]) > Math.abs(A[best][p])) best = i;
     if (Math.abs(A[best][p]) < 1e-9 * scale || scale === 0) return null;
     [A[p], A[best]] = [A[best], A[p]];
-    const d = A[p][p]; for (let c = p; c < m + 12; c++) A[p][c] /= d;
-    for (let i = 0; i < m; i++) if (i !== p && A[i][p] !== 0) { const f = A[i][p]; for (let c = p; c < m + 12; c++) A[i][c] -= f * A[p][c]; }
+    const d = A[p][p]; for (let c = p; c < W; c++) A[p][c] /= d;
+    for (let i = 0; i < m; i++) if (i !== p && A[i][p] !== 0) { const f = A[i][p]; for (let c = p; c < W; c++) A[i][c] -= f * A[p][c]; }
   }
-  for (let a = 0; a < m; a++) for (let c = 0; c < 12; c++) T[r[a]][c] = -A[a][m + c];
+  for (let a = 0; a < m; a++) {
+    for (let c = 0; c < 12; c++) T[r[a]][c] = -A[a][m + c] || 0;
+    for (let b = 0; b < m; b++) if (kk[r[b]] > 0) T[r[a]][r[b]] = A[a][m + 12 + b] * kk[r[b]]; // the internal DOF follows the node DOF through the spring
+  }
   return T;
 }
+/** Stiffness of the end springs, seen from the node side: Σ k (e − T row)ᵀ(e − T row). */
+const springK = (T: M12, kk: number[]): M12 => {
+  const K = zeros12();
+  kk.forEach((kv, i) => {
+    if (!(kv > 0)) return;
+    const w = T[i].map((t, c) => (c === i ? 1 : 0) - t);
+    for (let a = 0; a < 12; a++) for (let b = 0; b < 12; b++) K[a][b] += kv * w[a] * w[b];
+  });
+  return K;
+};
 const tKt = (T: M12, k: M12): M12 => {
   const kt = k.map(row => T[0].map((_, c) => row.reduce((s, v, j) => s + v * T[j][c], 0)));
   return T[0].map((_, i) => T[0].map((__, c) => T.reduce((s, row, j) => s + row[i] * kt[j][c], 0)));
@@ -105,7 +121,7 @@ interface Load { // in member local axes
 }
 interface El {
   m: Member; ia: number; ib: number; L: number; R: number[][];
-  EA: number; EIy: number; EIz: number; GJ: number; wSelf: number; alpha: number; mass: number;
+  EA: number; EIy: number; EIz: number; GJ: number; relK: number[]; wSelf: number; alpha: number; mass: number;
   rel: boolean[]; dofs: number[]; tension: boolean; compression: boolean;
 }
 
@@ -205,14 +221,18 @@ export function analyse(model: Model): Analysis {
     const { L, R } = memberAxes(nodes[ia], nodes[ib], m.angle || 0);
     if (L < 1e-6) { err(`Member ${m.id} has zero length.`); continue; }
     if (!(s.A > 0) || !(mt.E > 0)) { err(`Member ${m.id}: the section area and the material modulus must be positive.`); continue; }
-    const rel = [...releaseCode(m.relA), ...releaseCode(m.relB)].map(c => c.toUpperCase() === 'R');
+    const codes = [...releaseCode(m.relA), ...releaseCode(m.relB)], rel = codes.map(c => c === 'R'), relK: number[] = Array(12).fill(0);
+    codes.forEach((c, i) => { // S is a spring at the axial force or a moment; there are no shear springs (an S there is taken as fixed)
+      if (c !== 'S' || [1, 2].includes(i % 6)) return;
+      const kv = (i < 6 ? m.kA : m.kB)?.[i % 6] ?? 0; rel[i] = true; if (kv > 0) relK[i] = kv;
+    });
     let GJ = mt.G * 1e3 * s.J * 1e-12;
-    if (rel[3] && rel[9]) { rel[3] = rel[9] = false; GJ = 0; } // torsion released at both ends: no torsional stiffness
-    if (rel[0] && rel[6]) { err(`Member ${m.id}: the axial force is released at both ends.`); continue; }
+    if (rel[3] && rel[9] && !relK[3] && !relK[9]) { rel[3] = rel[9] = false; GJ = 0; } // torsion released at both ends: no torsional stiffness
+    if (rel[0] && rel[6] && !relK[0] && !relK[6]) { err(`Member ${m.id}: the axial force is released at both ends.`); continue; }
     els.push({
       m, ia, ib, L, R, EA: mt.E * 1e3 * s.A * 1e-6, EIy: mt.E * 1e3 * s.Iy * 1e-12, EIz: mt.E * 1e3 * s.Iz * 1e-12, GJ,
       wSelf: mt.rho * s.A * 1e-6 * G0 / 1000, alpha: mt.alpha || 0, mass: mt.rho * s.A * 1e-6 * L / 1000,
-      rel, dofs: [], tension: m.type === 'T', compression: m.type === 'C',
+      rel, relK, dofs: [], tension: m.type === 'T', compression: m.type === 'C',
     });
   }
   const ids = [...model.loadCases, ...model.combos].map(c => c.id);
@@ -249,7 +269,7 @@ export function analyse(model: Model): Analysis {
     const q = e.dofs.map(d => eq[d]).filter(v => v >= 0), lo = Math.min(...q);
     for (const v of q) if (lo < first[v]) first[v] = lo;
   }
-  const springs = model.springs.flatMap(s => { const i = nodeIx.get(s.node); return i === undefined ? [] : s.k.map((k, d) => ({ dof: i * 6 + d, k: k || 0 })).filter(v => v.k > 0 && eq[v.dof] >= 0); });
+  const springs = nodes.flatMap((n, i) => [...restraintCode(n.r)].map((c, d) => ({ dof: i * 6 + d, k: c === 'S' ? n.k?.[d] ?? 0 : 0 })).filter(v => v.k > 0 && eq[v.dof] >= 0));
 
   // ---- Loads, grouped by load case and member
   const mIx = new Map(els.map((e, i) => [e.m.id, i]));
@@ -285,9 +305,9 @@ export function analyse(model: Model): Analysis {
     const K = new Skyline(first), kl: M12[] = [], Ts: (M12 | null)[] = [];
     for (let i = 0; i < els.length; i++) {
       const e = els[i], ke = elastic(e.EA * (active[i] ? 1 : 1e-8), e.EIy, e.EIz, e.GJ, e.L);
-      const T = condenser(ke, e.rel);
+      const T = condenser(ke, e.rel, e.relK);
       if (!T) return `Member ${e.m.id}: the end releases leave the member unstable.`;
-      let k = geoOnly ? zeros12() : tKt(T, ke);
+      let k = geoOnly ? zeros12() : tKt(T, ke).map((row, a) => row.map((v, b) => v + springK(T, e.relK)[a][b]));
       if (axial && axial[i] !== 0) { const kg = tKt(T, geometric(axial[i], e.L)); k = k.map((r, a) => r.map((v, b) => v + kg[a][b])); }
       kl.push(k); Ts.push(T);
       // global: Λᵀ k Λ, done in 3 × 3 blocks

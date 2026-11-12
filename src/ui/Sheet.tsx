@@ -1,9 +1,12 @@
-import React, { useRef } from 'react';
-import { Plus, X } from 'lucide-react';
+import React, { useRef, useState } from 'react';
+import { ChevronDown, Plus, X } from 'lucide-react';
+import { DofEditor, type DofSpec } from './DofEditor';
 
 export interface Col<T> {
   key: string; label: React.ReactNode; w?: number; title?: string;
-  type?: 'num' | 'text' | 'select' | 'ro';
+  type?: 'num' | 'text' | 'select' | 'ro' | 'dof';
+  /** For a 'dof' column: the popover that sets each degree of freedom to F, R or S. */
+  dof?: DofSpec<T>;
   options?: { value: string; label: string }[];
   /** Suggestions for a text cell. */
   list?: string[];
@@ -21,6 +24,7 @@ export function Sheet<T extends object>({ rows, cols, onChange, newRow, selected
   rowLabel?: (row: T, i: number) => React.ReactNode; empty?: string;
 }) {
   const ref = useRef<HTMLTableElement>(null);
+  const [pop, setPop] = useState<{ i: number; j: number; x: number; y: number } | null>(null);
   const val = (r: T, c: Col<T>) => (c.get ? c.get(r) : (r as Record<string, unknown>)[c.key]) as string | number;
   const apply = (r: T, c: Col<T>, raw: string): T | null => {
     let v: string | number = raw;
@@ -63,6 +67,12 @@ export function Sheet<T extends object>({ rows, cols, onChange, newRow, selected
                           {!c.options!.some(o => o.value === v) && <option value={v}>{v}</option>}
                           {c.options!.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                         </select>
+                      ) : c.type === 'dof' ? (
+                        <button data-c={`${i}-${j}`} className="w-full h-6 flex items-center justify-center gap-1 tabular-nums hover:bg-slate-50" title={c.title}
+                          onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setPop({ i, j, x: b.left, y: b.bottom + 4 }); }}
+                          onKeyDown={e => { if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); focus(i + (e.key === 'ArrowDown' ? 1 : -1), j); } }}>
+                          {v}<ChevronDown className="w-3 h-3 text-slate-400" />
+                        </button>
                       ) : (
                         <input data-c={`${i}-${j}`} key={v} defaultValue={v} readOnly={c.type === 'ro'} spellCheck={false} autoComplete="off" list={c.list ? `dl-${c.key}` : undefined}
                           className={c.type === 'ro' ? 'text-slate-500' : ''}
@@ -84,6 +94,8 @@ export function Sheet<T extends object>({ rows, cols, onChange, newRow, selected
           </tbody>
         </table>
       </div>
+      {pop && cols[pop.j]?.dof && rows[pop.i] && <DofEditor spec={cols[pop.j].dof!} row={rows[pop.i]} at={pop} onClose={() => setPop(null)}
+        onChange={r => onChange(rows.map((x, k) => (k === pop.i ? r : x)))} />}
       {cols.filter(c => c.list).map(c => <datalist key={c.key} id={`dl-${c.key}`}>{c.list!.map(o => <option key={o} value={o} />)}</datalist>)}
       {newRow && <button className="btn" onClick={() => onChange([...rows, newRow()])}><Plus className="w-3.5 h-3.5" /> Add Row</button>}
     </div>

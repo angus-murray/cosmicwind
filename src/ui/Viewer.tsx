@@ -636,7 +636,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
 
   const memSec = new Map(model.members.map(m => [m.id, m.sec]));
   const legend = [...new Set(model.members.map(m => m.sec))].sort((a, b) => a - b);
-  const springNodes = new Set(model.springs.filter(s => s.k.some(v => v > 0)).map(s => s.node));
+  const springNodes = new Set(model.nodes.filter(n => restraintCode(n.r).split('').some((c, d) => c === 'S' && (n.k?.[d] ?? 0) > 0)).map(n => n.id));
   const secName = new Map(model.sections.map(s => [s.id, s.name]));
   const chainNode = chain !== null ? nodeMap.get(chain) : null;
   const faded = !stressOn && !!(result || mode) && (active.length > 0 || opts.deflected || !!mode);
@@ -666,12 +666,12 @@ export const Viewer = React.forwardRef<ViewerHandle, {
         })}</g>}
         {hover.m !== null && (() => { const g = geo.find(x => x.m.id === hover.m); if (!g) return null; const p = P(g.A), q = P(g.B); return <line x1={p[0]} y1={p[1]} x2={q[0]} y2={q[1]} stroke={AMBER} strokeWidth={9} strokeOpacity={0.4} strokeLinecap="round" pointerEvents="none" />; })()}
         {geo.flatMap(g => ([['A', g.m.relA, g.A, g.B], ['B', g.m.relB, g.B, g.A]] as const).map(([end, relRaw, at, from]) => {
-          const rel = releaseCode(relRaw); if (!rel.includes('R')) return null;
+          const code6 = releaseCode(relRaw), rel = code6.replace(/S/g, 'R'), sprung = code6.includes('S'); if (!rel.includes('R')) return null;
           const p0 = P(at), p1 = P(from), len = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]); if (len < 28) return null;
           const u = [(p1[0] - p0[0]) / len, (p1[1] - p0[1]) / len], nx = -u[1], ny = u[0], pt = (k: number): [number, number] => [p0[0] + u[0] * k, p0[1] + u[1] * k];
           const bend = rel[4] === 'R' || rel[5] === 'R', tors = rel[3] === 'R', slide = rel.slice(0, 3).includes('R'), m = pt(8), f = pt(bend || tors ? 18 : 9);
           const names = ['Fx', 'Fy', 'Fz', 'Mx', 'My', 'Mz'].filter((_, i) => rel[i] === 'R').join(', ');
-          return <g key={`rel${g.m.id}${end}`} stroke="#334155" strokeWidth={1.5} fill="#fff"><title>{`Member ${g.m.id}, end ${end === 'A' ? 1 : 2}: released ${names}`}</title>
+          return <g key={`rel${g.m.id}${end}`} stroke={sprung ? AMBER : '#334155'} strokeWidth={1.5} fill="#fff"><title>{`Member ${g.m.id}, end ${end === 'A' ? 1 : 2}: ${sprung ? 'released or sprung' : 'released'} ${names}`}</title>
             {bend && <circle cx={m[0]} cy={m[1]} r={4.5} />}
             {!bend && tors && <path d={`M${m[0]} ${m[1] - 4.5}l4.5 4.5l-4.5 4.5l-4.5 -4.5z`} />}
             {slide && <path fill="none" d={`M${f[0] - u[0] * 2 + nx * 5} ${f[1] - u[1] * 2 + ny * 5}L${f[0] - u[0] * 2 - nx * 5} ${f[1] - u[1] * 2 - ny * 5}M${f[0] + u[0] * 2 + nx * 5} ${f[1] + u[1] * 2 + ny * 5}L${f[0] + u[0] * 2 - nx * 5} ${f[1] + u[1] * 2 - ny * 5}`} />}

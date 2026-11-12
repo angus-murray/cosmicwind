@@ -75,8 +75,10 @@ export function About({ onClose }: { onClose: () => void }) {
           through the member and points upward, and the local z axis is horizontal. For a vertical member the local z axis is parallel to global Z. The
           Angle column rotates the y and z axes about the member. <i>I</i><sub>z</sub> is the second moment about the local z axis, the major axis of a
           beam in its usual orientation.</P>
-        <P>Restraint codes have six characters for DX, DY, DZ, RX, RY and RZ: F is fixed and R is released. Member end releases use the same form
-          for the three local forces and three local moments at each end. Loads are positive in the positive axis direction, so a downward load is
+        <P>Restraint codes have six characters for DX, DY, DZ, RX, RY and RZ: F is fixed, R is released and S is a spring. Click the arrow in a Restraint or
+          Release cell to set each degree of freedom and the stiffness of its spring (kN/m for a displacement or axial force, kNm/rad for a rotation or
+          moment). Member end releases use the same form for the three local forces and three local moments at each end, but there are no springs on the
+          two shear forces. Loads are positive in the positive axis direction, so a downward load is
           negative in Y. Moments follow the right-hand rule and are drawn as double-headed arrows.</P>
         <P>The Gravity columns of a load case are multipliers of <i>g</i>, where <i>g</i> = {G0} m/s², the standard gravitational acceleration. The self-weight
           of a member is its density times its cross-sectional area times <i>g</i>, applied along its length, and node masses and member masses for vibration
