@@ -4,7 +4,7 @@ import { LIBRARY } from './sections';
 
 export interface Template { key: string; label: string; params: { key: string; label: string; value: number; min?: number; step?: number }[]; build: (p: Record<string, number>) => Model }
 
-const lib = (id: number, name: string): Section => { const s = LIBRARY.find(l => l.name === name)!; return { id, name, A: Math.round(s.A), Iy: Math.round(s.Iy), Iz: Math.round(s.Iz), J: Math.round(s.J) }; };
+const lib = (id: number, name: string): Section => { const s = LIBRARY.find(l => l.name === name)!; return { id, name, A: Math.round(s.A), Iy: Math.round(s.Iy), Iz: Math.round(s.Iz), J: Math.round(s.J), outline: s.outline }; };
 const P2 = 'RRFFFR'; // free node of a frame in the XY plane
 const round = (v: number) => Math.round(v * 1e6) / 1e6;
 

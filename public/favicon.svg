@@ -1,6 +1,26 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="12" fill="#2563eb"/>
-  <path d="M12 50 L12 26 L32 12 L52 26 L52 50" fill="none" stroke="#fff" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>
-  <path d="M12 26 L52 26 M12 50 L52 26" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" opacity=".75"/>
-  <circle cx="12" cy="50" r="4.5" fill="#fff"/><circle cx="52" cy="50" r="4.5" fill="#fff"/>
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="45%" r="75%"><stop offset="0" stop-color="#1b2540"/><stop offset="1" stop-color="#070b16"/></radialGradient>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%"><stop offset=".62" stop-color="#fde9a8" stop-opacity=".35"/><stop offset="1" stop-color="#fde9a8" stop-opacity="0"/></radialGradient>
+    <radialGradient id="moon" cx="38%" cy="34%" r="75%"><stop offset="0" stop-color="#fff3c4"/><stop offset=".55" stop-color="#f2d98a"/><stop offset="1" stop-color="#c9a85a"/></radialGradient>
+    <radialGradient id="crater" cx="42%" cy="40%" r="60%"><stop offset="0" stop-color="#b08f4a" stop-opacity=".55"/><stop offset=".75" stop-color="#c7a55a" stop-opacity=".35"/><stop offset="1" stop-color="#fff3c4" stop-opacity=".5"/></radialGradient>
+    <radialGradient id="limb" cx="42%" cy="40%" r="62%"><stop offset=".6" stop-color="#4a3810" stop-opacity="0"/><stop offset="1" stop-color="#4a3810" stop-opacity=".55"/></radialGradient>
+    <filter id="tex" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency=".09" numOctaves="3" seed="7" result="n"/><feColorMatrix in="n" type="matrix" values="0 0 0 0 .55  0 0 0 0 .42  0 0 0 0 .18  0 0 0 .9 -.28"/></filter>
+    <clipPath id="disc"><circle cx="32" cy="32" r="21"/></clipPath>
+    <clipPath id="tile"><rect width="64" height="64" rx="12"/></clipPath>
+  </defs>
+  <rect width="64" height="64" rx="12" fill="url(#bg)"/>
+  <g clip-path="url(#tile)" fill="#fff"><circle cx="9" cy="10" r=".7"/><circle cx="54" cy="8" r=".9" opacity=".8"/><circle cx="57" cy="22" r=".5"/><circle cx="7" cy="45" r=".6" opacity=".7"/><circle cx="50" cy="57" r=".7" opacity=".8"/><circle cx="16" cy="57" r=".5"/></g>
+  <circle cx="32" cy="32" r="29" fill="url(#glow)"/>
+  <circle cx="32" cy="32" r="21" fill="url(#moon)"/>
+  <g clip-path="url(#disc)">
+    <rect width="64" height="64" filter="url(#tex)"/>
+    <path d="M20 22c3-5 9-6 12-3 2 3 0 6-3 7-3 1-3 4-6 5-4 1-6-4-3-9z" fill="#a8873f" opacity=".45"/>
+    <path d="M36 36c4-3 9-2 10 2 1 4-3 8-7 8-4 0-6-3-5-6 0-2 1-3 2-4z" fill="#a8873f" opacity=".4"/>
+    <path d="M30 40c2 1 2 4 0 5s-5-1-4-3 3-3 4-2z" fill="#a8873f" opacity=".35"/>
+    <g fill="url(#crater)" stroke="#fff3c4" stroke-opacity=".55" stroke-width=".5">
+      <circle cx="42" cy="22" r="3.6"/><circle cx="24" cy="40" r="2.6"/><circle cx="46" cy="40" r="2"/><circle cx="33" cy="49" r="1.7"/><circle cx="19" cy="31" r="1.5"/><circle cx="38" cy="29" r="1.2"/>
+    </g>
+    <circle cx="32" cy="32" r="21" fill="url(#limb)"/>
+  </g>
 </svg>

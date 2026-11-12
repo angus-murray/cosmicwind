@@ -4,7 +4,9 @@
  * Local axes: y is in the plane of the web (depth), z across the flanges, so Iz is the major-axis second moment.
  */
 export interface Props { A: number; Iy: number; Iz: number; J: number }
-export interface LibSection extends Props { name: string; group: string }
+export interface LibSection extends Props { name: string; group: string; outline: Outline }
+/** Nominal shape and dimensions (mm), kept with a section so that the rendered view can draw its cross section. */
+export interface Outline { shape: Shape; dims: number[] }
 
 const FIL = 1 - Math.PI / 4;             // area of a fillet of unit radius
 const FIL_C = (10 - 3 * Math.PI) / (12 - 3 * Math.PI); // its centroid from the corner (× r) = 0.2234
@@ -108,13 +110,13 @@ const EA: [number, number[]][] = [
 ];
 
 export const LIBRARY: LibSection[] = [
-  ...UB.map(([name, ...d]) => ({ name, group: 'Universal Beams', ...iSection(...(d as [number, number, number, number, number])) })),
-  ...UC.map(([name, ...d]) => ({ name, group: 'Universal Columns', ...iSection(...(d as [number, number, number, number, number])) })),
-  ...PFC.map(([name, ...d]) => ({ name, group: 'Parallel Flange Channels', ...channel(...(d as [number, number, number, number, number])) })),
-  ...SHS.flatMap(([b, ts]) => ts.map(t => ({ name: `${b}×${b}×${t.toFixed(1)} SHS`, group: 'Square Hollow Sections', ...rhs(b, b, t) }))),
-  ...RHS.flatMap(([d, b, ts]) => ts.map(t => ({ name: `${d}×${b}×${t.toFixed(1)} RHS`, group: 'Rectangular Hollow Sections', ...rhs(d, b, t) }))),
-  ...CHS.flatMap(([d, ts]) => ts.map(t => ({ name: `${d.toFixed(1)}×${t.toFixed(1)} CHS`, group: 'Circular Hollow Sections', ...chs(d, t) }))),
-  ...EA.flatMap(([b, ts]) => ts.map(t => ({ name: `${b}×${b}×${t} EA`, group: 'Equal Angles', ...angle(b, b, t) }))),
+  ...UB.map(([name, ...d]) => ({ name, group: 'Universal Beams', outline: { shape: 'i' as const, dims: d.slice(0, 4) }, ...iSection(...(d as [number, number, number, number, number])) })),
+  ...UC.map(([name, ...d]) => ({ name, group: 'Universal Columns', outline: { shape: 'i' as const, dims: d.slice(0, 4) }, ...iSection(...(d as [number, number, number, number, number])) })),
+  ...PFC.map(([name, ...d]) => ({ name, group: 'Parallel Flange Channels', outline: { shape: 'channel' as const, dims: d.slice(0, 4) }, ...channel(...(d as [number, number, number, number, number])) })),
+  ...SHS.flatMap(([b, ts]) => ts.map(t => ({ name: `${b}×${b}×${t.toFixed(1)} SHS`, group: 'Square Hollow Sections', outline: { shape: 'rhs' as const, dims: [b, b, t] }, ...rhs(b, b, t) }))),
+  ...RHS.flatMap(([d, b, ts]) => ts.map(t => ({ name: `${d}×${b}×${t.toFixed(1)} RHS`, group: 'Rectangular Hollow Sections', outline: { shape: 'rhs' as const, dims: [d, b, t] }, ...rhs(d, b, t) }))),
+  ...CHS.flatMap(([d, ts]) => ts.map(t => ({ name: `${d.toFixed(1)}×${t.toFixed(1)} CHS`, group: 'Circular Hollow Sections', outline: { shape: 'chs' as const, dims: [d, t] }, ...chs(d, t) }))),
+  ...EA.flatMap(([b, ts]) => ts.map(t => ({ name: `${b}×${b}×${t} EA`, group: 'Equal Angles', outline: { shape: 'angle' as const, dims: [b, b, t] }, ...angle(b, b, t) }))),
 ];
 export const LIB_GROUPS = [...new Set(LIBRARY.map(s => s.group))];
 
@@ -142,3 +144,44 @@ export function shapeProps(shape: Shape, d: number[]): Props {
 export const shapeName = (shape: Shape, d: number[]) =>
   shape === 'rect' ? `${d[0]}×${d[1]} Rect` : shape === 'circle' ? `${d[0]} Dia` : shape === 'i' ? `${d[0]}×${d[1]} I` : shape === 'rhs' ? `${d[0]}×${d[1]}×${d[2]} Box`
     : shape === 'chs' ? `${d[0]}×${d[1]} Tube` : shape === 'channel' ? `${d[0]}×${d[1]} Channel` : `${d[0]}×${d[1]}×${d[2]} Angle`;
+
+type Pt = [number, number];
+const ring = (n: number, r: number): Pt[] => Array.from({ length: n }, (_, i) => [r * Math.cos(2 * Math.PI * i / n), r * Math.sin(2 * Math.PI * i / n)]);
+const box = (d: number, b: number): Pt[] => [[-d / 2, -b / 2], [-d / 2, b / 2], [d / 2, b / 2], [d / 2, -b / 2]];
+/** Rectangle with rounded corners of radius r, counter-clockwise. */
+const rbox = (d: number, b: number, r: number, n = 4): Pt[] => ([[1, 1, 0], [-1, 1, 90], [-1, -1, 180], [1, -1, 270]] as const).flatMap(([sy, sz, a0]) =>
+  Array.from({ length: n + 1 }, (_, i): Pt => { const a = (a0 + 90 * i / n) * Math.PI / 180; return [sy * (d / 2 - r) + r * Math.cos(a), sz * (b / 2 - r) + r * Math.sin(a)]; }));
+const area = (l: Pt[]) => l.reduce((s, p, i) => { const q = l[(i + 1) % l.length]; return s + (p[0] * q[1] - q[0] * p[1]) / 2; }, 0);
+
+/**
+ * Cross section drawn in the rendered view: closed loops of [y, z] points (mm) about the area centroid, the outer loop
+ * first and counter-clockwise, any holes after it and clockwise. Corner radii of hollow sections are drawn; root fillets are not.
+ */
+export function outlineLoops({ shape, dims: d }: Outline): Pt[][] {
+  let loops: Pt[][];
+  switch (shape) {
+    case 'rect': loops = [box(d[0], d[1])]; break;
+    case 'circle': loops = [ring(24, d[0] / 2)]; break;
+    case 'i': { const [D, b, tf, tw] = d, h = D / 2, w = b / 2, v = tw / 2;
+      loops = [[[-h, -w], [-h, w], [-h + tf, w], [-h + tf, v], [h - tf, v], [h - tf, w], [h, w], [h, -w], [h - tf, -w], [h - tf, -v], [-h + tf, -v], [-h + tf, -w]]]; break; }
+    case 'channel': { const [D, b, tf, tw] = d, h = D / 2;
+      loops = [[[-h, 0], [-h, b], [-h + tf, b], [-h + tf, tw], [h - tf, tw], [h - tf, b], [h, b], [h, 0]]]; break; }
+    case 'angle': { const [D, b, t] = d; loops = [[[0, 0], [0, b], [t, b], [t, t], [D, t], [D, 0]]]; break; }
+    case 'rhs': { const ro = Math.min((d[2] <= 3 ? 2 : 2.5) * d[2], d[0] / 2, d[1] / 2); loops = [rbox(d[0], d[1], ro), rbox(d[0] - 2 * d[2], d[1] - 2 * d[2], Math.max(ro - d[2], 0.01))]; break; }
+    case 'chs': loops = [ring(24, d[0] / 2), ring(24, d[0] / 2 - d[1])]; break;
+  }
+  // centroid of the area enclosed by the outer loop less the holes
+  let a = 0, cy = 0, cz = 0;
+  loops.forEach((l, k) => {
+    const sg = Math.sign(area(l)) * (k ? -1 : 1); // polygon centroid by the shoelace formula, signed so that holes subtract
+    l.forEach((p, i) => { const q = l[(i + 1) % l.length], c = p[0] * q[1] - q[0] * p[1]; a += sg * c / 2; cy += sg * (p[0] + q[0]) * c / 6; cz += sg * (p[1] + q[1]) * c / 6; });
+  });
+  const oy = cy / a, oz = cz / a;
+  return loops.map((l, k) => { const m = l.map(p => [p[0] - oy, p[1] - oz] as Pt); return (area(m) > 0) === (k === 0) ? m : m.reverse(); });
+}
+
+/** Outline for a section that has none stored: a solid rectangle of the same area, with the depth to width ratio of the two second moments. */
+export function equivalentOutline(p: Props): Outline {
+  const k = Math.sqrt(Math.max(p.Iz, 1e-9) / Math.max(p.Iy, 1e-9)), b = Math.sqrt(p.A / k);
+  return { shape: 'rect', dims: [Math.min(p.A / b, 5000), Math.min(b, 5000)] };
+}

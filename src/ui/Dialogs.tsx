@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { CollapsePanel, Formula, Modal, NumberField, Segmented, SelectField } from 'engineering-ui';
-import { LIB_GROUPS, LIBRARY, SHAPES, shapeName, shapeProps, type Props, type Shape } from '../model/sections';
+import { LIB_GROUPS, LIBRARY, SHAPES, shapeName, shapeProps, type Outline, type Props, type Shape } from '../model/sections';
 import { TEMPLATES } from '../model/templates';
 import type { Model } from '../model/types';
 
@@ -26,7 +26,7 @@ export function TemplateDialog({ onClose, onCreate }: { onClose: () => void; onC
 }
 
 const sci = (v: number) => (v >= 1e6 ? `${(v / 1e6).toPrecision(4)} × 10⁶` : v.toPrecision(4));
-export function SectionDialog({ onClose, onAdd, assign }: { onClose: () => void; onAdd: (name: string, p: Props) => void; assign: number }) {
+export function SectionDialog({ onClose, onAdd, assign }: { onClose: () => void; onAdd: (name: string, p: Props, outline: Outline) => void; assign: number }) {
   const [mode, setMode] = useState<'lib' | 'shape'>('lib');
   const [group, setGroup] = useState(LIB_GROUPS[0]);
   const [shape, setShape] = useState<Shape>('rect');
@@ -42,7 +42,7 @@ export function SectionDialog({ onClose, onAdd, assign }: { onClose: () => void;
           <div className="max-h-72 overflow-auto scroll-thin border border-slate-200 rounded">
             <table className="rtable">
               <thead className="sticky top-0"><tr><th>Section</th><th><i>A</i> (mm²)</th><th><i>I</i><sub>z</sub> (mm⁴)</th><th><i>I</i><sub>y</sub> (mm⁴)</th></tr></thead>
-              <tbody>{LIBRARY.filter(s => s.group === group).map(s => <tr key={s.name} className="cursor-pointer" onClick={() => onAdd(s.name, s)}><td className="font-medium">{s.name}</td><td>{s.A.toFixed(0)}</td><td>{sci(s.Iz)}</td><td>{sci(s.Iy)}</td></tr>)}</tbody>
+              <tbody>{LIBRARY.filter(s => s.group === group).map(s => <tr key={s.name} className="cursor-pointer" onClick={() => onAdd(s.name, s, s.outline)}><td className="font-medium">{s.name}</td><td>{s.A.toFixed(0)}</td><td>{sci(s.Iz)}</td><td>{sci(s.Iy)}</td></tr>)}</tbody>
             </table>
           </div>
         </> : <>
@@ -53,7 +53,7 @@ export function SectionDialog({ onClose, onAdd, assign }: { onClose: () => void;
               <div key={l} className="readout"><span>{l.length === 2 || l === 'J' ? <><i>{l[0]}</i><sub>{l.slice(1)}</sub></> : l} ({u})</span><span className="readout-value">{sci(v)}</span></div>)
               : <p className="text-[11px] text-rose-700">The dimensions do not make a valid section.</p>}
           </div>
-          <div className="flex justify-end"><button className="btn-primary" disabled={!valid} onClick={() => onAdd(shapeName(shape, d), props)}>Add Section</button></div>
+          <div className="flex justify-end"><button className="btn-primary" disabled={!valid} onClick={() => onAdd(shapeName(shape, d), props, { shape, dims: d })}>Add Section</button></div>
         </>}
         {assign > 0 && <p className="text-[11px] text-slate-500">The section will be assigned to the {assign} selected member{assign > 1 ? 's' : ''}.</p>}
       </div>

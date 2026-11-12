@@ -4,7 +4,8 @@
  */
 export interface Node { id: number; x: number; y: number; z: number; /** Six characters, F (fixed) or R (released), for DX DY DZ RX RY RZ. */ r: string }
 export interface Spring { node: number; k: number[] } // kN/m ×3, kNm/rad ×3
-export interface Section { id: number; name: string; A: number; Iy: number; Iz: number; J: number } // mm², mm⁴
+import type { Outline } from './sections';
+export interface Section { id: number; name: string; A: number; Iy: number; Iz: number; J: number; /** Nominal shape, for the rendered view only. */ outline?: Outline } // mm², mm⁴
 export interface Material { id: number; name: string; E: number; G: number; rho: number; alpha: number } // MPa, MPa, kg/m³, /°C
 export type MemberType = 'N' | 'T' | 'C';
 export interface Member {
