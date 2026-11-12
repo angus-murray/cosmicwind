@@ -51,11 +51,12 @@ function pickCurve(curves: Curve[], px: number, py: number, tol = 7) {
   }
   return best;
 }
+export type DefLabels = 'none' | 'X' | 'Y' | 'Z' | 'XYZ';
 export type Tool = 'select' | 'node' | 'member' | 'measure';
 /** Points clicked in empty space lie on the global XY plane (Z = 0), to the nearest millimetre. */
 export interface ViewOpts {
   notes: boolean; nodeNo: boolean; memberNo: boolean; secNames: boolean; loads: boolean; localAxes: boolean;
-  diagrams: Record<DiagramKey, boolean>; stress: StressKey; deflected: boolean; reactions: boolean; scale: number; defScale: number;
+  diagrams: Record<DiagramKey, boolean>; stress: StressKey; deflected: boolean; /** Global displacement components written beside each node. */ defLabels: DefLabels; reactions: boolean; scale: number; defScale: number;
   /** Rendered 3D view of the member cross sections instead of the wireframe. */
   solid: boolean;
 }
@@ -634,6 +635,18 @@ export const Viewer = React.forwardRef<ViewerHandle, {
     });
   }
 
+  // Global displacements written beside the nodes
+  const defLab: React.ReactNode[] = [];
+  if (result && !mode && opts.defLabels !== 'none') {
+    const comps = (opts.defLabels === 'XYZ' ? [0, 1, 2] : [{ X: 0, Y: 1, Z: 2 }[opts.defLabels]]) as number[];
+    result.disp.forEach((d, id) => {
+      const n = nodeMap.get(id); if (!n) return;
+      const vals = comps.map(c => d[c] * 1000); if (vals.every(v => Math.abs(v) < 0.05)) return; // nothing to show at supports
+      const p = P([n.x, n.y, n.z]), y0 = p[1] + 4 - 12 * (vals.length - 1) / 2;
+      vals.forEach((v, i) => defLab.push(text([p[0] + 10, y0 + 12 * i], `${'XYZ'[comps[i]]} ${(Math.abs(v) < 0.05 ? 0 : v).toFixed(1).replace('-', '−')} mm`, `dl${id}-${i}`, PINK, 'start', true)));
+    });
+  }
+
   const memSec = new Map(model.members.map(m => [m.id, m.sec]));
   const legend = [...new Set(model.members.map(m => m.sec))].sort((a, b) => a - b);
   const springNodes = new Set(model.nodes.filter(n => restraintCode(n.r).split('').some((c, d) => c === 'S' && (n.k?.[d] ?? 0) > 0)).map(n => n.id));
@@ -698,6 +711,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
           return text([p[0], p[1] - 5], s, `m${g.m.id}`, sel.members.has(g.m.id) ? BLUE : '#0f172a', 'middle', true);
         })}
         {reacts}
+        {defLab}
         {opts.notes && notes.map(n => {
           const q = n.kind === 'node' ? nodeMap.get(n.ref) : null, g = n.kind === 'member' ? geo.find(x => x.m.id === n.ref) : null;
           const a = q ? P([q.x, q.y, q.z]) : g ? P([(g.A[0] + g.B[0]) / 2, (g.A[1] + g.B[1]) / 2, (g.A[2] + g.B[2]) / 2]) : null; if (!a) return null;
