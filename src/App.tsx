@@ -8,7 +8,7 @@ import {
 import { defaultModel } from './model/templates';
 import { analyse } from './solver/frame';
 import { Sheet, type Col } from './ui/Sheet';
-import { DIAGRAMS, fmt, Viewer, type Sel, type Tool, type ViewerHandle, type ViewOpts } from './ui/Viewer';
+import { DIAGRAMS, STRESSES, fmt, Viewer, type StressKey, type Sel, type Tool, type ViewerHandle, type ViewOpts } from './ui/Viewer';
 import { ResultTables } from './ui/Results';
 import { ContextMenu, PromptBox, ToolFlyout, type MenuItem, type MenuState, type PromptState } from './ui/CanvasMenu';
 import { About, LoadDialog, SectionDialog, TemplateDialog, type LoadSpec } from './ui/Dialogs';
@@ -34,7 +34,7 @@ export default function App() {
   const [sub, setSub] = useState({ structure: 'nodes', loads: 'cases' });
   const [sel, setSel] = useState<Sel>(noSel);
   const [tool, setTool] = useState<Tool>('select');
-  const [opts, setOpts] = useState<ViewOpts>({ nodeNo: true, memberNo: true, secNames: false, loads: true, localAxes: false, diagrams: { N: false, T: false, Vy: false, Vz: false, Vres: false, Mz: true, My: false, Mres: false }, deflected: false, reactions: true, values: true, scale: 1, defScale: 1, plane: 'XY', offset: 0, snap: 0.5, solid: false });
+  const [opts, setOpts] = useState<ViewOpts>({ nodeNo: true, memberNo: true, secNames: false, loads: true, localAxes: false, diagrams: { N: false, T: false, Vy: false, Vz: false, Vres: false, Mz: true, My: false, Mres: false }, stress: 'none', deflected: false, reactions: true, values: true, scale: 1, defScale: 1, plane: 'XY', offset: 0, snap: 0.5, solid: false });
   const o = <K extends keyof ViewOpts>(k: K) => (v: ViewOpts[K]) => setOpts(p => ({ ...p, [k]: v }));
   const [caseId, setCaseId] = useState(1);
   const [modeIx, setModeIx] = useState<{ kind: 'buckling' | 'modal'; i: number } | null>(null);
@@ -361,6 +361,7 @@ export default function App() {
                   <NumberField label="Diagram Scale" value={opts.scale} min={0.1} max={20} step={0.25} onChange={o('scale')} />
                   <NumberField label="Deflection Scale" value={opts.defScale} min={0.1} max={20} step={0.25} onChange={o('defScale')} />
                 </div>
+                <SelectField label="Stress in Rendered View" value={opts.stress} onChange={v => setOpts(q => ({ ...q, stress: v as StressKey, solid: v !== 'none' ? true : q.solid }))} options={STRESSES.map(t => ({ value: t.key, label: t.label }))} />
                 <div className="section">
                   <h3 className="label mb-1">Diagrams</h3>
                   <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">

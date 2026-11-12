@@ -4,6 +4,18 @@ import type { Model } from '../model/types';
 import { outlineLoops, outlineOf } from '../model/sections';
 import { memberAxes, type CaseResult, type Vec6 } from '../solver/frame';
 
+export type StressKey = 'none' | 'normal' | 'axial' | 'mz' | 'my';
+/** Stress results coloured on the rendered members: tension positive, from the axial force and the bending moments at each point of the section. */
+export const STRESSES: { key: StressKey; label: string }[] = [
+  { key: 'none', label: 'None' }, { key: 'normal', label: 'Normal Stress σ (N, Mz, My)' }, { key: 'axial', label: 'Axial Stress N/A' },
+  { key: 'mz', label: 'Bending Stress (Mz)' }, { key: 'my', label: 'Bending Stress (My)' },
+];
+const STRESS_STOPS: [number, number[]][] = [[-1, [29, 78, 216]], [-0.5, [96, 165, 250]], [0, [241, 245, 249]], [0.5, [253, 186, 116]], [1, [194, 65, 12]]];
+const stressRgb = (t: number) => {
+  const x = Math.max(-1, Math.min(1, t)); let k = 0; while (k < STRESS_STOPS.length - 2 && x > STRESS_STOPS[k + 1][0]) k++;
+  const [a, ca] = STRESS_STOPS[k], [b, cb] = STRESS_STOPS[k + 1], u = (x - a) / (b - a); return ca.map((v, i) => Math.round(v + (cb[i] - v) * u));
+};
+type Face = { id: number; pts: V3[]; n: V3; caps?: V3[][]; /** Stress (MPa) for the colour map. */ v?: number };
 export type DiagramKey = 'N' | 'T' | 'Vy' | 'Vz' | 'Vres' | 'Mz' | 'My' | 'Mres';
 /** Member action diagrams that can be drawn together; each is scaled to its own maximum. */
 export const DIAGRAMS: { key: DiagramKey; label: string; unit: string; colour: string }[] = [
@@ -16,7 +28,7 @@ export const DIAGRAMS: { key: DiagramKey; label: string; unit: string; colour: s
 export type Tool = 'select' | 'node' | 'member' | 'measure';
 export interface ViewOpts {
   nodeNo: boolean; memberNo: boolean; secNames: boolean; loads: boolean; localAxes: boolean;
-  diagrams: Record<DiagramKey, boolean>; deflected: boolean; reactions: boolean; values: boolean; scale: number; defScale: number;
+  diagrams: Record<DiagramKey, boolean>; stress: StressKey; deflected: boolean; reactions: boolean; values: boolean; scale: number; defScale: number;
   plane: 'XY' | 'XZ' | 'YZ'; offset: number; snap: number;
   /** Rendered 3D view of the member cross sections instead of the wireframe. */
   solid: boolean;
@@ -121,6 +133,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   const [pickLive, setPickLive] = useState<V3 | null>(null);
   /** Where the drawing cursor lands (screen pixels) when a node or the snap grid captures it. */
   const [snapAt, setSnapAt] = useState<[number, number] | null>(null);
+  const faceHit = useRef<{ id: number; v?: number } | null>(null);
   const curvesRef = useRef<{ key: DiagramKey; id: number; L: number; top: [number, number][]; xs: number[]; lines: (i: number) => string[] }[]>([]);
   /** Hover tip for the diagram curve under the pointer. */
   const [tip, setTip] = useState<{ x: number; y: number; dot: [number, number]; colour: string; lines: string[] } | null>(null);
@@ -153,7 +166,8 @@ export const Viewer = React.forwardRef<ViewerHandle, {
       let near: { d: number; c: (typeof curvesRef.current)[number]; i: number } | null = null; // nearest point of a diagram curve within 10 px
       if (hn === null) for (const c of curvesRef.current) c.top.forEach((q, i) => { const d = Math.hypot(q[0] - lx, q[1] - ly); if (d < 10 && (!near || d < near.d)) near = { d, c, i }; });
       const nr = near as { d: number; c: (typeof curvesRef.current)[number]; i: number } | null;
-      setTip(nr ? { x: lx, y: ly, dot: nr.c.top[nr.i], colour: DIAGRAMS.find(d => d.key === nr.c.key)!.colour, lines: [`Member ${nr.c.id}, x = ${nr.c.xs[nr.i].toFixed(3)} m (${(100 * nr.c.xs[nr.i] / nr.c.L).toFixed(0)}%)`, ...nr.c.lines(nr.i)] } : null);
+      const fh = faceHit.current, stressTip = !nr && hn === null && stressOn && fh && fh.v !== undefined ? { x: lx, y: ly, dot: [lx, ly] as [number, number], colour: '#475569', lines: [`Member ${fh.id}`, `${STRESSES.find(t => t.key === opts.stress)!.label.replace(/ \(.*\)$/, '')}: ${fmt(fh.v)} MPa`] } : null;
+      setTip(nr ? { x: lx, y: ly, dot: nr.c.top[nr.i], colour: DIAGRAMS.find(d => d.key === nr.c.key)!.colour, lines: [`Member ${nr.c.id}, x = ${nr.c.xs[nr.i].toFixed(3)} m (${(100 * nr.c.xs[nr.i] / nr.c.L).toFixed(0)}%)`, ...nr.c.lines(nr.i)] } : stressTip);
       if (tool !== 'select' || pick) {
         const nn = hn !== null ? nodeMap.get(hn) : null, pt: V3 | null = nn ? [nn.x, nn.y, nn.z] : opts.snap > 0 ? onPlane(lx, ly) : null, at = pt ? P(pt) : null;
         setSnapAt(at);
@@ -181,7 +195,8 @@ export const Viewer = React.forwardRef<ViewerHandle, {
     let hitM: number | null = null;
     if (hitN === null && opts.solid) { // rendered view: any point on a visible face of a member picks it (nearest face first)
       const inside = (polys: [number, number][][]) => { let c = false; for (const l of polys) for (let i = 0, j = l.length - 1; i < l.length; j = i++) if ((l[i][1] > sy) !== (l[j][1] > sy) && sx < (l[j][0] - l[i][0]) * (sy - l[i][1]) / (l[j][1] - l[i][1]) + l[i][0]) c = !c; return c; };
-      for (let k = solids.length - 1; k >= 0; k--) { const f = solids[k]; if (sx >= f.x0 && sx <= f.x1 && sy >= f.y0 && sy <= f.y1 && inside(f.polys)) return { hitN: null, hitM: f.id }; }
+      faceHit.current = null;
+      for (let k = solids.length - 1; k >= 0; k--) { const f = solids[k]; if (sx >= f.x0 && sx <= f.x1 && sy >= f.y0 && sy <= f.y1 && inside(f.polys)) { faceHit.current = f; return { hitN: null, hitM: f.id }; } }
     }
     if (hitN === null) {
       best = 6;
@@ -307,7 +322,6 @@ export const Viewer = React.forwardRef<ViewerHandle, {
       if (!l) { const sc = secs.get(id); l = sc ? outlineLoops(outlineOf(sc)) : outlineLoops({ shape: 'rect', dims: [200, 100] }); loopCache.set(id, l); }
       return l;
     };
-    type Face = { id: number; pts: V3[]; n: V3; caps?: V3[][] };
     const faces: Face[] = [];
     for (const g of geo) {
       const loops = loopsOf(g.m.sec), at = (x: number, y: number, z: number): V3 => along(g, x, [0, y / 1000, z / 1000]);
@@ -321,20 +335,58 @@ export const Viewer = React.forwardRef<ViewerHandle, {
     }
     return faces;
   }, [opts.solid, geo, model.sections]); // eslint-disable-line react-hooks/exhaustive-deps
+  const stressOn = !!result && !mode && opts.stress !== 'none' && opts.solid;
+  /** The members cut into small faces along their length and around the section, each carrying the stress at its centre. */
+  const stressMesh = useMemo(() => {
+    if (!stressOn || !result) return { faces: [] as Face[], max: 1, lo: 0, hi: 0 };
+    const secs = new Map(model.sections.map(x => [x.id, x]));
+    const loopsOf = (id: number) => { const sc = secs.get(id); return sc ? outlineLoops(outlineOf(sc)) : outlineLoops({ shape: 'rect', dims: [200, 100] }); };
+    let est = 0; for (const g of geo) { const r = result.members.get(g.m.id); if (r) est += loopsOf(g.m.sec).reduce((a, l) => a + l.length * 3, 0) * r.x.length; }
+    const stride = Math.max(1, Math.ceil(est / 60000)); // keeps very large models drawable
+    const faces: Face[] = []; let lo = Infinity, hi = -Infinity;
+    for (const g of geo) {
+      const r = result.members.get(g.m.id), sc = secs.get(g.m.sec); if (!r) continue;
+      const A = sc?.A || 1, Iy = sc?.Iy || 1, Iz = sc?.Iz || 1, loops = loopsOf(g.m.sec);
+      const idx = r.x.map((_, i) => i).filter(i => i % stride === 0 || i === r.x.length - 1);
+      const at = (x: number, y: number, z: number): V3 => along(g, x, [0, y / 1000, z / 1000]);
+      const dir = (y: number, z: number): V3 => [0, 1, 2].map(i => g.R[1][i] * y + g.R[2][i] * z) as V3;
+      const sigma = (i: number, y: number, z: number) => { // MPa: N in kN, M in kNm, section in mm
+        const n = r.N[i] * 1000 / A, bz = -r.Mz[i] * 1e6 * y / Iz, by = r.My[i] * 1e6 * z / Iy;
+        return opts.stress === 'axial' ? n : opts.stress === 'mz' ? bz : opts.stress === 'my' ? by : n + bz + by;
+      };
+      const size = Math.max(...loops[0].flatMap(p => [Math.abs(p[0]), Math.abs(p[1])])) * 2;
+      for (const l of loops) l.forEach((p, e) => {
+        const q = l[(e + 1) % l.length], ny = q[1] - p[1], nz = -(q[0] - p[0]), len = Math.hypot(ny, nz) || 1, nSeg = Math.max(1, Math.min(6, Math.ceil(len / (size * 0.18))));
+        const nrm = dir(ny / len, nz / len);
+        for (let j = 0; j < nSeg; j++) {
+          const p0: [number, number] = [p[0] + (q[0] - p[0]) * j / nSeg, p[1] + (q[1] - p[1]) * j / nSeg], p1: [number, number] = [p[0] + (q[0] - p[0]) * (j + 1) / nSeg, p[1] + (q[1] - p[1]) * (j + 1) / nSeg];
+          for (let k = 0; k + 1 < idx.length; k++) {
+            const i0 = idx[k], i1 = idx[k + 1], x0 = r.x[i0], x1 = r.x[i1];
+            const vs = [sigma(i0, p0[0], p0[1]), sigma(i0, p1[0], p1[1]), sigma(i1, p1[0], p1[1]), sigma(i1, p0[0], p0[1])];
+            for (const v of vs) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+            faces.push({ id: g.m.id, pts: [at(x0, p0[0], p0[1]), at(x0, p1[0], p1[1]), at(x1, p1[0], p1[1]), at(x1, p0[0], p0[1])], n: nrm, v: (vs[0] + vs[1] + vs[2] + vs[3]) / 4 });
+          }
+        }
+      });
+      for (const [x, sg] of [[0, -1], [g.L, 1]] as const) faces.push({ id: g.m.id, pts: [], n: g.R[0].map(v => v * sg) as V3, caps: loops.map(l => l.map(p => at(x, p[0], p[1]))) });
+    }
+    return { faces, max: Math.max(Math.abs(lo), Math.abs(hi), 1e-9), lo: isFinite(lo) ? lo : 0, hi: isFinite(hi) ? hi : 0 };
+  }, [stressOn, opts.stress, result, geo, model.sections]); // eslint-disable-line react-hooks/exhaustive-deps
+  const faceSet = stressOn ? stressMesh.faces : mesh;
   const solids = useMemo(() => {
     if (!opts.solid) return [];
     const rz: V3 = [basis.rx[1] * basis.ry[2] - basis.rx[2] * basis.ry[1], basis.rx[2] * basis.ry[0] - basis.rx[0] * basis.ry[2], basis.rx[0] * basis.ry[1] - basis.rx[1] * basis.ry[0]]; // towards the viewer
     const light: V3 = [0, 1, 2].map(i => 0.55 * rz[i] - 0.35 * basis.rx[i] + 0.6 * basis.ry[i]) as V3, ll = Math.hypot(...light);
     const dot = (a: V3, b: V3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-    const out: { id: number; d: string; depth: number; shade: number; polys: [number, number][][]; x0: number; x1: number; y0: number; y1: number }[] = [];
-    for (const f of mesh) {
+    const out: { id: number; d: string; depth: number; shade: number; polys: [number, number][][]; x0: number; x1: number; y0: number; y1: number; v?: number }[] = [];
+    for (const f of faceSet) {
       if (dot(f.n, rz) <= 1e-6) continue;
       const ring = f.caps ?? [f.pts], c = ring[0].reduce((m, p) => [m[0] + p[0] / ring[0].length, m[1] + p[1] / ring[0].length, m[2] + p[2] / ring[0].length], [0, 0, 0]) as V3;
       const polys = ring.map(l => l.map(P)), xs = polys[0].map(q => q[0]), ys = polys[0].map(q => q[1]);
-      out.push({ id: f.id, depth: dot(c, rz), shade: 0.3 + 0.7 * Math.max(0, dot(f.n, light) / ll), d: polys.map(l => `${path(l)}Z`).join(''), polys, x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) });
+      out.push({ id: f.id, depth: dot(c, rz), shade: 0.3 + 0.7 * Math.max(0, dot(f.n, light) / ll), d: polys.map(l => `${path(l)}Z`).join(''), polys, x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys), v: f.v });
     }
     return out.sort((a, b) => a.depth - b.depth);
-  }, [mesh, basis, P, opts.solid]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [faceSet, basis, P, opts.solid]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- Loads
   const loads: React.ReactNode[] = [];
@@ -474,7 +526,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   const springNodes = new Set(model.springs.filter(s => s.k.some(v => v > 0)).map(s => s.node));
   const secName = new Map(model.sections.map(s => [s.id, s.name]));
   const chainNode = chain !== null ? nodeMap.get(chain) : null;
-  const faded = !!(result || mode) && (active.length > 0 || opts.deflected || !!mode);
+  const faded = !stressOn && !!(result || mode) && (active.length > 0 || opts.deflected || !!mode);
   return (
     <div ref={box} className="absolute inset-0 overflow-hidden">
       <svg ref={svgRef} width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="block touch-none select-none" style={{ cursor: tool === 'select' && !pick ? 'default' : snapAt ? 'none' : 'crosshair' }}
@@ -492,8 +544,12 @@ export const Viewer = React.forwardRef<ViewerHandle, {
         })}
         {opts.solid && <g strokeLinejoin="round" strokeWidth={0.75} pointerEvents="none">{solids.map((f, i) => {
           const on = sel.members.has(f.id), off = result?.members.get(f.id)?.active === false;
-          let base = rgb(sectionColour(memSec.get(f.id) ?? 1)); if (faded) base = mixRgb(base, [226, 232, 240], 0.55); if (on) base = mixRgb(base, rgb(BLUE), 0.4);
-          const col = toHex(mixRgb(mixRgb(base, [15, 23, 42], 0.5), mixRgb(base, [255, 255, 255], 0.5), f.shade));
+          let col: string;
+          if (stressOn) { const k = 0.72 + 0.28 * f.shade, c = f.v === undefined ? [203, 213, 225] : stressRgb(f.v / stressMesh.max); col = toHex(c.map(v => Math.round(v * k))); }
+          else {
+            let base = rgb(sectionColour(memSec.get(f.id) ?? 1)); if (faded) base = mixRgb(base, [226, 232, 240], 0.55); if (on) base = mixRgb(base, rgb(BLUE), 0.4);
+            col = toHex(mixRgb(mixRgb(base, [15, 23, 42], 0.5), mixRgb(base, [255, 255, 255], 0.5), f.shade));
+          }
           return <path key={i} d={f.d} fill={col} stroke={col} fillRule="evenodd" opacity={off ? 0.5 : 1} />;
         })}</g>}
         {hover.m !== null && (() => { const g = geo.find(x => x.m.id === hover.m); if (!g) return null; const p = P(g.A), q = P(g.B); return <line x1={p[0]} y1={p[1]} x2={q[0]} y2={q[1]} stroke={AMBER} strokeWidth={9} strokeOpacity={0.4} strokeLinecap="round" pointerEvents="none" />; })()}
@@ -560,6 +616,12 @@ export const Viewer = React.forwardRef<ViewerHandle, {
           })}
         </g>
       </svg>
+      {stressOn && <div className="absolute top-2 left-1/2 -translate-x-1/2 w-60 bg-white/90 border border-slate-200 rounded-md px-2 py-1.5 text-[11px] text-slate-700 pointer-events-none">
+        <div className="font-semibold mb-1">{STRESSES.find(t => t.key === opts.stress)!.label} (MPa)</div>
+        <div className="h-2.5 rounded-sm" style={{ background: `linear-gradient(to right, ${STRESS_STOPS.map(([, c]) => `rgb(${c.join()})`).join(', ')})` }} />
+        <div className="flex justify-between mt-0.5 tabular-nums"><span>{fmt(-stressMesh.max)}</span><span>0</span><span>{fmt(stressMesh.max)}</span></div>
+        <div className="text-slate-500">Tension is positive (orange). Range {fmt(stressMesh.lo)} to {fmt(stressMesh.hi)}</div>
+      </div>}
       {tip && <>
         <svg width={W} height={H} className="absolute inset-0 pointer-events-none"><circle cx={tip.dot[0]} cy={tip.dot[1]} r={4.5} fill="#fff" stroke={tip.colour} strokeWidth={2} /></svg>
         <div className="absolute z-10 pointer-events-none bg-white/95 border border-slate-200 rounded-md shadow-md px-2 py-1 text-[11px] text-slate-700 whitespace-nowrap" style={{ left: Math.min(tip.x + 14, W - 230), top: Math.min(tip.y + 14, H - 70) }}>
