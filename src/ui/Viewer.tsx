@@ -10,10 +10,12 @@ export const STRESSES: { key: StressKey; label: string }[] = [
   { key: 'none', label: 'None' }, { key: 'normal', label: 'Normal Stress σ (N, Mz, My)' }, { key: 'axial', label: 'Axial Stress N/A' },
   { key: 'mz', label: 'Bending Stress (Mz)' }, { key: 'my', label: 'Bending Stress (My)' },
 ];
-const STRESS_STOPS: [number, number[]][] = [[-1, [29, 78, 216]], [-0.5, [96, 165, 250]], [0, [241, 245, 249]], [0.5, [253, 186, 116]], [1, [194, 65, 12]]];
-const stressRgb = (t: number) => {
-  const x = Math.max(-1, Math.min(1, t)); let k = 0; while (k < STRESS_STOPS.length - 2 && x > STRESS_STOPS[k + 1][0]) k++;
-  const [a, ca] = STRESS_STOPS[k], [b, cb] = STRESS_STOPS[k + 1], u = (x - a) / (b - a); return ca.map((v, i) => Math.round(v + (cb[i] - v) * u));
+/** The colour scale of ConcreteSection2D: hue from blue (lowest) to red (highest), over the range of the values shown. */
+const jetCss = (t: number) => `hsl(${(1 - Math.max(0, Math.min(1, t))) * 240}, 85%, 50%)`;
+const jetRgb = (t: number) => {
+  const h = (1 - Math.max(0, Math.min(1, t))) * 240, s = 0.85, l = 0.5, c = (1 - Math.abs(2 * l - 1)) * s, x = c * (1 - Math.abs((h / 60) % 2 - 1)), m = l - c / 2;
+  const [r, g, bl] = h < 60 ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x] : h < 240 ? [0, x, c] : [x, 0, c];
+  return [r + m, g + m, bl + m].map(v => Math.round(v * 255));
 };
 type Face = { id: number; pts: V3[]; n: V3; caps?: V3[][]; /** Stress (MPa) for the colour map. */ v?: number };
 export type DiagramKey = 'N' | 'T' | 'Vy' | 'Vz' | 'Vres' | 'Mz' | 'My' | 'Mres';
@@ -338,7 +340,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   const stressOn = !!result && !mode && opts.stress !== 'none' && opts.solid;
   /** The members cut into small faces along their length and around the section, each carrying the stress at its centre. */
   const stressMesh = useMemo(() => {
-    if (!stressOn || !result) return { faces: [] as Face[], max: 1, lo: 0, hi: 0 };
+    if (!stressOn || !result) return { faces: [] as Face[], lo: 0, hi: 1 };
     const secs = new Map(model.sections.map(x => [x.id, x]));
     const loopsOf = (id: number) => { const sc = secs.get(id); return sc ? outlineLoops(outlineOf(sc)) : outlineLoops({ shape: 'rect', dims: [200, 100] }); };
     let est = 0; for (const g of geo) { const r = result.members.get(g.m.id); if (r) est += loopsOf(g.m.sec).reduce((a, l) => a + l.length * 3, 0) * r.x.length; }
@@ -370,7 +372,8 @@ export const Viewer = React.forwardRef<ViewerHandle, {
       });
       for (const [x, sg] of [[0, -1], [g.L, 1]] as const) faces.push({ id: g.m.id, pts: [], n: g.R[0].map(v => v * sg) as V3, caps: loops.map(l => l.map(p => at(x, p[0], p[1]))) });
     }
-    return { faces, max: Math.max(Math.abs(lo), Math.abs(hi), 1e-9), lo: isFinite(lo) ? lo : 0, hi: isFinite(hi) ? hi : 0 };
+    const l0 = isFinite(lo) ? lo : 0, h0 = isFinite(hi) ? hi : 0;
+    return { faces, lo: l0, hi: h0 - l0 < 1e-9 ? l0 + 1 : h0 };
   }, [stressOn, opts.stress, result, geo, model.sections]); // eslint-disable-line react-hooks/exhaustive-deps
   const faceSet = stressOn ? stressMesh.faces : mesh;
   const solids = useMemo(() => {
@@ -545,7 +548,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
         {opts.solid && <g strokeLinejoin="round" strokeWidth={0.75} pointerEvents="none">{solids.map((f, i) => {
           const on = sel.members.has(f.id), off = result?.members.get(f.id)?.active === false;
           let col: string;
-          if (stressOn) { const k = 0.72 + 0.28 * f.shade, c = f.v === undefined ? [203, 213, 225] : stressRgb(f.v / stressMesh.max); col = toHex(c.map(v => Math.round(v * k))); }
+          if (stressOn) { const k = 0.72 + 0.28 * f.shade, c = f.v === undefined ? [203, 213, 225] : jetRgb((f.v - stressMesh.lo) / (stressMesh.hi - stressMesh.lo)); col = toHex(c.map(v => Math.round(v * k))); }
           else {
             let base = rgb(sectionColour(memSec.get(f.id) ?? 1)); if (faded) base = mixRgb(base, [226, 232, 240], 0.55); if (on) base = mixRgb(base, rgb(BLUE), 0.4);
             col = toHex(mixRgb(mixRgb(base, [15, 23, 42], 0.5), mixRgb(base, [255, 255, 255], 0.5), f.shade));
@@ -616,11 +619,9 @@ export const Viewer = React.forwardRef<ViewerHandle, {
           })}
         </g>
       </svg>
-      {stressOn && <div className="absolute top-2 left-1/2 -translate-x-1/2 w-60 bg-white/90 border border-slate-200 rounded-md px-2 py-1.5 text-[11px] text-slate-700 pointer-events-none">
-        <div className="font-semibold mb-1">{STRESSES.find(t => t.key === opts.stress)!.label} (MPa)</div>
-        <div className="h-2.5 rounded-sm" style={{ background: `linear-gradient(to right, ${STRESS_STOPS.map(([, c]) => `rgb(${c.join()})`).join(', ')})` }} />
-        <div className="flex justify-between mt-0.5 tabular-nums"><span>{fmt(-stressMesh.max)}</span><span>0</span><span>{fmt(stressMesh.max)}</span></div>
-        <div className="text-slate-500">Tension is positive (orange). Range {fmt(stressMesh.lo)} to {fmt(stressMesh.hi)}</div>
+      {stressOn && <div className="absolute top-2 left-1/2 -translate-x-1/2 bg-white/95 border border-slate-200 shadow-2xs rounded px-3 py-1.5 text-[11px] text-slate-600 tabular-nums pointer-events-none">
+        <div className="font-semibold text-slate-700 mb-0.5 text-center">{STRESSES.find(t => t.key === opts.stress)!.label}</div>
+        <div className="flex items-center gap-2"><span>{fmt(stressMesh.lo)} MPa</span><span className="w-36 h-2.5 rounded-sm" style={{ background: `linear-gradient(to right, ${[0, 0.25, 0.5, 0.75, 1].map(jetCss).join(', ')})` }} /><span>{fmt(stressMesh.hi)} MPa</span></div>
       </div>}
       {tip && <>
         <svg width={W} height={H} className="absolute inset-0 pointer-events-none"><circle cx={tip.dot[0]} cy={tip.dot[1]} r={4.5} fill="#fff" stroke={tip.colour} strokeWidth={2} /></svg>
