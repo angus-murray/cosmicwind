@@ -649,9 +649,38 @@ export const Viewer = React.forwardRef<ViewerHandle, {
     });
   }
 
+  /** A zigzag spring from p along the unit screen vector d, ending in a short bar. */
+  const springLin = (p: [number, number], d: [number, number], key: string, len = 24) => {
+    const nx = -d[1], ny = d[0], lead = 4, n = 6, a = 4, coil = len - lead - 5, at = (t: number, off = 0) => `${p[0] + d[0] * t + nx * off} ${p[1] + d[1] * t + ny * off}`;
+    const pts = [at(0), at(lead)]; for (let i = 0; i < n; i++) pts.push(at(lead + coil * (i + 0.5) / n, i % 2 ? -a : a));
+    pts.push(at(len - 5), at(len));
+    const path = `M${pts.join('L')}`, e = [p[0] + d[0] * len, p[1] + d[1] * len];
+    return <g key={key} fill="none" strokeLinecap="round" strokeLinejoin="round"><path d={path} stroke="#fff" strokeWidth={4} strokeOpacity={0.85} />
+      <path d={path} stroke={AMBER} strokeWidth={1.5} /><line x1={e[0] + nx * 5} y1={e[1] + ny * 5} x2={e[0] - nx * 5} y2={e[1] - ny * 5} stroke={AMBER} strokeWidth={1.5} /></g>;
+  };
+  /** A coiled arc around a world axis through c: the symbol of a rotational spring. */
+  const springRot = (c: V3, axis: V3, key: string) => {
+    const cr = (a: V3, b: V3): V3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+    const h: V3 = Math.abs(axis[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0], e1 = cr(axis, h), l1 = Math.hypot(e1[0], e1[1], e1[2]) || 1, u1: V3 = [e1[0] / l1, e1[1] / l1, e1[2] / l1], u2 = cr(axis, u1);
+    const steps = 36, turns = 1.75, pts: string[] = []; // a flat spiral, drawn in the plane perpendicular to the axis
+    for (let i = 0; i <= steps; i++) {
+      const th = (i / steps) * turns * 2 * Math.PI, r = (3 + 8.5 * i / steps) / cam.zoom;
+      const q = P([0, 1, 2].map(k => c[k] + r * (Math.cos(th) * u1[k] + Math.sin(th) * u2[k])) as V3);
+      pts.push(`${q[0]} ${q[1]}`);
+    }
+    const path = `M${pts.join('L')}`;
+    return <g key={key} fill="none" strokeLinecap="round" strokeLinejoin="round"><path d={path} stroke="#fff" strokeWidth={4} strokeOpacity={0.85} /><path d={path} stroke={AMBER} strokeWidth={1.5} /></g>;
+  };
+  const AXES: V3[] = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+  /** The springs of a node, each drawn along (translation) or around (rotation) the global axis it acts on. */
+  const nodeSprings = (n: { id: number; x: number; y: number; z: number; r: string; k?: number[] }, p: [number, number]) => [...restraintCode(n.r)].map((c, d) => {
+    if (c !== 'S' || !((n.k?.[d] ?? 0) > 0)) return null;
+    if (d >= 3) return springRot([n.x, n.y, n.z], AXES[d - 3], `sp${n.id}-${d}`);
+    const dir = dirS(AXES[d]); return dir ? springLin(p, [-dir[0], -dir[1]], `sp${n.id}-${d}`) : <circle key={`sp${n.id}-${d}`} cx={p[0]} cy={p[1]} r={6} fill="none" stroke={AMBER} strokeWidth={1.5} />;
+  });
+
   const memSec = new Map(model.members.map(m => [m.id, m.sec]));
   const legend = [...new Set(model.members.map(m => m.sec))].sort((a, b) => a - b);
-  const springNodes = new Set(model.nodes.filter(n => restraintCode(n.r).split('').some((c, d) => c === 'S' && (n.k?.[d] ?? 0) > 0)).map(n => n.id));
   const secName = new Map(model.sections.map(s => [s.id, s.name]));
   const chainNode = chain !== null ? nodeMap.get(chain) : null;
   const faded = !stressOn && !!(result || mode) && (active.length > 0 || opts.deflected || !!mode);
@@ -680,16 +709,23 @@ export const Viewer = React.forwardRef<ViewerHandle, {
           return <path key={i} d={f.d} fill={col} stroke={col} fillRule="evenodd" opacity={off ? 0.5 : 1} />;
         })}</g>}
         {hover.m !== null && (() => { const g = geo.find(x => x.m.id === hover.m); if (!g) return null; const p = P(g.A), q = P(g.B); return <line x1={p[0]} y1={p[1]} x2={q[0]} y2={q[1]} stroke={AMBER} strokeWidth={9} strokeOpacity={0.4} strokeLinecap="round" pointerEvents="none" />; })()}
-        {geo.flatMap(g => ([['A', g.m.relA, g.A, g.B], ['B', g.m.relB, g.B, g.A]] as const).map(([end, relRaw, at, from]) => {
-          if (!opts.releases) return null; const code6 = releaseCode(relRaw), rel = code6.replace(/S/g, 'R'), sprung = code6.includes('S'); if (!rel.includes('R')) return null;
+        {geo.flatMap(g => ([['A', g.m.relA, g.A, g.B, g.m.kA], ['B', g.m.relB, g.B, g.A, g.m.kB]] as const).map(([end, relRaw, at, from, kk]) => {
+          if (!opts.releases) return null; const code6 = releaseCode(relRaw), rel = code6.replace(/S/g, 'F'), sp = [...code6].map((c, i) => c === 'S' && ![1, 2].includes(i) && (kk?.[i] ?? 0) > 0);
+          if (!rel.includes('R') && !sp.some(Boolean)) return null;
           const p0 = P(at), p1 = P(from), len = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]); if (len < 28) return null;
           const u = [(p1[0] - p0[0]) / len, (p1[1] - p0[1]) / len], nx = -u[1], ny = u[0], pt = (k: number): [number, number] => [p0[0] + u[0] * k, p0[1] + u[1] * k];
           const bend = rel[4] === 'R' || rel[5] === 'R', tors = rel[3] === 'R', slide = rel.slice(0, 3).includes('R'), m = pt(8), f = pt(bend || tors ? 18 : 9);
-          const names = ['Fx', 'Fy', 'Fz', 'Mx', 'My', 'Mz'].filter((_, i) => rel[i] === 'R').join(', ');
-          return <g key={`rel${g.m.id}${end}`} stroke={sprung ? AMBER : '#334155'} strokeWidth={1.5} fill="#fff"><title>{`Member ${g.m.id}, end ${end === 'A' ? 1 : 2}: ${sprung ? 'released or sprung' : 'released'} ${names}`}</title>
-            {bend && <circle cx={m[0]} cy={m[1]} r={4.5} />}
-            {!bend && tors && <path d={`M${m[0]} ${m[1] - 4.5}l4.5 4.5l-4.5 4.5l-4.5 -4.5z`} />}
-            {slide && <path fill="none" d={`M${f[0] - u[0] * 2 + nx * 5} ${f[1] - u[1] * 2 + ny * 5}L${f[0] - u[0] * 2 - nx * 5} ${f[1] - u[1] * 2 - ny * 5}M${f[0] + u[0] * 2 + nx * 5} ${f[1] + u[1] * 2 + ny * 5}L${f[0] + u[0] * 2 - nx * 5} ${f[1] + u[1] * 2 - ny * 5}`} />}
+          const names = ['Fx', 'Fy', 'Fz', 'Mx', 'My', 'Mz'].filter((_, i) => rel[i] === 'R').join(', '), sprung = ['Fx', 'Fy', 'Fz', 'Mx', 'My', 'Mz'].filter((_, i) => sp[i]).join(', ');
+          const Lw = Math.hypot(from[0] - at[0], from[1] - at[1], from[2] - at[2]) || 1, ctr = at.map((v, k) => v + (from[k] - v) / Lw * (12 / cam.zoom)) as unknown as V3;
+          return <g key={`rel${g.m.id}${end}`}>
+            {rel.includes('R') && <g stroke="#334155" strokeWidth={1.5} fill="#fff"><title>{`Member ${g.m.id}, end ${end === 'A' ? 1 : 2}: released ${names}`}</title>
+              {bend && <circle cx={m[0]} cy={m[1]} r={4.5} />}
+              {!bend && tors && <path d={`M${m[0]} ${m[1] - 4.5}l4.5 4.5l-4.5 4.5l-4.5 -4.5z`} />}
+              {slide && <path fill="none" d={`M${f[0] - u[0] * 2 + nx * 5} ${f[1] - u[1] * 2 + ny * 5}L${f[0] - u[0] * 2 - nx * 5} ${f[1] - u[1] * 2 - ny * 5}M${f[0] + u[0] * 2 + nx * 5} ${f[1] + u[1] * 2 + ny * 5}L${f[0] + u[0] * 2 - nx * 5} ${f[1] + u[1] * 2 - ny * 5}`} />}
+            </g>}
+            {sp[0] && springLin(pt(4), [u[0], u[1]], `sx${g.m.id}${end}`, 20)}
+            {[3, 4, 5].map(i => sp[i] && springRot(ctr, g.R[i - 3] as V3, `sr${g.m.id}${end}${i}`))}
+            {sprung && <title>{`Member ${g.m.id}, end ${end === 'A' ? 1 : 2}: spring on ${sprung}`}</title>}
           </g>;
         }))}
         {opts.localAxes && geo.map(g => { const c = along(g, g.L / 2), p = P(c); return <g key={`ax${g.m.id}`}>{[RED, GREEN, BLUE].map((col, i) => { const d = dirS(g.R[i] as V3); return d && <g key={i} strokeLinecap="round"><line x1={p[0]} y1={p[1]} x2={p[0] + d[0] * 20} y2={p[1] + d[1] * 20} stroke="#fff" strokeWidth={6} strokeOpacity={0.9} /><line x1={p[0]} y1={p[1]} x2={p[0] + d[0] * 20} y2={p[1] + d[1] * 20} stroke={col} strokeWidth={3.5} /></g>; })}</g>; })}
@@ -701,7 +737,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
               : t.startsWith('FF') ? <path d={`M${p[0]} ${p[1] + 2}l7 11h-14z`} style={{ fill: 'var(--color-white)' }} stroke="#64748b" strokeWidth={1.5} />
                 : t[1] === 'F' ? <g stroke="#64748b" strokeWidth={1.5}><path d={`M${p[0]} ${p[1] + 2}l6 9h-12z`} style={{ fill: 'var(--color-white)' }} /><line x1={p[0] - 8} y1={p[1] + 14} x2={p[0] + 8} y2={p[1] + 14} /></g>
                   : t.includes('F') && r !== 'RRFFFR' ? <path d={`M${p[0]} ${p[1] + 2}l5 5l-5 5l-5 -5z`} style={{ fill: 'var(--color-white)' }} stroke="#64748b" strokeWidth={1.5} /> : null}
-            {opts.restraints && springNodes.has(n.id) && <path d={`M${p[0]} ${p[1] + 2}v3l-4 2l8 3l-8 3l8 3l-4 2v2m-6 0h12`} fill="none" stroke={AMBER} strokeWidth={1.5} />}
+            {opts.restraints && nodeSprings(n, p)}
             {hover.n === n.id && <circle cx={p[0]} cy={p[1]} r={9} fill={AMBER} fillOpacity={0.3} stroke={AMBER} strokeWidth={2} pointerEvents="none" />}
             <rect x={p[0] - (on ? 4 : 2.5)} y={p[1] - (on ? 4 : 2.5)} width={on ? 8 : 5} height={on ? 8 : 5} fill={on || chain === n.id ? BLUE : '#334155'} />
             {opts.nodeNo && text([p[0] + 6, p[1] - 6], n.id, `t${n.id}`, on ? BLUE : '#64748b', 'start')}
@@ -766,9 +802,11 @@ export const Viewer = React.forwardRef<ViewerHandle, {
           })}
         </g>
       </svg>
-      {stressOn && <div className="absolute top-2 left-1/2 -translate-x-1/2 bg-white/95 border border-slate-200 shadow-2xs rounded px-3 py-1.5 text-[11px] text-slate-600 tabular-nums pointer-events-none">
-        <div className="font-semibold text-slate-700 mb-0.5 text-center">{STRESSES.find(t => t.key === opts.stress)!.label}</div>
-        <div className="flex items-center gap-2"><span>{fmt(stressMesh.lo)} MPa</span><span className="w-36 h-2.5 rounded-sm" style={{ background: `linear-gradient(to right, ${[0, 0.25, 0.5, 0.75, 1].map(jetCss).join(', ')})` }} /><span>{fmt(stressMesh.hi)} MPa</span></div>
+      {stressOn && <div className="absolute left-2 top-1/2 -translate-y-1/2 bg-white/95 border border-slate-200 shadow-2xs rounded px-2.5 py-2 text-[11px] text-slate-600 tabular-nums pointer-events-none flex flex-col items-center gap-1.5">
+        <div className="font-semibold text-slate-700 text-center max-w-[96px] leading-tight">{STRESSES.find(t => t.key === opts.stress)!.label}</div>
+        <span>{fmt(stressMesh.hi)} MPa</span>
+        <span className="w-3 h-44 rounded-sm" style={{ background: `linear-gradient(to top, ${[0, 0.25, 0.5, 0.75, 1].map(jetCss).join(', ')})` }} />
+        <span>{fmt(stressMesh.lo)} MPa</span>
       </div>}
       {tip && <>
         <svg width={W} height={H} className="absolute inset-0 pointer-events-none">{tip.foot && <><line x1={tip.foot[0]} y1={tip.foot[1]} x2={tip.dot[0]} y2={tip.dot[1]} stroke={tip.colour} strokeWidth={1.25} /><circle cx={tip.foot[0]} cy={tip.foot[1]} r={2.5} fill={tip.colour} /></>}<circle cx={tip.dot[0]} cy={tip.dot[1]} r={4.5} fill="#fff" stroke={tip.colour} strokeWidth={2} /></svg>
