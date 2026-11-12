@@ -43,7 +43,7 @@ export default function App() {
   const [sub, setSub] = useState({ structure: 'nodes', loads: 'cases' });
   const [sel, setSel] = useState<Sel>(noSel);
   const [tool, setTool] = useState<Tool>('select');
-  const [opts, setOpts] = useState<ViewOpts>({ notes: true, nodeNo: false, memberNo: false, secNames: false, loads: true, localAxes: false, diagrams: { N: false, T: false, Vy: false, Vz: false, Vres: false, Mz: true, My: false, Mres: false }, stress: 'none', deflected: false, defLabels: 'XYZ', reactions: true, scale: 1, defScale: 1, solid: false });
+  const [opts, setOpts] = useState<ViewOpts>({ notes: true, nodeNo: false, memberNo: false, secNames: false, loads: true, localAxes: false, diagrams: { N: false, T: false, Vy: false, Vz: false, Vres: false, Mz: true, My: false, Mres: false }, stress: 'none', deflected: false, defLabels: 'none', reactions: true, scale: 1, defScale: 1, solid: false });
   const o = <K extends keyof ViewOpts>(k: K) => (v: ViewOpts[K]) => setOpts(p => ({ ...p, [k]: v }));
   const [caseId, setCaseId] = useState(1);
   const [modeIx, setModeIx] = useState<{ kind: 'buckling' | 'modal'; i: number } | null>(null);
@@ -428,7 +428,6 @@ export default function App() {
               </div>
               <div className="panel">
                 <h2 className="panel-title">Diagrams</h2>
-                <NumberField label="Diagram Scale" value={opts.scale} min={0.1} max={20} step={0.25} onChange={o('scale')} />
                 <div className="grid grid-cols-2 gap-x-3 items-start">
                   <div key={DIAGRAM_GROUPS[0].title}>
                     <h3 className="label">{DIAGRAM_GROUPS[0].title}</h3>
@@ -457,6 +456,7 @@ export default function App() {
                     </div>
                   </div>
                 </div>
+                <NumberField label="Diagram Scale" value={opts.scale} min={0.1} max={20} step={0.25} onChange={o('scale')} />
               </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
