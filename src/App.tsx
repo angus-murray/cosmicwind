@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppHeader, Banner, useElementSize, Check, NumberField, ReportDialog, ResultsHeader, SelectField, StatusChip, today } from 'engineering-ui';
-import { Axis3d, Box, Eye, Ruler, FilePlus, FolderOpen, Hash, Maximize, MousePointer2, Redo2, Save, Scissors, Spline, Trash2, Type, Undo2, Weight, Copy, Dot, LineChart, Shapes, Cuboid, Waypoints, StickyNote } from 'lucide-react';
+import { Axis3d, Box, Eye, Ruler, FilePlus, FolderOpen, Hash, Maximize, MousePointer2, Redo2, Save, Scissors, Spline, Trash2, Type, Undo2, Weight, Copy, Dot, LineChart, Shapes, Cuboid, Waypoints, StickyNote, Tag } from 'lucide-react';
 import {
   deleteMembersAndFreeNodes, deleteNodes, DASH, FREE, MATERIAL_PRESETS, nextId, normalise, RELEASES, RESTRAINTS,
   type Combo, type DistLoad, type LoadCase, type Material, type Member, type Model, type Node, type NodeLoad, type NodeMass, type PointLoad, type Section, type Settlement, type Spring, type ThermalLoad,
@@ -8,7 +8,7 @@ import {
 import { defaultModel } from './model/templates';
 import { analyse } from './solver/frame';
 import { Sheet, type Col } from './ui/Sheet';
-import { DIAGRAMS, STRESSES, fmt, Viewer, type StressKey, type Sel, type Tool, type ViewerHandle, type ViewOpts } from './ui/Viewer';
+import { DIAGRAMS, STRESSES, fmt, Viewer, type DiagramKey, type StressKey, type Sel, type Tool, type ViewerHandle, type ViewOpts } from './ui/Viewer';
 import { ResultTables } from './ui/Results';
 import { ContextMenu, PromptBox, TextPromptBox, ToolFlyout, type MenuItem, type MenuState, type PromptState, type TextPromptState } from './ui/CanvasMenu';
 import { About, LoadDialog, SectionDialog, TemplateDialog, type LoadSpec } from './ui/Dialogs';
@@ -18,6 +18,15 @@ type Tab = 'structure' | 'loads' | 'results';
 const STORE = 'moonrock-model';
 const load = (): Model => { try { const s = localStorage.getItem(STORE); if (s) return normalise(JSON.parse(s)); } catch { /* fall through */ } return defaultModel(); };
 const code = (v: string | number, old: string) => { const s = String(v).toUpperCase().trim(); return /^[-–—]?$/.test(s) ? DASH : /^[FR]{6}$/.test(s) ? s : old; };
+/** The member action diagrams, grouped as the Diagrams panel lists them: [key, label]. */
+const DIAGRAM_GROUPS: { title: string; items: [DiagramKey, string][] }[] = [
+  { title: 'Axial Force', items: [['N', 'N']] },
+  { title: 'Torsion', items: [['T', 'T']] },
+  { title: 'Shear', items: [['Vy', 'Vy'], ['Vz', 'Vz'], ['Vres', 'Resultant']] },
+  { title: 'Bending', items: [['Mz', 'Mz'], ['My', 'My'], ['Mres', 'Resultant']] },
+];
+/** A force or moment symbol in italics with an upright subscript, or plain text. */
+const symbol = (t: string) => (/^[NT]$/.test(t) ? <i>{t}</i> : /^[VM][yz]$/.test(t) ? <><i>{t[0]}</i><sub>{t[1]}</sub></> : t);
 const opt = (rows: { id: number; name?: string }[]) => rows.map(r => ({ value: String(r.id), label: r.name ? `${r.id}: ${r.name}` : String(r.id) }));
 const noSel = (): Sel => ({ nodes: new Set(), members: new Set() });
 
@@ -34,7 +43,7 @@ export default function App() {
   const [sub, setSub] = useState({ structure: 'nodes', loads: 'cases' });
   const [sel, setSel] = useState<Sel>(noSel);
   const [tool, setTool] = useState<Tool>('select');
-  const [opts, setOpts] = useState<ViewOpts>({ notes: true, nodeNo: true, memberNo: true, secNames: false, loads: true, localAxes: false, diagrams: { N: false, T: false, Vy: false, Vz: false, Vres: false, Mz: true, My: false, Mres: false }, stress: 'none', deflected: false, reactions: true, values: true, scale: 1, defScale: 1, solid: false });
+  const [opts, setOpts] = useState<ViewOpts>({ notes: true, nodeNo: false, memberNo: false, secNames: false, loads: true, localAxes: false, diagrams: { N: false, T: false, Vy: false, Vz: false, Vres: false, Mz: true, My: false, Mres: false }, stress: 'none', deflected: false, reactions: true, loadValues: true, scale: 1, defScale: 1, solid: false });
   const o = <K extends keyof ViewOpts>(k: K) => (v: ViewOpts[K]) => setOpts(p => ({ ...p, [k]: v }));
   const [caseId, setCaseId] = useState(1);
   const [modeIx, setModeIx] = useState<{ kind: 'buckling' | 'modal'; i: number } | null>(null);
@@ -368,20 +377,24 @@ export default function App() {
                 <h2 className="panel-title">Display</h2>
                 <div className="grid grid-cols-2 gap-2">
                   <SelectField label="Case" value={String(cur?.id ?? '')} onChange={v => { setCaseId(Number(v)); setModeIx(m => (m?.kind === 'buckling' ? null : m)); }} options={cases.map(c => ({ value: String(c.id), label: `${c.id}: ${c.name}` }))} />
-                  <NumberField label="Diagram Scale" value={opts.scale} min={0.1} max={20} step={0.25} onChange={o('scale')} />
                   <NumberField label="Deflection Scale" value={opts.defScale} min={0.1} max={20} step={0.25} onChange={o('defScale')} />
                 </div>
                 <SelectField label="Stress in Rendered View" value={opts.stress} onChange={v => setOpts(q => ({ ...q, stress: v as StressKey, solid: v !== 'none' ? true : q.solid }))} options={STRESSES.map(t => ({ value: t.key, label: t.label }))} />
-                <div className="section">
-                  <h3 className="label mb-1">Diagrams</h3>
-                  <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
-                    {DIAGRAMS.map(d => <Check key={d.key} checked={opts.diagrams[d.key]} onChange={v => o('diagrams')({ ...opts.diagrams, [d.key]: v })}><span className="inline-block w-2 h-2 rounded-sm mr-1.5 align-middle" style={{ background: d.colour }} />{d.label}</Check>)}
-                  </div>
-                </div>
                 <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
                   <Check checked={opts.deflected} onChange={o('deflected')}>Deflected Shape</Check><Check checked={opts.reactions} onChange={o('reactions')}>Reactions</Check>
-                  <Check checked={opts.values} onChange={o('values')}>Values</Check><Check checked={opts.loads} onChange={o('loads')}>Loads</Check>
                 </div>
+              </div>
+              <div className="panel">
+                <h2 className="panel-title">Diagrams</h2>
+                <div className="grid grid-cols-2 gap-2">
+                  <NumberField label="Diagram Scale" value={opts.scale} min={0.1} max={20} step={0.25} onChange={o('scale')} />
+                </div>
+                {DIAGRAM_GROUPS.map(g => <div key={g.title} className="section">
+                  <h3 className="label mb-1">{g.title}</h3>
+                  <div className="grid grid-cols-3 gap-x-2 gap-y-1.5">
+                    {g.items.map(([key, text]) => { const d = DIAGRAMS.find(x => x.key === key)!; return <Check key={key} checked={opts.diagrams[key]} onChange={v => o('diagrams')({ ...opts.diagrams, [key]: v })} title={d.label}><span className="inline-block w-2 h-2 rounded-sm mr-1.5 align-middle" style={{ background: d.colour }} />{symbol(text)}</Check>; })}
+                  </div>
+                </div>)}
               </div>
             </>}
           </div>
@@ -414,7 +427,8 @@ export default function App() {
                 <button className={`tool-btn ${opts.memberNo ? '!text-blue-700' : ''}`} title="Member numbers" onClick={() => o('memberNo')(!opts.memberNo)}><Hash className="w-3.5 h-3.5" />Members</button>
                 <button className={`tool-btn ${opts.secNames ? '!text-blue-700' : ''}`} title="Section names" onClick={() => o('secNames')(!opts.secNames)}><Type className="w-3.5 h-3.5" />Sections</button>
                 <button className={`tool-btn ${opts.localAxes ? '!text-blue-700' : ''}`} title="Member local axes: x red, y green, z blue" onClick={() => o('localAxes')(!opts.localAxes)}><Axis3d className="w-3.5 h-3.5" />Axes</button>
-                {tab !== 'results' && <button className={`tool-btn ${opts.loads ? '!text-blue-700' : ''}`} title="Loads of the case shown" onClick={() => o('loads')(!opts.loads)}><Weight className="w-3.5 h-3.5" />Loads</button>}
+                <button className={`tool-btn ${opts.loads ? '!text-blue-700' : ''}`} title="Loads of the case shown" onClick={() => o('loads')(!opts.loads)}><Weight className="w-3.5 h-3.5" />Loads</button>
+                <button className={`tool-btn ${opts.loads && opts.loadValues ? '!text-blue-700' : ''}`} disabled={!opts.loads} title="Numbers beside the loads" onClick={() => o('loadValues')(!opts.loadValues)}><Tag className="w-3.5 h-3.5" />Values</button>
                 <button className={`tool-btn ${opts.notes ? '!text-blue-700' : ''}`} title="Notes on nodes and members" onClick={() => o('notes')(!opts.notes)}><StickyNote className="w-3.5 h-3.5" />Notes</button>
                 </div>
               </div>

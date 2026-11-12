@@ -55,7 +55,7 @@ export type Tool = 'select' | 'node' | 'member' | 'measure';
 /** Points clicked in empty space lie on the global XY plane (Z = 0), to the nearest millimetre. */
 export interface ViewOpts {
   notes: boolean; nodeNo: boolean; memberNo: boolean; secNames: boolean; loads: boolean; localAxes: boolean;
-  diagrams: Record<DiagramKey, boolean>; stress: StressKey; deflected: boolean; reactions: boolean; values: boolean; scale: number; defScale: number;
+  diagrams: Record<DiagramKey, boolean>; stress: StressKey; deflected: boolean; reactions: boolean; /** Numbers beside the loads. */ loadValues: boolean; scale: number; defScale: number;
   /** Rendered 3D view of the member cross sections instead of the wireframe. */
   solid: boolean;
 }
@@ -520,7 +520,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
       }
       loads.push(<path key={`de${i}`} d={path(tails)} fill="none" stroke={RED} strokeWidth={1} />);
       const lab = Math.abs(l.w1 - l.w2) < 1e-9 ? fmt(l.w1 * f) : `${fmt(l.w1 * f)} to ${fmt(l.w2 * f)}`, mid = tails[Math.floor(n / 2)];
-      if (opts.values) loads.push(text([mid[0] - Math.sign(l.w1 + l.w2 || 1) * d[0] * 8, mid[1] - Math.sign(l.w1 + l.w2 || 1) * d[1] * 8 + 4], `${lab} kN/m`, `dt${i}`, RED));
+      if (opts.loadValues) loads.push(text([mid[0] - Math.sign(l.w1 + l.w2 || 1) * d[0] * 8, mid[1] - Math.sign(l.w1 + l.w2 || 1) * d[1] * 8 + 4], `${lab} kN/m`, `dt${i}`, RED));
     });
     const force = (at: V3, d3: V3, v: number, key: string, unit: string, moment = false) => {
       if (Math.abs(v) < 1e-12) return;
@@ -528,7 +528,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
       const h = moment ? 30 : 16 + 30 * Math.abs(v) / fMax, sg = Math.sign(v), tail: [number, number] = [p[0] - sg * d[0] * h, p[1] - sg * d[1] * h];
       loads.push(arrow(tail, p, RED, key, 1.75));
       if (moment) loads.push(arrow(tail, [p[0] - sg * d[0] * 8, p[1] - sg * d[1] * 8], RED, key + 'm', 1.75)); // double head: moment vector
-      if (opts.values) loads.push(text([tail[0] - sg * d[0] * 8, tail[1] - sg * d[1] * 8 + 4], `${fmt(Math.abs(v))} ${unit}`, key + 't', RED));
+      if (opts.loadValues) loads.push(text([tail[0] - sg * d[0] * 8, tail[1] - sg * d[1] * 8 + 4], `${fmt(Math.abs(v))} ${unit}`, key + 't', RED));
     };
     pl.forEach((l, i) => { const g = gById.get(l.member)!, mom = l.dir.length === 2; force(along(g, l.pos / 100 * g.L), wDir(g, l.axes, l.dir), l.p * fac.get(l.lc)!, `p${i}`, mom ? 'kNm' : 'kN', mom); });
     nls.forEach((l, i) => {
@@ -559,7 +559,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
         const k = `${key}${g.m.id}`;
         diag.push(<path key={`g${k}`} d={`${path([P(g.A), ...top, P(g.B)])}Z`} fill={colour} fillOpacity={res ? 0.08 : 0.14} stroke={colour} strokeWidth={1.25} strokeLinejoin="round" />);
         if (res) { const step = Math.max(1, Math.round(r.x.length / 10)); r.x.forEach((x, i) => { if (i % step === 0 && mag(r, i) > 1e-6 * vmax) { const q = P(along(g, x)); diag.push(<line key={`sp${k}-${i}`} x1={q[0]} y1={q[1]} x2={top[i][0]} y2={top[i][1]} stroke={colour} strokeOpacity={0.45} strokeWidth={1} />); } }); }
-        if (opts.values) {
+        {
           let im = 0; r.x.forEach((_, i) => { if (Math.abs(mag(r, i)) > Math.abs(mag(r, im))) im = i; });
           const lab = new Set([0, r.x.length - 1, im]);
           lab.forEach(i => { const v = mag(r, i); if ((Math.abs(v) > 1e-6 * vmax || i === im) && free(top[i])) diag.push(text([top[i][0], top[i][1] - 4], fmt(v), `gt${k}-${i}`, colour, 'middle', true)); });
@@ -598,7 +598,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
       }
       defl.push(<path key={`f${g.m.id}`} d={path(pts)} fill="none" stroke={PINK} strokeWidth={1.75} strokeLinejoin="round" />);
     }
-    if (opts.values && !mode && result) {
+    if (!mode && result) {
       let worst: [number, number] | null = null; result.disp.forEach((d, id) => { const v = Math.hypot(d[0], d[1], d[2]); if (!worst || v > worst[1]) worst = [id, v]; });
       const w = worst as [number, number] | null, n = w && nodeMap.get(w[0]), d = w && result.disp.get(w[0]);
       if (n && d && w![1] > 0) { const p = P([n.x + d[0] * sc, n.y + d[1] * sc, n.z + d[2] * sc]); defl.push(text([p[0], p[1] - 8], `${fmt(w![1] * 1000)} mm`, 'dmax', PINK, 'middle', true)); }
