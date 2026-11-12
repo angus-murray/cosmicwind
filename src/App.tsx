@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppHeader, Banner, useElementSize, Check, NumberField, ReportDialog, ResultsHeader, SelectField, StatusChip, today } from 'engineering-ui';
-import { Axis3d, Box, Eye, Ruler, FilePlus, FolderOpen, Hash, Maximize, MousePointer2, Redo2, Save, Scissors, Spline, Trash2, Type, Undo2, Weight, Copy, Dot, LineChart, Shapes, Cuboid, Waypoints } from 'lucide-react';
+import { Axis3d, Box, Eye, Ruler, FilePlus, FolderOpen, Hash, Maximize, MousePointer2, Redo2, Save, Scissors, Spline, Trash2, Type, Undo2, Weight, Copy, Dot, LineChart, Shapes, Cuboid, Waypoints, StickyNote } from 'lucide-react';
 import {
   deleteMembersAndFreeNodes, deleteNodes, FREE, MATERIAL_PRESETS, nextId, normalise, RELEASES, RESTRAINTS,
   type Combo, type DistLoad, type LoadCase, type Material, type Member, type Model, type Node, type NodeLoad, type NodeMass, type PointLoad, type Section, type Settlement, type Spring, type ThermalLoad,
@@ -34,7 +34,7 @@ export default function App() {
   const [sub, setSub] = useState({ structure: 'nodes', loads: 'cases' });
   const [sel, setSel] = useState<Sel>(noSel);
   const [tool, setTool] = useState<Tool>('select');
-  const [opts, setOpts] = useState<ViewOpts>({ nodeNo: true, memberNo: true, secNames: false, loads: true, localAxes: false, diagrams: { N: false, T: false, Vy: false, Vz: false, Vres: false, Mz: true, My: false, Mres: false }, stress: 'none', deflected: false, reactions: true, values: true, scale: 1, defScale: 1, plane: 'XY', offset: 0, snap: 0.5, solid: false });
+  const [opts, setOpts] = useState<ViewOpts>({ notes: true, nodeNo: true, memberNo: true, secNames: false, loads: true, localAxes: false, diagrams: { N: false, T: false, Vy: false, Vz: false, Vres: false, Mz: true, My: false, Mres: false }, stress: 'none', deflected: false, reactions: true, values: true, scale: 1, defScale: 1, plane: 'XY', offset: 0, snap: 0.5, solid: false });
   const o = <K extends keyof ViewOpts>(k: K) => (v: ViewOpts[K]) => setOpts(p => ({ ...p, [k]: v }));
   const [caseId, setCaseId] = useState(1);
   const [modeIx, setModeIx] = useState<{ kind: 'buckling' | 'modal'; i: number } | null>(null);
@@ -171,11 +171,11 @@ export default function App() {
     window.addEventListener('pointerdown', away, true); window.addEventListener('wheel', gone, { passive: true });
     return () => { window.removeEventListener('pointerdown', away, true); window.removeEventListener('wheel', gone); };
   }, [ctx, prompt]);
-  const setNote = (kind: 'node' | 'member', ref: number, id: number | undefined, text: string) => setModel(m => {
+  const setNote = (kind: 'node' | 'member', ref: number, id: number | undefined, text: string) => { if (id === undefined && text.trim() !== '') setOpts(q => ({ ...q, notes: true })); setModel(m => {
     if (id !== undefined && text.trim() === '') return { ...m, notes: m.notes.filter(n => n.id !== id) };
     if (text.trim() === '') return m;
     return { ...m, notes: id !== undefined ? m.notes.map(n => (n.id === id ? { ...n, text } : n)) : [...m.notes, { id: nextId(m.notes), kind, ref, text, dx: 22, dy: -22 }] };
-  });
+  }); };
   const menuOf = (): MenuState | null => {
     if (!ctx) return null;
     const edit = tab !== 'results', nodes = [...sel.nodes], mems = [...sel.members], at = { x: ctx.x, y: ctx.y };
@@ -424,6 +424,7 @@ export default function App() {
                 <button className={`tool-btn ${opts.secNames ? '!text-blue-700' : ''}`} title="Section names" onClick={() => o('secNames')(!opts.secNames)}><Type className="w-3.5 h-3.5" />Sections</button>
                 <button className={`tool-btn ${opts.localAxes ? '!text-blue-700' : ''}`} title="Member local axes: x red, y green, z blue" onClick={() => o('localAxes')(!opts.localAxes)}><Axis3d className="w-3.5 h-3.5" />Axes</button>
                 {tab !== 'results' && <button className={`tool-btn ${opts.loads ? '!text-blue-700' : ''}`} title="Loads of the case shown" onClick={() => o('loads')(!opts.loads)}><Weight className="w-3.5 h-3.5" />Loads</button>}
+                <button className={`tool-btn ${opts.notes ? '!text-blue-700' : ''}`} title="Notes on nodes and members" onClick={() => o('notes')(!opts.notes)}><StickyNote className="w-3.5 h-3.5" />Notes</button>
                 </div>
               </div>
             </div>

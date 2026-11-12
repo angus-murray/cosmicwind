@@ -29,7 +29,7 @@ export const DIAGRAMS: { key: DiagramKey; label: string; unit: string; colour: s
 ];
 export type Tool = 'select' | 'node' | 'member' | 'measure';
 export interface ViewOpts {
-  nodeNo: boolean; memberNo: boolean; secNames: boolean; loads: boolean; localAxes: boolean;
+  notes: boolean; nodeNo: boolean; memberNo: boolean; secNames: boolean; loads: boolean; localAxes: boolean;
   diagrams: Record<DiagramKey, boolean>; stress: StressKey; deflected: boolean; reactions: boolean; values: boolean; scale: number; defScale: number;
   plane: 'XY' | 'XZ' | 'YZ'; offset: number; snap: number;
   /** Rendered 3D view of the member cross sections instead of the wireframe. */
@@ -675,7 +675,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
           return text([p[0], p[1] - 5], s, `m${g.m.id}`, sel.members.has(g.m.id) ? BLUE : '#0f172a', 'middle', true);
         })}
         {reacts}
-        {notes.map(n => {
+        {opts.notes && notes.map(n => {
           const q = n.kind === 'node' ? nodeMap.get(n.ref) : null, g = n.kind === 'member' ? geo.find(x => x.m.id === n.ref) : null;
           const a = q ? P([q.x, q.y, q.z]) : g ? P([(g.A[0] + g.B[0]) / 2, (g.A[1] + g.B[1]) / 2, (g.A[2] + g.B[2]) / 2]) : null; if (!a) return null;
           const lines = wrapText(n.text), off = noteOff[n.id] ?? [n.dx, n.dy], w = Math.max(48, Math.min(210, Math.max(...lines.map(l => l.length)) * 6 + 14)), h = lines.length * 14 + 8, x = a[0] + off[0], y = a[1] + off[1] - h;
