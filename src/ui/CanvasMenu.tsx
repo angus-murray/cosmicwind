@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Check, ChevronLeft, ChevronRight } from 'lucide-react';
 
 /** An entry of a right-click menu: an action, an expandable group of actions, or a separator. */
@@ -141,11 +141,20 @@ export const PromptBox: React.FC<{ prompt: PromptState; W: number; H: number; on
   );
 };
 
-/** Toolbar button that opens a group of buttons in a second panel beside the toolbar (on hover or click); choosing one closes it. */
+/** Toolbar button that opens a group of buttons in a second panel beside the toolbar. A click opens it and it stays open, whatever the cursor does,
+ *  until the button is clicked again, a choice is made, or the user clicks elsewhere or presses Esc. */
 export function ToolFlyout({ icon, label, children }: { icon: React.ReactNode; label: string; children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: PointerEvent) => { if (box.current && !box.current.contains(e.target as Node)) setOpen(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('pointerdown', away); document.addEventListener('keydown', esc);
+    return () => { document.removeEventListener('pointerdown', away); document.removeEventListener('keydown', esc); };
+  }, [open]);
   return (
-    <div className="relative" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
+    <div className="relative" ref={box}>
       <button className={`tool-btn ${open ? '!bg-slate-100' : ''}`} onClick={() => setOpen((o) => !o)}>{icon}{label}<ChevronLeft className="w-3 h-3 ml-auto text-slate-400" /></button>
       {open && <div className="absolute right-full top-0 pr-1 z-20"><div className="toolbar w-[100px]" onClick={() => setOpen(false)}>{children}</div></div>}
     </div>
