@@ -34,7 +34,7 @@ export default function App() {
   const [sub, setSub] = useState({ structure: 'nodes', loads: 'cases' });
   const [sel, setSel] = useState<Sel>(noSel);
   const [tool, setTool] = useState<Tool>('select');
-  const [opts, setOpts] = useState<ViewOpts>({ notes: true, nodeNo: true, memberNo: true, secNames: false, loads: true, localAxes: false, diagrams: { N: false, T: false, Vy: false, Vz: false, Vres: false, Mz: true, My: false, Mres: false }, stress: 'none', deflected: false, reactions: true, values: true, scale: 1, defScale: 1, plane: 'XY', offset: 0, snap: 0.5, solid: false });
+  const [opts, setOpts] = useState<ViewOpts>({ notes: true, nodeNo: true, memberNo: true, secNames: false, loads: true, localAxes: false, diagrams: { N: false, T: false, Vy: false, Vz: false, Vres: false, Mz: true, My: false, Mres: false }, stress: 'none', deflected: false, reactions: true, values: true, scale: 1, defScale: 1, solid: false });
   const o = <K extends keyof ViewOpts>(k: K) => (v: ViewOpts[K]) => setOpts(p => ({ ...p, [k]: v }));
   const [caseId, setCaseId] = useState(1);
   const [modeIx, setModeIx] = useState<{ kind: 'buckling' | 'modal'; i: number } | null>(null);
@@ -329,14 +329,6 @@ export default function App() {
                 <h2 className="panel-title">Load Case</h2>
                 <SelectField label="Case Shown" value={String(cur?.id ?? '')} onChange={v => setCaseId(Number(v))} options={cases.map(c => ({ value: String(c.id), label: `${c.id}: ${c.name}` }))} />
               </div>
-              <div className="panel">
-                <h2 className="panel-title">Working Plane</h2>
-                <div className="grid grid-cols-3 gap-2">
-                  <SelectField label="Plane" value={opts.plane} onChange={v => o('plane')(v as ViewOpts['plane'])} options={[{ value: 'XY', label: 'XY' }, { value: 'XZ', label: 'XZ' }, { value: 'YZ', label: 'YZ' }]} />
-                  <NumberField label={`${{ XY: 'Z', XZ: 'Y', YZ: 'X' }[opts.plane]} (m)`} value={opts.offset} step={0.5} onChange={o('offset')} />
-                  <NumberField label="Snap (m)" value={opts.snap} min={0} step={0.1} onChange={o('snap')} />
-                </div>
-              </div>
             </>}
             {tab === 'structure' && (nSel > 0 || mSel > 0) && <div className="panel">
               <h2 className="panel-title">Selection: {[nSel && `${nSel} Node${nSel > 1 ? 's' : ''}`, mSel && `${mSel} Member${mSel > 1 ? 's' : ''}`].filter(Boolean).join(', ')}</h2>
@@ -404,7 +396,7 @@ export default function App() {
               {prompt && <PromptBox prompt={prompt} W={cvSize.width} H={cvSize.height} onClose={() => setPrompt(null)} />}
               {tab !== 'results' && <div className="absolute top-2 left-2 toolbar w-[104px]">
                   <button className={`tool-btn ${tool === 'select' ? 'tool-btn-active' : ''}`} onClick={() => setTool('select')}><MousePointer2 className="w-3.5 h-3.5" />Select</button>
-                  <button className={`tool-btn ${tool === 'node' ? 'tool-btn-active' : ''}`} title="Click on the working plane to add nodes" onClick={() => setTool('node')}><Dot className="w-3.5 h-3.5" />Node</button>
+                  <button className={`tool-btn ${tool === 'node' ? 'tool-btn-active' : ''}`} title="Click to add nodes on the XY plane (Z = 0), snapped to 0.5 m" onClick={() => setTool('node')}><Dot className="w-3.5 h-3.5" />Node</button>
                   <button className={`tool-btn ${tool === 'member' ? 'tool-btn-active' : ''}`} title="Click node to node to add members; Escape ends the chain" onClick={() => setTool('member')}><Spline className="w-3.5 h-3.5" />Member</button>
                   <button className={`tool-btn ${tool === 'measure' ? 'tool-btn-active' : ''}`} title="Click two points to measure the distance; nodes snap, Esc clears" onClick={() => setTool('measure')}><Ruler className="w-3.5 h-3.5" />Measure</button>
                   <button className="tool-btn" disabled={!nSel && !mSel} onClick={delSel}><Trash2 className="w-3.5 h-3.5" />Delete</button>

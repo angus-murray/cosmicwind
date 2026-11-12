@@ -28,10 +28,11 @@ export const DIAGRAMS: { key: DiagramKey; label: string; unit: string; colour: s
   { key: 'Mres', label: 'Moment Resultant', unit: 'kNm', colour: '#be123c' },
 ];
 export type Tool = 'select' | 'node' | 'member' | 'measure';
+/** Points drawn with the mouse lie on the global XY plane (Z = 0) and snap to this grid spacing (m). */
+const SNAP = 0.5;
 export interface ViewOpts {
   notes: boolean; nodeNo: boolean; memberNo: boolean; secNames: boolean; loads: boolean; localAxes: boolean;
   diagrams: Record<DiagramKey, boolean>; stress: StressKey; deflected: boolean; reactions: boolean; values: boolean; scale: number; defScale: number;
-  plane: 'XY' | 'XZ' | 'YZ'; offset: number; snap: number;
   /** Rendered 3D view of the member cross sections instead of the wireframe. */
   solid: boolean;
 }
@@ -169,19 +170,19 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   const local = (e: { clientX: number; clientY: number }): [number, number] => { const r = svgRef.current!.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
   const onPlane = (sx: number, sy: number, snapIt = true): V3 | null => {
     const X = (sx - W / 2 - cam.px) / cam.zoom, Y = -(sy - H / 2 - cam.py) / cam.zoom;
-    const [i, j, k] = opts.plane === 'XY' ? [0, 1, 2] : opts.plane === 'XZ' ? [0, 2, 1] : [1, 2, 0];
+    const [i, j, k] = [0, 1, 2];
     const { rx, ry } = basis, a = rx[i], b = rx[j], c = ry[i], d = ry[j], det = a * d - b * c;
     if (Math.abs(det) < 0.05) return null;
-    const C = cam.c, ex = X - rx[k] * (opts.offset - C[k]), ey = Y - ry[k] * (opts.offset - C[k]), p: V3 = [0, 0, 0], s = snapIt && opts.snap > 0 ? opts.snap : 0;
+    const C = cam.c, ex = X - rx[k] * (0 - C[k]), ey = Y - ry[k] * (0 - C[k]), p: V3 = [0, 0, 0], s = snapIt ? SNAP : 0;
     const snap = (v: number) => (s ? Math.round(v / s) * s : v);
-    p[i] = snap((ex * d - b * ey) / det + C[i]); p[j] = snap((a * ey - c * ex) / det + C[j]); p[k] = opts.offset;
+    p[i] = snap((ex * d - b * ey) / det + C[i]); p[j] = snap((a * ey - c * ex) / det + C[j]); p[k] = 0;
     return p.map(v => Math.round(v * 1e6) / 1e6) as V3;
   };
   /** The end point of the member being drawn: the pointer on the working plane, pulled onto a global axis through the start when within 8 degrees of it
    *  (as in Space Gass), or held on an axis typed with X, Y or Z. */
   const drawTarget = (lx: number, ly: number): { pt: V3; axis: number | null } | null => {
     const n = chain !== null ? nodeMap.get(chain) : null; if (!n) return null;
-    const st: V3 = [n.x, n.y, n.z], s = opts.snap > 0 ? opts.snap : 0, sn = (v: number) => (s ? Math.round(v / s) * s : v), r6 = (v: V3) => v.map(x => Math.round(x * 1e6) / 1e6) as V3;
+    const st: V3 = [n.x, n.y, n.z], s = SNAP, sn =(v: number) => (s ? Math.round(v / s) * s : v), r6 = (v: V3) => v.map(x => Math.round(x * 1e6) / 1e6) as V3;
     if (lock !== null) {
       const e: V3 = [0, 0, 0]; e[lock] = 1;
       const o = P(st), t = P([st[0] + e[0], st[1] + e[1], st[2] + e[2]]), vx = t[0] - o[0], vy = t[1] - o[1], vv = vx * vx + vy * vy; if (vv < 1e-6) return null;
@@ -189,8 +190,8 @@ export const Viewer = React.forwardRef<ViewerHandle, {
       return { pt: r6(pt), axis: lock };
     }
     const raw = onPlane(lx, ly, false); if (!raw) return null;
-    const [i, j, k] = opts.plane === 'XY' ? [0, 1, 2] : opts.plane === 'XZ' ? [0, 2, 1] : [1, 2, 0];
-    const di = raw[i] - st[i], dj = raw[j] - st[j], tol = Math.tan(8 * Math.PI / 180), pt: V3 = [0, 0, 0]; pt[k] = opts.offset;
+    const [i, j, k] = [0, 1, 2];
+    const di = raw[i] - st[i], dj = raw[j] - st[j], tol = Math.tan(8 * Math.PI / 180), pt: V3 = [0, 0, 0]; pt[k] = 0;
     let axis: number | null = null;
     if (Math.abs(dj) < tol * Math.abs(di)) { axis = i; pt[i] = sn(raw[i]); pt[j] = st[j]; }
     else if (Math.abs(di) < tol * Math.abs(dj)) { axis = j; pt[j] = sn(raw[j]); pt[i] = st[i]; }
@@ -218,7 +219,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
       setTip(nr ? { x: lx, y: ly, dot: nr.c.top[nr.i], colour: DIAGRAMS.find(d => d.key === nr.c.key)!.colour, lines: [`Member ${nr.c.id}, x = ${nr.c.xs[nr.i].toFixed(3)} m (${(100 * nr.c.xs[nr.i] / nr.c.L).toFixed(0)}%)`, ...nr.c.lines(nr.i)] } : stressTip);
       if (tool !== 'select' || pick) {
         const nn = hn !== null ? nodeMap.get(hn) : null, mid = !nn ? midAt(lx, ly) : null, drawing = tool === 'member' && chain !== null, dt = drawing && !nn && !mid ? drawTarget(lx, ly) : null;
-        const pt: V3 | null = nn ? [nn.x, nn.y, nn.z] : mid ? mid.pt : dt ? dt.pt : opts.snap > 0 ? onPlane(lx, ly) : null, at = pt ? P(pt) : null;
+        const pt: V3 | null = nn ? [nn.x, nn.y, nn.z] : mid ? mid.pt : dt ? dt.pt : onPlane(lx, ly), at = pt ? P(pt) : null;
         setSnapAt(at); setSnapMid(!!mid);
         if (drawing) {
           setCursor(at ?? [lx, ly]);
@@ -597,19 +598,6 @@ export const Viewer = React.forwardRef<ViewerHandle, {
     });
   }
 
-  // ---- Working plane grid (while drawing)
-  const grid: React.ReactNode[] = [];
-  if (tool !== 'select') {
-    const [i, j, k] = opts.plane === 'XY' ? [0, 1, 2] : opts.plane === 'XZ' ? [0, 2, 1] : [1, 2, 0];
-    let step = opts.snap > 0 ? opts.snap : 1; const pad = Math.max(2 * step, 0.25 * bounds.S);
-    const lo = [bounds.lo[i] - pad, bounds.lo[j] - pad], hi = [bounds.hi[i] + pad, bounds.hi[j] + pad];
-    while ((hi[0] - lo[0]) / step > 40 || (hi[1] - lo[1]) / step > 40) step *= 2;
-    const pt = (a: number, b: number) => { const p: V3 = [0, 0, 0]; p[i] = a; p[j] = b; p[k] = opts.offset; return P(p); };
-    const a0 = Math.floor(lo[0] / step) * step, a1 = Math.ceil(hi[0] / step) * step, b0 = Math.floor(lo[1] / step) * step, b1 = Math.ceil(hi[1] / step) * step;
-    for (let a = a0; a <= a1 + 1e-9; a += step) { const p = pt(a, b0), q = pt(a, b1); grid.push(<line key={`ga${a}`} x1={p[0]} y1={p[1]} x2={q[0]} y2={q[1]} stroke="#e2e8f0" strokeWidth={1} />); }
-    for (let b = b0; b <= b1 + 1e-9; b += step) { const p = pt(a0, b), q = pt(a1, b); grid.push(<line key={`gb${b}`} x1={p[0]} y1={p[1]} x2={q[0]} y2={q[1]} stroke="#e2e8f0" strokeWidth={1} />); }
-  }
-
   const memSec = new Map(model.members.map(m => [m.id, m.sec]));
   const legend = [...new Set(model.members.map(m => m.sec))].sort((a, b) => a - b);
   const springNodes = new Set(model.springs.filter(s => s.k.some(v => v > 0)).map(s => s.node));
@@ -621,7 +609,6 @@ export const Viewer = React.forwardRef<ViewerHandle, {
       <svg ref={svgRef} width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="block touch-none select-none" style={{ cursor: tool === 'select' && !pick ? 'default' : snapAt ? 'none' : 'crosshair' }}
         onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerLeave={() => { setHover({ n: null, m: null }); setSnapAt(null); setTip(null); }} onMouseDown={e => { if (e.button === 1) e.preventDefault(); }} onContextMenu={e => e.preventDefault()}>
         <rect width={W} height={H} fill="#f8fafc" />
-        {grid}
         {geo.map(g => {
           const p = P(g.A), q = P(g.B), on = sel.members.has(g.m.id), off = result?.members.get(g.m.id)?.active === false;
           const base = rgb(sectionColour(g.m.sec)), col = toHex(faded ? mixRgb(base, [148, 163, 184], 0.55) : base);
