@@ -1,3 +1,4 @@
+import { G0 } from '../solver/frame';
 import { useState } from 'react';
 import { CollapsePanel, Formula, Modal, NumberField, Segmented, SelectField } from 'engineering-ui';
 import { LIB_GROUPS, LIBRARY, SHAPES, shapeName, shapeProps, type Outline, type Props, type Shape } from '../model/sections';
@@ -77,6 +78,9 @@ export function About({ onClose }: { onClose: () => void }) {
         <P>Restraint codes have six characters for DX, DY, DZ, RX, RY and RZ: F is fixed and R is released. Member end releases use the same form
           for the three local forces and three local moments at each end. Loads are positive in the positive axis direction, so a downward load is
           negative in Y. Moments follow the right-hand rule and are drawn as double-headed arrows.</P>
+        <P>The Gravity columns of a load case are multipliers of <i>g</i>, where <i>g</i> = {G0} m/s², the standard gravitational acceleration. The self-weight
+          of a member is its density times its cross-sectional area times <i>g</i>, applied along its length, and node masses and member masses for vibration
+          modes are in tonnes.</P>
       </CollapsePanel>
       <CollapsePanel title="Analysis Method">
         <P>Each member is a prismatic Euler-Bernoulli beam-column element with twelve degrees of freedom: axial, torsion and bending about both

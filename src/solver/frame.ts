@@ -6,7 +6,8 @@
 import { releaseCode, restraintCode, type Member, type Model } from '../model/types';
 import { Skyline, subspace } from './linalg';
 
-const G0 = 9.80665;
+/** Standard gravitational acceleration (m/s²). */
+export const G0 = 9.80665;
 const DOF = ['DX', 'DY', 'DZ', 'RX', 'RY', 'RZ'];
 export type Vec6 = number[];
 
