@@ -396,7 +396,7 @@ export default function App() {
               {prompt && <PromptBox prompt={prompt} W={cvSize.width} H={cvSize.height} onClose={() => setPrompt(null)} />}
               {tab !== 'results' && <div className="absolute top-2 left-2 toolbar w-[104px]">
                   <button className={`tool-btn ${tool === 'select' ? 'tool-btn-active' : ''}`} onClick={() => setTool('select')}><MousePointer2 className="w-3.5 h-3.5" />Select</button>
-                  <button className={`tool-btn ${tool === 'node' ? 'tool-btn-active' : ''}`} title="Click to add nodes on the XY plane (Z = 0), snapped to 0.5 m" onClick={() => setTool('node')}><Dot className="w-3.5 h-3.5" />Node</button>
+                  <button className={`tool-btn ${tool === 'node' ? 'tool-btn-active' : ''}`} title="Click to add nodes on the XY plane (Z = 0); nodes and member midpoints snap" onClick={() => setTool('node')}><Dot className="w-3.5 h-3.5" />Node</button>
                   <button className={`tool-btn ${tool === 'member' ? 'tool-btn-active' : ''}`} title="Click node to node to add members; Escape ends the chain" onClick={() => setTool('member')}><Spline className="w-3.5 h-3.5" />Member</button>
                   <button className={`tool-btn ${tool === 'measure' ? 'tool-btn-active' : ''}`} title="Click two points to measure the distance; nodes snap, Esc clears" onClick={() => setTool('measure')}><Ruler className="w-3.5 h-3.5" />Measure</button>
                   <button className="tool-btn" disabled={!nSel && !mSel} onClick={delSel}><Trash2 className="w-3.5 h-3.5" />Delete</button>

@@ -13,7 +13,7 @@ window and is solved on the user's computer; nothing is sent to a server.
 - Linear static analysis, second-order (P-Δ) analysis, tension-only and compression-only members, elastic critical
   buckling and natural frequencies.
 - Graphics: wireframe or rendered 3D view of the member cross sections; left-drag rotate, two-click selection box,
-  middle-drag or scroll zoom, right-drag pan and right-click menus for nodes and members; draw nodes and members on the XY plane with a 0.5 m snap;
+  middle-drag or scroll zoom, right-drag pan and right-click menus for nodes and members; draw nodes and members on the XY plane, snapping to nodes and member midpoints;
   loads, reactions, deflected shape, action diagrams (several at once, with resultants) and mode shapes; normal stress coloured on the rendered members.
 - Results tables, diagrams along a member, PDF report, model saved to and opened from a JSON file, undo and redo.
 - Templates: portal frame, multi-storey frame, truss, continuous beam.

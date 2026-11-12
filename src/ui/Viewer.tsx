@@ -28,8 +28,7 @@ export const DIAGRAMS: { key: DiagramKey; label: string; unit: string; colour: s
   { key: 'Mres', label: 'Moment Resultant', unit: 'kNm', colour: '#be123c' },
 ];
 export type Tool = 'select' | 'node' | 'member' | 'measure';
-/** Points drawn with the mouse lie on the global XY plane (Z = 0) and snap to this grid spacing (m). */
-const SNAP = 0.5;
+/** Points clicked in empty space lie on the global XY plane (Z = 0), to the nearest millimetre. */
 export interface ViewOpts {
   notes: boolean; nodeNo: boolean; memberNo: boolean; secNames: boolean; loads: boolean; localAxes: boolean;
   diagrams: Record<DiagramKey, boolean>; stress: StressKey; deflected: boolean; reactions: boolean; values: boolean; scale: number; defScale: number;
@@ -153,7 +152,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   const dirRef = useRef<V3 | null>(null);
   const keyRef = useRef({ tool, chain: null as number | null, lenText: '', lock: null as number | null });
   const commitRef = useRef<() => void>(() => undefined);
-  /** Where the drawing cursor lands (screen pixels) when a node or the snap grid captures it. */
+  /** Where the drawing cursor lands (screen pixels) when a node, member midpoint or axis direction captures it. */
   const [snapAt, setSnapAt] = useState<[number, number] | null>(null);
   const [snapMid, setSnapMid] = useState(false);
   /** A call-out being dragged: its note, the box offset it started from and the pointer position. */
@@ -168,35 +167,34 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   /** First corner of a selection box that is waiting for its second click. */
   const anchor = useRef<[number, number] | null>(null);
   const local = (e: { clientX: number; clientY: number }): [number, number] => { const r = svgRef.current!.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
-  const onPlane = (sx: number, sy: number, snapIt = true): V3 | null => {
+  const onPlane = (sx: number, sy: number): V3 | null => {
     const X = (sx - W / 2 - cam.px) / cam.zoom, Y = -(sy - H / 2 - cam.py) / cam.zoom;
     const [i, j, k] = [0, 1, 2];
     const { rx, ry } = basis, a = rx[i], b = rx[j], c = ry[i], d = ry[j], det = a * d - b * c;
     if (Math.abs(det) < 0.05) return null;
-    const C = cam.c, ex = X - rx[k] * (0 - C[k]), ey = Y - ry[k] * (0 - C[k]), p: V3 = [0, 0, 0], s = snapIt ? SNAP : 0;
-    const snap = (v: number) => (s ? Math.round(v / s) * s : v);
-    p[i] = snap((ex * d - b * ey) / det + C[i]); p[j] = snap((a * ey - c * ex) / det + C[j]); p[k] = 0;
-    return p.map(v => Math.round(v * 1e6) / 1e6) as V3;
+    const C = cam.c, ex = X - rx[k] * (0 - C[k]), ey = Y - ry[k] * (0 - C[k]), p: V3 = [0, 0, 0];
+    p[i] = (ex * d - b * ey) / det + C[i]; p[j] = (a * ey - c * ex) / det + C[j]; p[k] = 0;
+    return p.map(v => Math.round(v * 1e3) / 1e3) as V3;
   };
   /** The end point of the member being drawn: the pointer on the working plane, pulled onto a global axis through the start when within 8 degrees of it
    *  (as in Space Gass), or held on an axis typed with X, Y or Z. */
   const drawTarget = (lx: number, ly: number): { pt: V3; axis: number | null } | null => {
     const n = chain !== null ? nodeMap.get(chain) : null; if (!n) return null;
-    const st: V3 = [n.x, n.y, n.z], s = SNAP, sn =(v: number) => (s ? Math.round(v / s) * s : v), r6 = (v: V3) => v.map(x => Math.round(x * 1e6) / 1e6) as V3;
+    const st: V3 = [n.x, n.y, n.z], r3 = (v: V3) => v.map(x => Math.round(x * 1e3) / 1e3) as V3;
     if (lock !== null) {
       const e: V3 = [0, 0, 0]; e[lock] = 1;
       const o = P(st), t = P([st[0] + e[0], st[1] + e[1], st[2] + e[2]]), vx = t[0] - o[0], vy = t[1] - o[1], vv = vx * vx + vy * vy; if (vv < 1e-6) return null;
-      const pt: V3 = [...st]; pt[lock] = sn(st[lock] + ((lx - o[0]) * vx + (ly - o[1]) * vy) / vv);
-      return { pt: r6(pt), axis: lock };
+      const pt: V3 = [...st]; pt[lock] = st[lock] + ((lx - o[0]) * vx + (ly - o[1]) * vy) / vv;
+      return { pt: r3(pt), axis: lock };
     }
-    const raw = onPlane(lx, ly, false); if (!raw) return null;
+    const raw = onPlane(lx, ly); if (!raw) return null;
     const [i, j, k] = [0, 1, 2];
     const di = raw[i] - st[i], dj = raw[j] - st[j], tol = Math.tan(8 * Math.PI / 180), pt: V3 = [0, 0, 0]; pt[k] = 0;
     let axis: number | null = null;
-    if (Math.abs(dj) < tol * Math.abs(di)) { axis = i; pt[i] = sn(raw[i]); pt[j] = st[j]; }
-    else if (Math.abs(di) < tol * Math.abs(dj)) { axis = j; pt[j] = sn(raw[j]); pt[i] = st[i]; }
-    else { pt[i] = sn(raw[i]); pt[j] = sn(raw[j]); }
-    return { pt: r6(pt), axis };
+    if (Math.abs(dj) < tol * Math.abs(di)) { axis = i; pt[i] = raw[i]; pt[j] = st[j]; }
+    else if (Math.abs(di) < tol * Math.abs(dj)) { axis = j; pt[j] = raw[j]; pt[i] = st[i]; }
+    else { pt[i] = raw[i]; pt[j] = raw[j]; }
+    return { pt: r3(pt), axis };
   };
   const down = (e: React.PointerEvent) => {
     (e.target as Element).setPointerCapture?.(e.pointerId);
@@ -220,7 +218,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
       if (tool !== 'select' || pick) {
         const nn = hn !== null ? nodeMap.get(hn) : null, mid = !nn ? midAt(lx, ly) : null, drawing = tool === 'member' && chain !== null, dt = drawing && !nn && !mid ? drawTarget(lx, ly) : null;
         const pt: V3 | null = nn ? [nn.x, nn.y, nn.z] : mid ? mid.pt : dt ? dt.pt : onPlane(lx, ly), at = pt ? P(pt) : null;
-        setSnapAt(at); setSnapMid(!!mid);
+        setSnapAt(nn || mid || dt ? at : null); setSnapMid(!!mid);
         if (drawing) {
           setCursor(at ?? [lx, ly]);
           const c = nodeMap.get(chain!); // direction and length so far, kept for a typed length
