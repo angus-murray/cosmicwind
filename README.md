@@ -16,7 +16,7 @@ window and is solved on the user's computer; nothing is sent to a server.
   scroll zoom, middle-drag to scale the deflected shape (or zoom when none is shown), right-drag pan and right-click menus for nodes and members; draw nodes and members on the XY plane, snapping to nodes and member midpoints;
   loads, reactions, deflected shape, action diagrams (several at once, with resultants) and mode shapes; normal stress coloured on the rendered members.
 - Diagrams along a member, buckling and vibration mode lists, PDF report, model saved to and opened from a JSON file, undo and redo.
-- Templates: portal frame, multi-storey frame, truss, continuous beam.
+- Starts with an example portal frame; New creates a blank model.
 
 Not included: plates and shells, cables, member offsets, master-slave constraints, moving loads, response spectrum
 analysis and member design to a standard.

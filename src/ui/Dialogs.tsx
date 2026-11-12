@@ -2,30 +2,8 @@ import { G0 } from '../solver/frame';
 import { Children, useState } from 'react';
 import { CollapsePanel, Formula, Modal, NumberField, Segmented, SelectField } from 'engineering-ui';
 import { LIB_GROUPS, LIBRARY, SHAPES, shapeName, shapeProps, type Outline, type Props, type Shape } from '../model/sections';
-import { TEMPLATES } from '../model/templates';
 import { sym } from './Sym';
-import type { Axes, Dir, Model, PointDir } from '../model/types';
-
-export function TemplateDialog({ onClose, onCreate }: { onClose: () => void; onCreate: (m: Model) => void }) {
-  const [key, setKey] = useState(TEMPLATES[0].key);
-  const t = TEMPLATES.find(x => x.key === key)!;
-  const [vals, setVals] = useState<Record<string, number>>({});
-  const p = Object.fromEntries(t.params.map(q => [q.key, vals[`${key}.${q.key}`] ?? q.value]));
-  return (
-    <Modal title="New Model" onClose={onClose} variant="dialog">
-      <div className="space-y-3">
-        <SelectField label="Template" value={key} onChange={setKey} options={TEMPLATES.map(x => ({ value: x.key, label: x.label }))} />
-        <div className="grid grid-cols-2 gap-2">
-          {t.params.map(q => <NumberField key={q.key} label={q.label} value={p[q.key]} min={q.min} step={q.step ?? 1} onChange={v => setVals({ ...vals, [`${key}.${q.key}`]: v })} />)}
-        </div>
-        <div className="flex justify-between gap-2 pt-1">
-          <button className="btn" onClick={() => { const m = t.build(p); onCreate({ ...m, title: 'Untitled', nodes: [], members: [], nodeLoads: [], distLoads: [], pointLoads: [] }); }}>Blank Model</button>
-          <div className="flex gap-2"><button className="btn" onClick={onClose}>Cancel</button><button className="btn-primary" onClick={() => onCreate(t.build(p))}>Create</button></div>
-        </div>
-      </div>
-    </Modal>
-  );
-}
+import type { Axes, Dir, PointDir } from '../model/types';
 
 const sci = (v: number) => (v >= 1e6 ? `${(v / 1e6).toPrecision(4)} × 10⁶` : v.toPrecision(4));
 export function SectionDialog({ onClose, onAdd, assign, replace }: { onClose: () => void; onAdd: (name: string, p: Props, outline: Outline) => void; assign: number; /** Section number whose type is being changed. */ replace?: number }) {

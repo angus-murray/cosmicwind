@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppHeader, Banner, Segmented, useElementSize, Check, NumberField, ReportDialog, SelectField, StatusChip, today } from 'engineering-ui';
 import { Axis3d, Box, Eye, Ruler, FilePlus, FolderOpen, Hash, Maximize, MousePointer2, Redo2, Save, Spline, Trash2, Type, Undo2, Weight, Dot, LineChart, Shapes, Cuboid, Waypoints, StickyNote, Anchor, Unlink, Crosshair } from 'lucide-react';
 import {
-  deleteMembersAndFreeNodes, deleteNodes, DASH, FREE, MATERIAL_PRESETS, nextId, normalise, RELEASES, RESTRAINTS,
+  deleteMembersAndFreeNodes, deleteNodes, DASH, emptyModel, FREE, MATERIAL_PRESETS, nextId, normalise, RELEASES, RESTRAINTS,
   type Combo, type DistLoad, type LoadCase, type Material, type Member, type Model, type Node, type NodeLoad, type NodeMass, type PointLoad, type Section, type Settlement, type ThermalLoad,
 } from './model/types';
 import { defaultModel } from './model/templates';
@@ -11,7 +11,7 @@ import { type DofSpec } from './ui/DofEditor';
 import { Sheet, type Col } from './ui/Sheet';
 import { DIAGRAMS, STRESSES, Viewer, type DiagramKey, type StressKey, type Sel, type Tool, type ViewerHandle, type ViewOpts } from './ui/Viewer';
 import { ContextMenu, PromptBox, TextPromptBox, ToolFlyout, type MenuItem, type MenuState, type PromptState, type TextPromptState } from './ui/CanvasMenu';
-import { About, LoadDialog, SectionDialog, TemplateDialog, type LoadSpec } from './ui/Dialogs';
+import { About, LoadDialog, SectionDialog, type LoadSpec } from './ui/Dialogs';
 import type { ReportInfo } from './report';
 
 type Tab = 'structure' | 'loads' | 'results';
@@ -95,6 +95,8 @@ export default function App() {
     const last = m.members[m.members.length - 1];
     return { ...m, members: [...m.members, { id: nextId(m.members), a, b, sec: m.sections.some(s => s.id === drawSec) ? drawSec! : last?.sec ?? m.sections[0].id, mat: m.materials.some(s => s.id === drawMat) ? drawMat! : last?.mat ?? m.materials[0]?.id ?? 1, angle: 0, type: 'N', relA: DASH, relB: DASH }] };
   });
+  /** A blank model: no nodes or members, steel, and a dead load case. Undo brings the previous model back. */
+  const newModel = () => { setModel(() => emptyModel()); setFitRev(r => r + 1); setSel(noSel()); setCaseId(1); setModeIx(null); setDialog(null); setTab('structure'); };
   const delSel = useCallback(() => { setModel(m => deleteNodes(deleteMembersAndFreeNodes(m, sel.members), sel.nodes)); setSel(noSel()); }, [sel, setModel]);
   const patchMembers = (p: Partial<Member>) => setModel(m => ({ ...m, members: m.members.map(x => (sel.members.has(x.id) ? { ...x, ...p } : x)) }));
   const patchNodes = (p: Partial<Node>) => setModel(m => ({ ...m, nodes: m.nodes.map(x => (sel.nodes.has(x.id) ? { ...x, ...p } : x)) }));
@@ -342,7 +344,7 @@ export default function App() {
         actions={<div className="flex items-center gap-1">
           <button className="btn !px-2" title="Undo (Ctrl+Z)" disabled={!hist.past.length} onClick={undo}><Undo2 className="w-3.5 h-3.5" /></button>
           <button className="btn !px-2" title="Redo (Ctrl+Y)" disabled={!hist.future.length} onClick={redo}><Redo2 className="w-3.5 h-3.5" /></button>
-          <button className="btn" title="New model from a template" onClick={() => setDialog('new')}><FilePlus className="w-3.5 h-3.5" /><span className="hidden md:inline">New</span></button>
+          <button className="btn" title="New blank model" onClick={newModel}><FilePlus className="w-3.5 h-3.5" /><span className="hidden md:inline">New</span></button>
           <button className="btn" title="Open a model file" onClick={() => fileRef.current?.click()}><FolderOpen className="w-3.5 h-3.5" /><span className="hidden md:inline">Open</span></button>
           <button className="btn" title="Save the model to a file" onClick={save}><Save className="w-3.5 h-3.5" /><span className="hidden md:inline">Save</span></button>
           <input ref={fileRef} type="file" accept=".json,application/json" className="hidden" onChange={e => { open(e.target.files?.[0]); e.target.value = ''; }} />
@@ -533,7 +535,6 @@ export default function App() {
         </div>
       </main>
       {dialog === 'about' && <About onClose={() => setDialog(null)} />}
-      {dialog === 'new' && <TemplateDialog onClose={() => setDialog(null)} onCreate={m => { setModel(() => m); setFitRev(r => r + 1); setSel(noSel()); setCaseId(1); setModeIx(null); setDialog(null); setTab('structure'); }} />}
       {dialog === 'load' && <LoadDialog kind={loadKind} count={loadKind === 'node' ? sel.nodes.size : sel.members.size} cases={model.loadCases} lc0={lcOnly} onClose={() => setDialog(null)} onApply={applyLoad} />}
       {dialog === 'section' && <SectionDialog replace={replaceSec ?? undefined} assign={assignOnAdd ? mSel : 0} onClose={() => { setDialog(null); setAssignDraw(false); }} onAdd={(name, p, outline) => {
         if (replaceSec !== null) { // the section keeps its number; only its type and properties change
