@@ -406,9 +406,6 @@ export default function App() {
                 {tab !== 'results' && <button className={`tool-btn ${opts.loads ? '!text-blue-700' : ''}`} title="Loads of the case shown" onClick={() => o('loads')(!opts.loads)}><Weight className="w-3.5 h-3.5" />Loads</button>}
                 </div>
               </div>
-              <div className="absolute bottom-2 right-3 max-w-[70%] text-right text-[11px] text-slate-500 pointer-events-none">
-                {pickMove ? `Click the point to ${pickMove.repeat ? 'copy' : 'move'} to (nodes snap); right-click or Esc to finish` : tool === 'select' ? 'Drag to rotate · click twice on empty space to box-select · middle-drag or scroll to zoom · right-drag to pan · right-click for options' : tool === 'node' ? 'Click on the working plane to place nodes' : tool === 'measure' ? 'Click two points to measure (nodes snap, others lie on the working plane); right-click or Esc clears' : 'Click a node or the working plane to start and continue members; Escape to finish'}
-              </div>
             </div>
           </div>
 
