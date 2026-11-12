@@ -55,7 +55,7 @@ export async function makeReport(model: Model, an: Analysis, info: ReportInfo, s
   table(['Material', 'Name', 'E (MPa)', 'G (MPa)', 'Density (kg/m3)'], model.materials.map(s => [s.id, s.name, s.E, s.G, s.rho]));
   heading('Load Cases and Combinations');
   table(['Case', 'Name', 'Definition'], [
-    ...model.loadCases.map(c => [c.id, c.name, c.gx || c.gy || c.gz ? `Self-weight factors (${c.gx}, ${c.gy}, ${c.gz})` : 'Applied loads']),
+    ...model.loadCases.map(c => [c.id, c.name, c.gx || c.gy || c.gz ? `Gravity factors (${c.gx}, ${c.gy}, ${c.gz})` : 'Applied loads']),
     ...model.combos.map(c => [c.id, c.name, Object.entries(c.f).filter(e => e[1]).map(([k, v]) => `${v} x Case ${k}`).join(' + ')]),
   ]);
   for (const c of an.cases) {

@@ -15,7 +15,7 @@ export interface Member {
   /** End releases at A and B: six characters, F or R, for the local x y z forces and x y z moments. */
   relA: string; relB: string;
 }
-export interface LoadCase { id: number; name: string; /** Self-weight multipliers of g in global X, Y, Z. */ gx: number; gy: number; gz: number }
+export interface LoadCase { id: number; name: string; /** Gravity load as multipliers of g in global X, Y, Z (self-weight of the members). */ gx: number; gy: number; gz: number }
 export interface Combo { id: number; name: string; /** Load case id → factor. */ f: Record<number, number> }
 export interface NodeLoad { lc: number; node: number; fx: number; fy: number; fz: number; mx: number; my: number; mz: number }
 export type Axes = 'G' | 'L';

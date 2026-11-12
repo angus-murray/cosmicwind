@@ -8,7 +8,7 @@ window and is solved on the user's computer; nothing is sent to a server.
 - Nodes, members, sections, materials, restraints, spring supports and member end releases.
 - Section library (universal beams and columns, parallel flange channels, hollow sections, equal angles) and
   sections from a shape; material presets.
-- Load cases with self-weight, node loads, distributed and point member loads (global or local axes), support
+- Load cases with gravity, node loads, distributed and point member loads (global or local axes), support
   settlements and temperature loads; combination cases.
 - Linear static analysis, second-order (P-Δ) analysis, tension-only and compression-only members, elastic critical
   buckling and natural frequencies.

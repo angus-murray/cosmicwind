@@ -74,6 +74,12 @@ export default function App() {
     return cb ? Object.entries(cb.f).filter(e => e[1]).map(([k, v]) => [Number(k), v]) : cur ? [[cur.id, 1]] : [];
   }, [model.combos, cur]);
 
+  /** Gravity of the case shown (multipliers of g in X, Y, Z), summed over the cases of a combination. */
+  const gravity = useMemo(() => {
+    const g = [0, 0, 0];
+    for (const [id, f] of drawLoads) { const c = model.loadCases.find(x => x.id === id); if (c) { g[0] += f * (c.gx || 0); g[1] += f * (c.gy || 0); g[2] += f * (c.gz || 0); } }
+    return g.map(v => Math.round(v * 1e6) / 1e6);
+  }, [drawLoads, model.loadCases]);
   const analysis = useMemo(() => (tab === 'results' ? analyse(model) : null), [model, tab]);
   const res = analysis?.cases.find(c => c.id === cur?.id) ?? null;
   const okRes = res && !res.error ? res : null;
@@ -284,7 +290,7 @@ export default function App() {
   const kCol = (i: number, label: string): Col<Spring> => ({ key: `k${i}`, label, w: 62, get: r => r.k[i] ?? 0, set: (r, v) => ({ ...r, k: r.k.map((x, j) => (j === i ? Math.max(0, Number(v)) : x)) }) });
   const springCols: Col<Spring>[] = [{ key: 'node', label: 'Node', w: 44 }, ...['KX', 'KY', 'KZ'].map((l, i) => kCol(i, `${l} (kN/m)`)), ...['KRX', 'KRY', 'KRZ'].map((l, i) => kCol(i + 3, `${l} (kNm/rad)`))];
   const massCols: Col<NodeMass>[] = [{ key: 'node', label: 'Node' }, { key: 'm', label: 'Mass (t)' }];
-  const lcCols: Col<LoadCase>[] = [{ key: 'name', label: 'Name', type: 'text', w: 130 }, { key: 'gx', label: 'Self-Wt X', title: 'Self-weight multiplier of g in global X' }, { key: 'gy', label: 'Self-Wt Y', title: 'Self-weight multiplier of g in global Y (−1 is downward)' }, { key: 'gz', label: 'Self-Wt Z' }];
+  const lcCols: Col<LoadCase>[] = [{ key: 'name', label: 'Name', type: 'text', w: 130 }, { key: 'gx', label: 'Gravity X', title: 'Gravity load as a multiplier of g in global X' }, { key: 'gy', label: 'Gravity Y', title: 'Gravity load as a multiplier of g in global Y (−1 is downward)' }, { key: 'gz', label: 'Gravity Z', title: 'Gravity load as a multiplier of g in global Z' }];
   const comboCols: Col<Combo>[] = [{ key: 'name', label: 'Name', type: 'text', w: 150 }, ...model.loadCases.map((c): Col<Combo> => ({ key: `f${c.id}`, label: `× Case ${c.id}`, title: c.name, w: 58, get: r => r.f[c.id] ?? 0, set: (r, v) => ({ ...r, f: { ...r.f, [c.id]: Number(v) } }) }))];
   const lcCol = idSel('lc', 'Case', lcOpt, 112);
   const axesCol = { key: 'axes', label: 'Axes', type: 'select' as const, w: 66, options: [{ value: 'G', label: 'Global' }, { value: 'L', label: 'Local' }] };
@@ -484,12 +490,17 @@ export default function App() {
                   <button className={`tool-btn ${tool === 'measure' ? 'tool-btn-active' : ''}`} title="Click two points to measure the distance; nodes snap, Esc clears" onClick={() => setTool('measure')}><Ruler className="w-3.5 h-3.5" />Measure</button>
                   <button className="tool-btn" disabled={!nSel && !mSel} onClick={delSel}><Trash2 className="w-3.5 h-3.5" />Delete</button>
               </div>}
-              <label className="absolute top-2 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 bg-white/95 border border-slate-200 rounded-md shadow-2xs pl-2.5 pr-1 py-1">
+              <div className="absolute top-2 left-1/2 -translate-x-1/2 z-10 flex flex-col items-center gap-1">
+              <label className="flex items-center gap-2 bg-white/95 border border-slate-200 rounded-md shadow-2xs pl-2.5 pr-1 py-1">
                 <span className="text-[11px] font-medium text-slate-600 whitespace-nowrap">Load Case</span>
                 <select className="control !w-auto !h-7 !py-0" value={String(cur?.id ?? '')} onChange={e => { setCaseId(Number(e.target.value)); setModeIx(m => (m?.kind === 'buckling' ? null : m)); }}>
                   {cases.map(c => <option key={c.id} value={c.id}>{`${c.id}: ${c.name}`}</option>)}
                 </select>
               </label>
+              {opts.loads && !(tab === 'results' && modeShape) && gravity.some(v => v !== 0) && <div className="bg-white/95 border border-slate-200 rounded-md shadow-2xs px-2.5 py-0.5 text-[11px] font-medium text-red-600 whitespace-nowrap">
+                Gravity: {(['X', 'Y', 'Z'] as const).map((a, i) => gravity[i] !== 0 ? `${a} ${String(+gravity[i].toFixed(3)).replace('-', '−')} g` : '').filter(Boolean).join(', ')}
+              </div>}
+              </div>
               <div className="absolute top-2 right-2">
                 <div className="toolbar w-[112px]">
                 <ToolFlyout icon={<Eye className="w-3.5 h-3.5" />} label="View">
