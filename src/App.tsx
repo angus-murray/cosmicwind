@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppHeader, Banner, useElementSize, Check, NumberField, ReportDialog, SelectField, StatusChip, today } from 'engineering-ui';
-import { Axis3d, Box, Eye, Ruler, FilePlus, FolderOpen, Hash, Maximize, MousePointer2, Redo2, Save, Scissors, Spline, Trash2, Type, Undo2, Weight, Copy, Dot, LineChart, Shapes, Cuboid, Waypoints, StickyNote } from 'lucide-react';
+import { Axis3d, Box, Eye, Ruler, FilePlus, FolderOpen, Hash, Maximize, MousePointer2, Redo2, Save, Spline, Trash2, Type, Undo2, Weight, Dot, LineChart, Shapes, Cuboid, Waypoints, StickyNote } from 'lucide-react';
 import {
   deleteMembersAndFreeNodes, deleteNodes, DASH, FREE, MATERIAL_PRESETS, nextId, normalise, RELEASES, RESTRAINTS,
   type Combo, type DistLoad, type LoadCase, type Material, type Member, type Model, type Node, type NodeLoad, type NodeMass, type PointLoad, type Section, type Settlement, type Spring, type ThermalLoad,
@@ -55,8 +55,6 @@ export default function App() {
   const [secSel, setSecSel] = useState<number | null>(null);
   const [loadKind, setLoadKind] = useState<'node' | 'member'>('node');
   const [info, setInfo] = useState<ReportInfo>({ project: '', number: '', structure: '', designer: '', date: today() });
-  const [copy, setCopy] = useState({ dx: 0, dy: 0, dz: 6, n: 1 });
-  const [parts, setParts] = useState(4);
   const viewer = useRef<ViewerHandle>(null);
   const [fitRev, setFitRev] = useState(0);
   const [prompt, setPrompt] = useState<PromptState | null>(null);
@@ -99,7 +97,7 @@ export default function App() {
   const delSel = useCallback(() => { setModel(m => deleteNodes(deleteMembersAndFreeNodes(m, sel.members), sel.nodes)); setSel(noSel()); }, [sel, setModel]);
   const patchMembers = (p: Partial<Member>) => setModel(m => ({ ...m, members: m.members.map(x => (sel.members.has(x.id) ? { ...x, ...p } : x)) }));
   const patchNodes = (p: Partial<Node>) => setModel(m => ({ ...m, nodes: m.nodes.map(x => (sel.nodes.has(x.id) ? { ...x, ...p } : x)) }));
-  const subdivide = (np: number = parts, which: Set<number> = sel.members) => setModel(m => {
+  const subdivide = (np: number = 4, which: Set<number> = sel.members) => setModel(m => {
     const n = Math.max(2, Math.round(np)), nodes = m.nodes.slice(), members: Member[] = [], out = { ...m };
     let nid = nextId(nodes), mid = nextId(m.members);
     const dist: DistLoad[] = [], point: PointLoad[] = [], thermal: ThermalLoad[] = [];
@@ -143,7 +141,6 @@ export default function App() {
     }
     return { ...m, nodes, members, distLoads: dist, pointLoads: point, nodeLoads: nl };
   });
-  const copySel = () => copyWith((n, k) => [n.x + copy.dx * k, n.y + copy.dy * k, n.z + copy.dz * k], copy.n);
   /** Moves the selected nodes and the end nodes of the selected members. */
   const moveWith = (tf: (n: Node) => [number, number, number]) => setModel(m => {
     const ids = new Set([...sel.nodes, ...m.members.filter(x => sel.members.has(x.id)).flatMap(x => [x.a, x.b])]);
@@ -356,31 +353,6 @@ export default function App() {
                 </div>
               </div>;
             })()}
-            {tab === 'structure' && (nSel > 0 || mSel > 0) && <div className="panel">
-              <h2 className="panel-title">Selection: {[nSel && `${nSel} Node${nSel > 1 ? 's' : ''}`, mSel && `${mSel} Member${mSel > 1 ? 's' : ''}`].filter(Boolean).join(', ')}</h2>
-              <div className="grid grid-cols-2 gap-2">
-                {nSel > 0 && <SelectField label="Restraint" value="" onChange={v => v && patchNodes({ r: v })} options={[{ value: '', label: 'Set…' }, ...RESTRAINTS.map(([c, l]) => ({ value: c, label: `${l} (${c})` }))]} />}
-                {mSel > 0 && <>
-                  <SelectField label="Section" value="" onChange={v => v && patchMembers({ sec: Number(v) })} options={[{ value: '', label: 'Set…' }, ...secOpt]} />
-                  <SelectField label="End Releases" value="" onChange={v => v && patchMembers({ relA: v, relB: v })} options={[{ value: '', label: 'Set…' }, ...RELEASES.map(([c, l]) => ({ value: c, label: `${l} (${c})` }))]} />
-                  <SelectField label="Type" value="" onChange={v => v && patchMembers({ type: v as Member['type'] })} options={[{ value: '', label: 'Set…' }, { value: 'N', label: 'Normal' }, { value: 'T', label: 'Tension Only' }, { value: 'C', label: 'Compression Only' }]} />
-                </>}
-              </div>
-              {mSel > 0 && <div className="section grid grid-cols-2 gap-2 items-end">
-                <NumberField label="Subdivide Into" value={parts} min={2} max={50} onChange={setParts} />
-                <button className="btn" onClick={() => subdivide()}><Scissors className="w-3.5 h-3.5" /> Subdivide</button>
-              </div>}
-              <div className="section space-y-2">
-                <div className="grid grid-cols-4 gap-2">
-                  <NumberField label="Copy DX (m)" value={copy.dx} onChange={v => setCopy({ ...copy, dx: v })} /><NumberField label="DY (m)" value={copy.dy} onChange={v => setCopy({ ...copy, dy: v })} />
-                  <NumberField label="DZ (m)" value={copy.dz} onChange={v => setCopy({ ...copy, dz: v })} /><NumberField label="Copies" value={copy.n} min={1} max={100} onChange={v => setCopy({ ...copy, n: v })} />
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <button className="btn" title="Copies the selected nodes and members, with their loads, at the given spacing" onClick={copySel}><Copy className="w-3.5 h-3.5" /> Copy</button>
-                  <button className="btn !text-rose-700" onClick={delSel}><Trash2 className="w-3.5 h-3.5" /> Delete</button>
-                </div>
-              </div>
-            </div>}
             {tab !== 'results' && <div className="panel">
               <div className="flex gap-1 flex-wrap">{SUBS[tab].map(([k, l]) => <button key={k} className={`subtab ${sub[tab] === k ? 'subtab-active' : ''}`} onClick={() => setSub({ ...sub, [tab]: k })}>{l}</button>)}</div>
               {tab === 'structure' && <>
