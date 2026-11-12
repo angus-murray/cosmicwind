@@ -30,3 +30,11 @@ test('a node that was already free is not touched', () => {
   const f = frame(), m = deleteMembersAndFreeNodes({ ...f, nodes: [...f.nodes, { id: 9, x: 9, y: 9, z: 0, r: 'RRRRRR' }] }, new Set([3]));
   expect(m.nodes.map(x => x.id)).toEqual([1, 2, 3, 9]);
 });
+
+test('notes go with the node or member they are attached to', () => {
+  const f = { ...frame(), notes: [
+    { id: 1, kind: 'node' as const, ref: 4, text: 'node', dx: 20, dy: -20 }, { id: 2, kind: 'member' as const, ref: 3, text: 'member', dx: 20, dy: -20 },
+    { id: 3, kind: 'member' as const, ref: 1, text: 'other', dx: 20, dy: -20 },
+  ] };
+  expect(deleteMembersAndFreeNodes(f, new Set([3])).notes.map(n => n.id)).toEqual([3]);
+});

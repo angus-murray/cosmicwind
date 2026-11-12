@@ -27,6 +27,9 @@ export interface Settlement { lc: number; node: number; dx: number; dy: number; 
 export interface ThermalLoad { lc: number; member: number; dT: number } // °C, uniform
 export interface NodeMass { node: number; m: number } // tonnes
 
+/** A note shown as a call-out: text, what it is attached to, and where its box sits (pixels right of and below the anchor, to the box's bottom left). */
+export interface Note { id: number; kind: 'node' | 'member'; ref: number; text: string; dx: number; dy: number }
+
 export interface Settings {
   nonlinear: boolean;       // P-Δ (second-order) analysis
   bucklingModes: number;    // 0 = off
@@ -40,6 +43,8 @@ export interface Model {
   loadCases: LoadCase[]; combos: Combo[];
   nodeLoads: NodeLoad[]; distLoads: DistLoad[]; pointLoads: PointLoad[]; settlements: Settlement[]; thermal: ThermalLoad[];
   masses: NodeMass[];
+  /** Call-outs attached to a node or the midpoint of a member. */
+  notes: Note[];
   settings: Settings;
 }
 
@@ -67,7 +72,7 @@ export const DEFAULT_SETTINGS: Settings = { nonlinear: false, bucklingModes: 0, 
 export const emptyModel = (): Model => ({
   title: 'Untitled', nodes: [], members: [], sections: [], materials: [{ ...STEEL }], springs: [],
   loadCases: [{ id: 1, name: 'Dead Load', gx: 0, gy: -1, gz: 0 }], combos: [],
-  nodeLoads: [], distLoads: [], pointLoads: [], settlements: [], thermal: [], masses: [],
+  nodeLoads: [], distLoads: [], pointLoads: [], settlements: [], thermal: [], masses: [], notes: [],
   settings: { ...DEFAULT_SETTINGS },
 });
 
@@ -77,7 +82,7 @@ export const nextId = (rows: { id: number }[]) => rows.reduce((m, r) => Math.max
 export function normalise(m: Partial<Model>): Model {
   const e = emptyModel();
   const out = { ...e, ...m, settings: { ...e.settings, ...(m.settings ?? {}) } } as Model;
-  for (const k of ['nodes', 'members', 'sections', 'materials', 'springs', 'loadCases', 'combos', 'nodeLoads', 'distLoads', 'pointLoads', 'settlements', 'thermal', 'masses'] as const)
+  for (const k of ['nodes', 'members', 'sections', 'materials', 'springs', 'loadCases', 'combos', 'nodeLoads', 'distLoads', 'pointLoads', 'settlements', 'thermal', 'masses', 'notes'] as const)
     if (!Array.isArray(out[k])) (out as unknown as Record<string, unknown>)[k] = [];
   return out;
 }
@@ -91,6 +96,7 @@ export function deleteNodes(m: Model, ids: Set<number>): Model {
     nodes: m.nodes.filter(n => !ids.has(n.id)), springs: m.springs.filter(s => !ids.has(s.node)),
     nodeLoads: m.nodeLoads.filter(l => !ids.has(l.node)), settlements: m.settlements.filter(l => !ids.has(l.node)),
     masses: m.masses.filter(l => !ids.has(l.node)),
+    notes: m.notes.filter(n => !(n.kind === 'node' && ids.has(n.ref))),
   };
 }
 export function deleteMembers(m: Model, ids: Set<number>): Model {
@@ -98,6 +104,7 @@ export function deleteMembers(m: Model, ids: Set<number>): Model {
     ...m, members: m.members.filter(b => !ids.has(b.id)),
     distLoads: m.distLoads.filter(l => !ids.has(l.member)), pointLoads: m.pointLoads.filter(l => !ids.has(l.member)),
     thermal: m.thermal.filter(l => !ids.has(l.member)),
+    notes: m.notes.filter(n => !(n.kind === 'member' && ids.has(n.ref))),
   };
 }
 

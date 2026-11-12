@@ -10,7 +10,7 @@ import { analyse } from './solver/frame';
 import { Sheet, type Col } from './ui/Sheet';
 import { DIAGRAMS, STRESSES, fmt, Viewer, type StressKey, type Sel, type Tool, type ViewerHandle, type ViewOpts } from './ui/Viewer';
 import { ResultTables } from './ui/Results';
-import { ContextMenu, PromptBox, ToolFlyout, type MenuItem, type MenuState, type PromptState } from './ui/CanvasMenu';
+import { ContextMenu, PromptBox, TextPromptBox, ToolFlyout, type MenuItem, type MenuState, type PromptState, type TextPromptState } from './ui/CanvasMenu';
 import { About, LoadDialog, SectionDialog, TemplateDialog, type LoadSpec } from './ui/Dialogs';
 import type { ReportInfo } from './report';
 
@@ -50,9 +50,10 @@ export default function App() {
   const viewer = useRef<ViewerHandle>(null);
   const [fitRev, setFitRev] = useState(0);
   const [prompt, setPrompt] = useState<PromptState | null>(null);
+  const [textPrompt, setTextPrompt] = useState<TextPromptState | null>(null);
   const [pickMove, setPickMove] = useState<{ base: [number, number, number]; nodes: number[]; repeat: boolean; apply: (d: [number, number, number]) => void } | null>(null);
   const [cvRef, cvSize] = useElementSize<HTMLDivElement>();
-  const [ctx, setCtx] = useState<{ x: number; y: number; node: number | null; member: number | null; endNode: number | null } | null>(null);
+  const [ctx, setCtx] = useState<{ x: number; y: number; node: number | null; member: number | null; note?: number | null; endNode: number | null } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const cases = useMemo(() => [...model.loadCases.map(c => ({ id: c.id, name: c.name, combo: false })), ...model.combos.map(c => ({ id: c.id, name: c.name, combo: true }))], [model.loadCases, model.combos]);
@@ -143,7 +144,7 @@ export default function App() {
       else if (mod && k === 'y' && model_) { e.preventDefault(); redo(); }
       else if (mod && k === 'a' && model_) { e.preventDefault(); el.blur?.(); setSel({ nodes: new Set(model.nodes.map(n => n.id)), members: new Set(model.members.map(m => m.id)) }); }
       else if ((e.key === 'Delete' || e.key === 'Backspace') && !typing && tab !== 'results' && (sel.nodes.size || sel.members.size)) { e.preventDefault(); delSel(); }
-      else if (e.key === 'Escape' && !typing) { setTool('select'); setSel(noSel()); setPickMove(null); setCtx(null); setPrompt(null); }
+      else if (e.key === 'Escape' && !typing) { setTool('select'); setSel(noSel()); setPickMove(null); setCtx(null); setPrompt(null); setTextPrompt(null); }
     };
     window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key);
   }, [undo, redo, delSel, sel, tab, model.nodes, model.members]);
@@ -165,11 +166,16 @@ export default function App() {
   };
   useEffect(() => {
     if (!ctx && !prompt) return;
-    const away = (e: PointerEvent) => { if (!(e.target as Element).closest?.('[data-ui]')) { setCtx(null); setPrompt(null); } };
+    const away = (e: PointerEvent) => { if (!(e.target as Element).closest?.('[data-ui]')) { setCtx(null); setPrompt(null); setTextPrompt(null); } };
     const gone = () => { setCtx(null); };
     window.addEventListener('pointerdown', away, true); window.addEventListener('wheel', gone, { passive: true });
     return () => { window.removeEventListener('pointerdown', away, true); window.removeEventListener('wheel', gone); };
   }, [ctx, prompt]);
+  const setNote = (kind: 'node' | 'member', ref: number, id: number | undefined, text: string) => setModel(m => {
+    if (id !== undefined && text.trim() === '') return { ...m, notes: m.notes.filter(n => n.id !== id) };
+    if (text.trim() === '') return m;
+    return { ...m, notes: id !== undefined ? m.notes.map(n => (n.id === id ? { ...n, text } : n)) : [...m.notes, { id: nextId(m.notes), kind, ref, text, dx: 22, dy: -22 }] };
+  });
   const menuOf = (): MenuState | null => {
     if (!ctx) return null;
     const edit = tab !== 'results', nodes = [...sel.nodes], mems = [...sel.members], at = { x: ctx.x, y: ctx.y };
@@ -198,10 +204,20 @@ export default function App() {
       { label: 'Move', sub: [{ label: 'To a Point', onClick: () => startPick(false) }, { label: 'By Increment…', onClick: inc(false) }, ...mirror(false)] },
       { label: 'Copy', sub: [{ label: 'To a Point', onClick: () => startPick(true) }, { label: 'By Increment…', onClick: inc(true) }, ...mirror(true)] },
     ];
+    const noteItems = (kind: 'node' | 'member', ref: number | null): MenuItem[] => {
+      if (ref === null) return [];
+      const ex = model.notes.find(n => n.kind === kind && n.ref === ref), edit_ = () => { setCtx(null); setTextPrompt({ ...at, title: ex ? 'Edit Note' : 'Add Note', text: ex?.text ?? '', onSubmit: t => setNote(kind, ref, ex?.id, t) }); };
+      return [{ label: ex ? 'Edit Note…' : 'Add Note…', onClick: edit_ }, ...(ex ? [{ label: 'Delete Note', onClick: run(() => setNote(kind, ref, ex.id, '')) }] : []), 'sep' as const];
+    };
     const items: MenuItem[] = []; let title = 'View';
     const word = (n: number, w: string, only: number | undefined) => (n === 1 ? `${w} ${only}` : `${n} ${w}s`);
-    if (ctx.node !== null && nodes.length) {
+    if (ctx.note != null) {
+      const nt = model.notes.find(n => n.id === ctx.note);
+      title = 'Note';
+      if (nt) items.push({ label: 'Edit Note…', onClick: () => { setCtx(null); setTextPrompt({ ...at, title: 'Edit Note', text: nt.text, onSubmit: t => setNote(nt.kind, nt.ref, nt.id, t) }); } }, { label: 'Delete Note', danger: true, onClick: run(() => setNote(nt.kind, nt.ref, nt.id, '')) });
+    } else if (ctx.node !== null && nodes.length) {
       title = word(nodes.length, 'Node', nodes[0]);
+      items.push(...noteItems('node', ctx.node));
       if (edit) items.push(
         { label: 'Apply Load…', onClick: run(() => { setLoadKind('node'); setDialog('load'); }) },
         { label: 'Restraint', sub: RESTRAINTS.map(([c, l]) => ({ label: `${l} (${c})`, onClick: run(() => patchNodes({ r: c })) })) }, 'sep', ...moveCopy, 'sep');
@@ -209,6 +225,7 @@ export default function App() {
       if (edit) items.push('sep', { label: nodes.length > 1 ? 'Delete Nodes' : 'Delete Node', danger: true, onClick: run(delSel) });
     } else if (ctx.member !== null && mems.length) {
       title = word(mems.length, 'Member', mems[0]);
+      items.push(...noteItems('member', ctx.member));
       const mem0 = model.members.find(m => m.id === ctx.member), sec0 = mem0?.sec;
       const selMembers = model.members.filter(m => sel.members.has(m.id));
       // Releases are set by end number: end 1 is the first node of a member and end 2 the second
@@ -380,9 +397,10 @@ export default function App() {
 
           <div className="results-column">
             <div ref={cvRef} className="relative bg-slate-50 rounded-lg border border-slate-200 shadow-2xs overflow-hidden h-[520px] lg:h-auto lg:flex-1 lg:min-h-[240px]">
-              <Viewer ref={viewer} fitRev={fitRev} onSplitMember={splitMember} pick={pickMove} onPickEnd={() => setPickMove(null)} model={model} opts={opts} tool={tool} sel={sel} onSelect={setSel} loadCases={drawLoads} result={tab === 'results' ? okRes : null} mode={tab === 'results' ? modeShape : null} onAddNode={addNode} onAddMember={addMember}
+              <Viewer ref={viewer} notes={model.notes} onNoteMove={(id, dx, dy) => setModel(m => ({ ...m, notes: m.notes.map(n => (n.id === id ? { ...n, dx, dy } : n)) }))} onNoteEdit={(id, x, y) => { const nt = model.notes.find(n => n.id === id); if (nt) setTextPrompt({ x, y, title: 'Edit Note', text: nt.text, onSubmit: t => setNote(nt.kind, nt.ref, nt.id, t) }); }} fitRev={fitRev} onSplitMember={splitMember} pick={pickMove} onPickEnd={() => setPickMove(null)} model={model} opts={opts} tool={tool} sel={sel} onSelect={setSel} loadCases={drawLoads} result={tab === 'results' ? okRes : null} mode={tab === 'results' ? modeShape : null} onAddNode={addNode} onAddMember={addMember}
                 onContext={c => { setCtx(c); if (c.node !== null && !sel.nodes.has(c.node)) setSel({ nodes: new Set([c.node]), members: new Set() }); else if (c.node === null && c.member !== null && !sel.members.has(c.member)) setSel({ nodes: new Set(), members: new Set([c.member]) }); }} />
               {ctx && menuOf() && <ContextMenu menu={menuOf()!} W={cvSize.width} H={cvSize.height} onClose={() => setCtx(null)} />}
+              {textPrompt && <TextPromptBox prompt={textPrompt} W={cvSize.width} H={cvSize.height} onClose={() => setTextPrompt(null)} />}
               {prompt && <PromptBox prompt={prompt} W={cvSize.width} H={cvSize.height} onClose={() => setPrompt(null)} />}
               {tab !== 'results' && <div className="absolute top-2 left-2 toolbar w-[104px]">
                   <button className={`tool-btn ${tool === 'select' ? 'tool-btn-active' : ''}`} onClick={() => setTool('select')}><MousePointer2 className="w-3.5 h-3.5" />Select</button>

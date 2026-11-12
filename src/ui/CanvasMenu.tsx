@@ -151,3 +151,26 @@ export function ToolFlyout({ icon, label, children }: { icon: React.ReactNode; l
     </div>
   );
 }
+
+export type TextPromptState = { x: number; y: number; title: string; text: string; onSubmit: (text: string) => void };
+
+/** Small text form at the cursor, for a note: Ctrl+Enter or OK keeps it, Esc cancels. */
+export const TextPromptBox: React.FC<{ prompt: TextPromptState; W: number; H: number; onClose: () => void }> = ({ prompt, W, H, onClose }) => {
+  const [text, setText] = useState(prompt.text);
+  const area = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => { area.current?.focus(); area.current?.select(); }, []);
+  const w = 240, left = Math.max(8, Math.min(prompt.x + 4, W - w - 8)), top = Math.max(8, Math.min(prompt.y + 4, H - 170));
+  const submit = () => { prompt.onSubmit(text); onClose(); };
+  return (
+    <div data-ui className="absolute z-20 bg-white border border-slate-200 rounded-lg shadow-lg p-2.5 text-xs text-slate-700 space-y-2" style={{ left, top, width: w }}
+      onPointerDown={(e) => e.stopPropagation()} onContextMenu={(e) => (e.preventDefault(), onClose())}>
+      <div className="text-[11px] font-semibold text-slate-500">{prompt.title}</div>
+      <textarea ref={area} rows={4} className="control w-full select-text resize-none" value={text} onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) submit(); if (e.key === 'Escape') onClose(); e.stopPropagation(); }} />
+      <div className="flex justify-end gap-2">
+        <button type="button" className="btn" onClick={onClose}>Cancel</button>
+        <button type="button" className="btn-primary" onClick={submit}>OK</button>
+      </div>
+    </div>
+  );
+};

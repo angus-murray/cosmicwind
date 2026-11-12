@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { useElementSize } from 'engineering-ui';
-import type { Model } from '../model/types';
+import type { Model, Note } from '../model/types';
 import { outlineLoops, outlineOf } from '../model/sections';
 import { memberAxes, type CaseResult, type Vec6 } from '../solver/frame';
 
@@ -49,6 +49,13 @@ const mixRgb = (a: number[], b: number[], t: number) => a.map((v, i) => Math.rou
 const toHex = (c: number[]) => `rgb(${c.join()})`;
 const halo: React.CSSProperties = { paintOrder: 'stroke', stroke: 'var(--color-slate-50)', strokeWidth: 3, strokeLinejoin: 'round' };
 
+/** Breaks a note into lines of about 28 characters, keeping the line breaks the user typed. */
+const wrapText = (t: string, max = 28) => t.split('\n').flatMap(p => {
+  const out: string[] = []; let line = '';
+  for (const w of p.split(/\s+/).filter(Boolean)) { if (line && (line + ' ' + w).length > max) { out.push(line); line = w; } else line = line ? line + ' ' + w : w; }
+  out.push(line); return out;
+});
+
 export const Viewer = React.forwardRef<ViewerHandle, {
   model: Model; opts: ViewOpts; tool: Tool; sel: Sel; onSelect: (s: Sel) => void;
   /** Loads to draw: load case id and factor. */
@@ -62,8 +69,10 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   onSplitMember?: (memberId: number) => number;
   /** Move or copy to a point: the point to pick the offset from, the nodes that travel, and what to do with the offset. */
   pick?: { base: V3; nodes: number[]; repeat: boolean; apply: (d: V3) => void } | null; onPickEnd?: () => void;
-  onContext?: (c: { x: number; y: number; node: number | null; member: number | null; /** Node at the end of the member that was clicked near, if any. */ endNode: number | null }) => void;
-}>(function Viewer({ model, opts, tool, sel, onSelect, loadCases, result, mode, onAddNode, onAddMember, onContext, fitRev = 0, pick, onPickEnd, onSplitMember }, handle) {
+  /** Notes drawn as call-outs; a box can be dragged, and double-clicked to edit. */
+  notes?: Note[]; onNoteMove?: (id: number, dx: number, dy: number) => void; onNoteEdit?: (id: number, x: number, y: number) => void;
+  onContext?: (c: { x: number; y: number; node: number | null; member: number | null; note?: number | null; /** Node at the end of the member that was clicked near, if any. */ endNode: number | null }) => void;
+}>(function Viewer({ model, opts, tool, sel, onSelect, loadCases, result, mode, onAddNode, onAddMember, onContext, fitRev = 0, pick, onPickEnd, onSplitMember, notes = [], onNoteMove, onNoteEdit }, handle) {
   const [box, size] = useElementSize<HTMLDivElement>();
   const svgRef = useRef<SVGSVGElement>(null);
   // c is the orbit pivot (the model centre at the last fit); px, py are the screen offset of the pivot from the view centre.
@@ -130,7 +139,8 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   // ---- Pointer interaction
   // Left drag: rotate. Left click: pick a node or member, or on empty space start a selection box that the next left click completes.
   // Middle drag: zoom (as does the wheel). Right drag: pan. Right click: options.
-  const drag = useRef<{ x: number; y: number; sx: number; sy: number; moved: boolean; mode: 'orbit' | 'zoom' | 'pan' | null } | null>(null);
+  const drag = useRef<{ x: number; y: number; sx: number; sy: number; moved: boolean; mode: 'orbit' | 'zoom' | 'pan' | 'note' | null } | null>(null);
+  const noteHit = useRef<number | null>(null);
   /** Measure tool: the two points, and the point under the pointer while the second is pending. */
   const [measure, setMeasure] = useState<{ a: V3 | null; b: V3 | null }>({ a: null, b: null });
   const [mLive, setMLive] = useState<V3 | null>(null);
@@ -145,6 +155,9 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   /** Where the drawing cursor lands (screen pixels) when a node or the snap grid captures it. */
   const [snapAt, setSnapAt] = useState<[number, number] | null>(null);
   const [snapMid, setSnapMid] = useState(false);
+  /** A call-out being dragged: its note, the box offset it started from and the pointer position. */
+  const noteDrag = useRef<{ id: number; dx: number; dy: number; x: number; y: number } | null>(null);
+  const [noteOff, setNoteOff] = useState<Record<number, [number, number]>>({});
   const faceHit = useRef<{ id: number; v?: number } | null>(null);
   const curvesRef = useRef<{ key: DiagramKey; id: number; L: number; top: [number, number][]; xs: number[]; lines: (i: number) => string[] }[]>([]);
   /** Hover tip for the diagram curve under the pointer. */
@@ -187,7 +200,10 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   const down = (e: React.PointerEvent) => {
     (e.target as Element).setPointerCapture?.(e.pointerId);
     const [sx, sy] = local(e);
-    const mode = e.button === 2 ? 'pan' : e.button === 1 ? 'zoom' : e.button === 0 ? 'orbit' : null;
+    const nid = Number((e.target as Element).closest?.('[data-note]')?.getAttribute('data-note') ?? NaN), nt = notes.find(n => n.id === nid);
+    noteHit.current = nt ? nt.id : null;
+    if (nt && e.button === 0) { const o = noteOff[nt.id] ?? [nt.dx, nt.dy]; noteDrag.current = { id: nt.id, dx: o[0], dy: o[1], x: sx, y: sy }; }
+    const mode = nt && e.button === 0 ? 'note' : e.button === 2 ? 'pan' : e.button === 1 ? 'zoom' : e.button === 0 ? 'orbit' : null;
     drag.current = { x: e.clientX, y: e.clientY, sx, sy, moved: false, mode };
   };
   const move = (e: React.PointerEvent) => {
@@ -221,7 +237,8 @@ export const Viewer = React.forwardRef<ViewerHandle, {
     const dx = e.clientX - d.x, dy = e.clientY - d.y;
     if (!d.moved && Math.hypot(dx, dy) < 4) return;
     d.moved = true; d.x = e.clientX; d.y = e.clientY;
-    if (d.mode === 'zoom') zoomAt(d.sx - W / 2, d.sy - H / 2, Math.exp(-dy * 0.01));
+    if (d.mode === 'note' && noteDrag.current) { const nd = noteDrag.current; nd.dx += dx; nd.dy += dy; setNoteOff({ [nd.id]: [nd.dx, nd.dy] }); }
+    else if (d.mode === 'zoom') zoomAt(d.sx - W / 2, d.sy - H / 2, Math.exp(-dy * 0.01));
     else if (d.mode === 'pan') setCam(c => ({ ...c, px: c.px + dx, py: c.py + dy }));
     else if (d.mode === 'orbit') setCam(c => ({ ...c, yaw: c.yaw + dx * 0.008, pitch: Math.max(-Math.PI / 2, Math.min(Math.PI / 2, c.pitch + dy * 0.008)) }));
   };
@@ -277,7 +294,10 @@ export const Viewer = React.forwardRef<ViewerHandle, {
     const d = drag.current; drag.current = null;
     if (!d) return;
     const [sx, sy] = local(e);
+    const nid = noteHit.current; noteHit.current = null;
+    if (d.mode === 'note' && noteDrag.current) { const nd = noteDrag.current; noteDrag.current = null; if (d.moved) onNoteMove?.(nd.id, Math.round(nd.dx), Math.round(nd.dy)); setNoteOff({}); }
     if (d.moved) return;
+    if (nid !== null) { if (e.button === 2) onContext?.({ x: sx, y: sy, node: null, member: null, note: nid, endNode: null }); return; }
     if (e.button === 2) {
       if (pick) { onPickEnd?.(); return; }
       if (anchor.current) { anchor.current = null; setMarq(null); return; }
@@ -655,6 +675,19 @@ export const Viewer = React.forwardRef<ViewerHandle, {
           return text([p[0], p[1] - 5], s, `m${g.m.id}`, sel.members.has(g.m.id) ? BLUE : '#0f172a', 'middle', true);
         })}
         {reacts}
+        {notes.map(n => {
+          const q = n.kind === 'node' ? nodeMap.get(n.ref) : null, g = n.kind === 'member' ? geo.find(x => x.m.id === n.ref) : null;
+          const a = q ? P([q.x, q.y, q.z]) : g ? P([(g.A[0] + g.B[0]) / 2, (g.A[1] + g.B[1]) / 2, (g.A[2] + g.B[2]) / 2]) : null; if (!a) return null;
+          const lines = wrapText(n.text), off = noteOff[n.id] ?? [n.dx, n.dy], w = Math.max(48, Math.min(210, Math.max(...lines.map(l => l.length)) * 6 + 14)), h = lines.length * 14 + 8, x = a[0] + off[0], y = a[1] + off[1] - h;
+          const bx = Math.max(x + 9, Math.min(a[0], x + w - 9)), ey = a[1] < y + h / 2 ? y : y + h; // the tail leaves the nearer edge
+          return <g key={`note${n.id}`} data-note={n.id} style={{ cursor: 'move' }} onDoubleClick={e => { const [lx, ly] = local(e); onNoteEdit?.(n.id, lx, ly); }}>
+            <title>Drag to move, double-click to edit, right-click for options</title>
+            <path d={`M${bx - 6} ${ey}L${a[0]} ${a[1]}L${bx + 6} ${ey}Z`} fill="#fef9c3" stroke="#ca8a04" strokeWidth={1} strokeLinejoin="round" />
+            <rect x={x} y={y} width={w} height={h} rx={5} fill="#fef9c3" stroke="#ca8a04" strokeWidth={1} />
+            <circle cx={a[0]} cy={a[1]} r={2.5} fill="#ca8a04" />
+            {lines.map((l, i) => <text key={i} x={x + 7} y={y + 15 + i * 14} fontSize={11} fill="#422006" style={{ userSelect: 'none' }}>{l}</text>)}
+          </g>;
+        })}
         {marq && <rect x={Math.min(marq.x0, marq.x1)} y={Math.min(marq.y0, marq.y1)} width={Math.abs(marq.x1 - marq.x0)} height={Math.abs(marq.y1 - marq.y0)} fill={BLUE} fillOpacity={0.08} stroke={BLUE} strokeWidth={1}
           strokeDasharray={marq.x1 < marq.x0 ? '5 3' : undefined} pointerEvents="none" />}
         {pick && pickLive && (() => {
