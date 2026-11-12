@@ -395,7 +395,6 @@ export default function App() {
                   <SelectField label="Case" value={String(cur?.id ?? '')} onChange={v => { setCaseId(Number(v)); setModeIx(m => (m?.kind === 'buckling' ? null : m)); }} options={cases.map(c => ({ value: String(c.id), label: `${c.id}: ${c.name}` }))} />
                   <NumberField label="Deflection Scale" value={opts.defScale} min={0.1} max={20} step={0.25} onChange={o('defScale')} />
                 </div>
-                <SelectField label="Stress in Rendered View" value={opts.stress} onChange={v => setOpts(q => ({ ...q, stress: v as StressKey, solid: v !== 'none' ? true : q.solid }))} options={STRESSES.map(t => ({ value: t.key, label: t.label }))} />
                 <Check checked={opts.deflected} onChange={o('deflected')}>Deflected Shape</Check>
               </div>
               <div className="panel">
@@ -413,6 +412,10 @@ export default function App() {
               <div className="panel">
                 <h2 className="panel-title">Reactions</h2>
                 <Check checked={opts.reactions} onChange={o('reactions')}>Show Reactions</Check>
+              </div>
+              <div className="panel">
+                <h2 className="panel-title">Stresses</h2>
+                <SelectField hint="Colours the rendered members; switches to the rendered view" label="Normal Stress" value={opts.stress} onChange={v => setOpts(q => ({ ...q, stress: v as StressKey, solid: v !== 'none' ? true : q.solid }))} options={STRESSES.map(t => ({ value: t.key, label: t.label }))} />
               </div>
             </>}
           </div>
