@@ -256,7 +256,7 @@ export default function App() {
       const releaseItem: MenuItem = { label: 'Releases', sub: clickedEnd ? [endItem(clickedEnd), bothItem, endItem(clickedEnd === 1 ? 2 : 1)] : [bothItem, endItem(1), endItem(2)] };
       if (edit) items.push(
         { label: 'Apply Load…', onClick: run(() => { setLoadKind('member'); setDialog('load'); }) },
-        { label: 'Section', sub: [...model.sections.map(x => ({ label: `${x.id}. ${x.name}`, checked: mems.every(id => model.members.find(m => m.id === id)?.sec === x.id), onClick: run(() => patchMembers({ sec: x.id })) })), 'sep' as const, { label: 'Add Section…', onClick: run(() => { setAssignOnAdd(true); setReplaceSec(null); setDialog('section'); }) }] },
+        { label: 'Section', sub: [...[...model.sections].sort((p, q) => p.id - q.id).map(x => ({ label: `${x.id}. ${x.name}`, checked: mems.every(id => model.members.find(m => m.id === id)?.sec === x.id), onClick: run(() => patchMembers({ sec: x.id })) })), 'sep' as const, { label: 'Add Section…', onClick: run(() => { setAssignOnAdd(true); setReplaceSec(null); setDialog('section'); }) }] },
         releaseItem,
         { label: 'Angle…', onClick: () => ask('Member Angle', [{ label: 'Angle (°)', value: model.members.find(m => m.id === mems[0])?.angle ?? 0 }], ([ang]) => patchMembers({ angle: ang })) },
         { label: 'Member Type', sub: ([['N', 'Normal'], ['T', 'Tension Only'], ['C', 'Compression Only']] as const).map(([c, l]) => ({ label: l, onClick: run(() => patchMembers({ type: c })) })) },
