@@ -1,8 +1,9 @@
 import { G0 } from '../solver/frame';
-import { useState } from 'react';
+import { Children, useState } from 'react';
 import { CollapsePanel, Formula, Modal, NumberField, Segmented, SelectField } from 'engineering-ui';
 import { LIB_GROUPS, LIBRARY, SHAPES, shapeName, shapeProps, type Outline, type Props, type Shape } from '../model/sections';
 import { TEMPLATES } from '../model/templates';
+import { sym } from './Sym';
 import type { Axes, Dir, Model, PointDir } from '../model/types';
 
 export function TemplateDialog({ onClose, onCreate }: { onClose: () => void; onCreate: (m: Model) => void }) {
@@ -63,7 +64,7 @@ export function SectionDialog({ onClose, onAdd, assign, replace }: { onClose: ()
 }
 
 export function About({ onClose }: { onClose: () => void }) {
-  const P = ({ children }: { children: React.ReactNode }) => <p className="text-xs text-slate-700 leading-relaxed">{children}</p>;
+  const P = ({ children }: { children: React.ReactNode }) => <p className="text-xs text-slate-700 leading-relaxed">{Children.map(children, c => (typeof c === 'string' ? sym(c) : c))}</p>;
   return (
     <Modal title="About CosmicWind" onClose={onClose} variant="page">
       <div className="panel"><P>CosmicWind analyses three-dimensional frames and trusses in the browser. The model is built in datasheets or drawn in the
@@ -149,7 +150,7 @@ export function LoadDialog({ kind, count, cases, lc0, onClose, onApply }: {
   const [w1, setW1] = useState(-5), [w2, setW2] = useState(-5), [s0, setS0] = useState(0), [e0, setE0] = useState(100);
   const [p, setP] = useState(-10), [pos, setPos] = useState(50);
   const [f, setF] = useState([0, -10, 0, 0, 0, 0]);
-  const dirOpts = (moments: boolean) => [...(['X', 'Y', 'Z'] as const).map(d => ({ value: d, label: moments ? `Force ${d}` : d })), ...(moments ? (['MX', 'MY', 'MZ'] as const).map(d => ({ value: d, label: `Moment ${d.slice(1)}` })) : [])];
+  const dirOpts = (moments: boolean) => { const c = (v: string) => (axes === 'L' ? v.toLowerCase() : v); return [...(['X', 'Y', 'Z'] as const).map(d => ({ value: d, label: moments ? `Force ${c(d)}` : c(d) })), ...(moments ? (['MX', 'MY', 'MZ'] as const).map(d => ({ value: d, label: `Moment ${c(d.slice(1))}` })) : [])]; };
   const ok = kind === 'node' ? f.some(v => v !== 0) : mode === 'dist' ? e0 > s0 && s0 >= 0 && e0 <= 100 && (w1 !== 0 || w2 !== 0) : p !== 0 && pos >= 0 && pos <= 100;
   const apply = () => onApply(lc, kind === 'node' ? { type: 'node', f }
     : mode === 'dist' ? { type: 'dist', axes, dir: (['X', 'Y', 'Z'].includes(dir) ? dir : 'Y') as Dir, w1, w2, s: s0, e: e0 } : { type: 'point', axes, dir, p, pos });
@@ -158,7 +159,7 @@ export function LoadDialog({ kind, count, cases, lc0, onClose, onApply }: {
       <div className="space-y-3">
         <SelectField label="Load Case" value={String(lc)} onChange={v => setLc(Number(v))} options={cases.map(c => ({ value: String(c.id), label: `${c.id}: ${c.name}` }))} />
         {kind === 'node' ? <div className="grid grid-cols-3 gap-2">
-          {['Fx (kN)', 'Fy (kN)', 'Fz (kN)', 'Mx (kNm)', 'My (kNm)', 'Mz (kNm)'].map((l, i) => <NumberField key={l} label={l} value={f[i]} step={1} onChange={v => setF(f.map((x, k) => (k === i ? v : x)))} />)}
+          {['FX (kN)', 'FY (kN)', 'FZ (kN)', 'MX (kNm)', 'MY (kNm)', 'MZ (kNm)'].map((l, i) => <NumberField key={l} label={sym(l)} value={f[i]} step={1} onChange={v => setF(f.map((x, k) => (k === i ? v : x)))} />)}
         </div> : <>
           <Segmented value={mode} onChange={v => { setMode(v); if (v === 'dist' && ['MX', 'MY', 'MZ'].includes(dir)) setDir('Y'); }} options={[{ value: 'dist', label: 'Distributed' }, { value: 'point', label: 'Point' }]} />
           <div className="grid grid-cols-2 gap-2">

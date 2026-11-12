@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { ChevronDown, Plus, X } from 'lucide-react';
 import { DofEditor, type DofSpec } from './DofEditor';
+import { sym } from './Sym';
 
 export interface Col<T> {
   key: string; label: React.ReactNode; w?: number; title?: string;
@@ -8,6 +9,8 @@ export interface Col<T> {
   /** For a 'dof' column: the popover that sets each degree of freedom to F, R or S. */
   dof?: DofSpec<T>;
   options?: { value: string; label: string }[];
+  /** Options that depend on the row (for example x y z for a local axis and X Y Z for a global one); replaces options. */
+  optionsFor?: (row: T) => { value: string; label: string }[];
   /** Suggestions for a text cell. */
   list?: string[];
   get?: (row: T) => string | number;
@@ -53,7 +56,7 @@ export function Sheet<T extends object>({ rows, cols, onChange, newRow, selected
     <div className="space-y-1.5">
       <div className="overflow-auto max-h-[calc(100vh-250px)] scroll-thin border border-slate-200 rounded">
         <table className="sheet" ref={ref}>
-          <thead><tr><th style={{ width: 34 }}></th>{cols.map(c => <th key={c.key} title={c.title} style={{ minWidth: c.w ?? 56 }}>{c.label}</th>)}<th style={{ width: 22 }}></th></tr></thead>
+          <thead><tr><th style={{ width: 34 }}></th>{cols.map(c => <th key={c.key} title={c.title} style={{ minWidth: c.w ?? 56 }}>{typeof c.label === 'string' ? sym(c.label) : c.label}</th>)}<th style={{ width: 22 }}></th></tr></thead>
           <tbody>
             {rows.map((r, i) => (
               <tr key={i} className={selected?.(r) ? 'sel' : ''}>
@@ -64,8 +67,7 @@ export function Sheet<T extends object>({ rows, cols, onChange, newRow, selected
                     <td key={c.key}>
                       {c.type === 'select' ? (
                         <select data-c={`${i}-${j}`} value={v} onChange={e => commit(i, c, e.target.value)}>
-                          {!c.options!.some(o => o.value === v) && <option value={v}>{v}</option>}
-                          {c.options!.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                          {(() => { const os = c.optionsFor ? c.optionsFor(r) : c.options!; return <>{!os.some(o => o.value === v) && <option value={v}>{v}</option>}{os.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</>; })()}
                         </select>
                       ) : c.type === 'dof' ? (
                         <button data-c={`${i}-${j}`} className="w-full h-6 flex items-center justify-center gap-1 tabular-nums hover:bg-slate-50" title={c.title}

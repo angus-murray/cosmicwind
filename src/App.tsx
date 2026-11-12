@@ -205,7 +205,7 @@ export default function App() {
       setPickMove({ base: [baseNode.x, baseNode.y, baseNode.z], nodes: [...moved], repeat, apply: d => (repeat ? copyWith(n => [n.x + d[0], n.y + d[1], n.z + d[2]]) : moveWith(n => [n.x + d[0], n.y + d[1], n.z + d[2]])) });
     };
     const inc = (copyMode: boolean) => () => ask(copyMode ? 'Copy By Increment' : 'Move By Increment',
-      [{ label: <>Δ<i>x</i> (m)</>, value: 0 }, { label: <>Δ<i>y</i> (m)</>, value: 0 }, { label: <>Δ<i>z</i> (m)</>, value: 0 }, ...(copyMode ? [{ label: 'Number of copies', value: 1 }] : [])],
+      [{ label: <>Δ<i>X</i> (m)</>, value: 0 }, { label: <>Δ<i>Y</i> (m)</>, value: 0 }, { label: <>Δ<i>Z</i> (m)</>, value: 0 }, ...(copyMode ? [{ label: 'Number of copies', value: 1 }] : [])],
       ([dx, dy, dz, n]) => (copyMode ? copyWith((q, k) => [q.x + dx * k, q.y + dy * k, q.z + dz * k], n) : moveWith(q => [q.x + dx, q.y + dy, q.z + dz])));
     const mirror = (copyMode: boolean): MenuItem[] => (['x', 'y', 'z'] as const).map((ax, i) => ({
       label: `Mirror About ${ax.toUpperCase()} Plane…`,
@@ -303,9 +303,9 @@ export default function App() {
   const lcCol = idSel('lc', 'Case', lcOpt, 112);
   const axesCol = { key: 'axes', label: 'Axes', type: 'select' as const, w: 66, options: [{ value: 'G', label: 'Global' }, { value: 'L', label: 'Local' }] };
   const nlCols: Col<NodeLoad>[] = [lcCol, { key: 'node', label: 'Node', w: 44 }, ...(['fx', 'fy', 'fz'] as const).map(k => ({ key: k, label: `${k.toUpperCase()} (kN)`, w: 54 })), ...(['mx', 'my', 'mz'] as const).map(k => ({ key: k, label: `${k.toUpperCase()} (kNm)`, w: 58 }))];
-  const dlCols: Col<DistLoad>[] = [lcCol, { key: 'member', label: 'Member', w: 50 }, axesCol, { key: 'dir', label: 'Dir.', type: 'select', w: 44, options: ['X', 'Y', 'Z'].map(v => ({ value: v, label: v })) },
+  const dlCols: Col<DistLoad>[] = [lcCol, { key: 'member', label: 'Member', w: 50 }, axesCol, { key: 'dir', label: 'Dir.', type: 'select', w: 44, optionsFor: r => ['X', 'Y', 'Z'].map(v => ({ value: v, label: r.axes === 'L' ? v.toLowerCase() : v })) },
     { key: 'w1', label: <><i>w</i><sub>1</sub> (kN/m)</>, w: 60 }, { key: 'w2', label: <><i>w</i><sub>2</sub> (kN/m)</>, w: 60 }, { key: 's', label: 'Start (%)', w: 52 }, { key: 'e', label: 'End (%)', w: 52 }];
-  const plCols: Col<PointLoad>[] = [lcCol, { key: 'member', label: 'Member', w: 50 }, axesCol, { key: 'dir', label: 'Dir.', type: 'select', w: 80, options: [...['X', 'Y', 'Z'].map(v => ({ value: v, label: `Force ${v}` })), ...['MX', 'MY', 'MZ'].map(v => ({ value: v, label: `Moment ${v[1]}` }))] },
+  const plCols: Col<PointLoad>[] = [lcCol, { key: 'member', label: 'Member', w: 50 }, axesCol, { key: 'dir', label: 'Dir.', type: 'select', w: 80, optionsFor: r => { const c = (v: string) => (r.axes === 'L' ? v.toLowerCase() : v); return [...['X', 'Y', 'Z'].map(v => ({ value: v, label: `Force ${c(v)}` })), ...['MX', 'MY', 'MZ'].map(v => ({ value: v, label: `Moment ${c(v[1])}` }))]; } },
     { key: 'p', label: 'Load (kN, kNm)', w: 80 }, { key: 'pos', label: 'Position (%)', w: 66 }];
   const stCols: Col<Settlement>[] = [lcCol, { key: 'node', label: 'Node', w: 44 }, { key: 'dx', label: 'DX (mm)' }, { key: 'dy', label: 'DY (mm)' }, { key: 'dz', label: 'DZ (mm)' }];
   const thCols: Col<ThermalLoad>[] = [lcCol, { key: 'member', label: 'Member' }, { key: 'dT', label: 'Temperature Change (°C)', w: 130 }];

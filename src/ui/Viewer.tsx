@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { useElementSize } from 'engineering-ui';
+import { sym } from './Sym';
 import { releaseCode, restraintCode, type Model, type Note } from '../model/types';
 import { outlineLoops, outlineOf } from '../model/sections';
 import { memberAxes, type CaseResult, type Vec6 } from '../solver/frame';
@@ -802,7 +803,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
           })}
         </g>
       </svg>
-      {stressOn && <div className="absolute left-2 top-1/2 -translate-y-1/2 bg-white/95 border border-slate-200 shadow-2xs rounded px-2.5 py-2 text-[11px] text-slate-600 tabular-nums pointer-events-none flex flex-col items-center gap-1.5">
+      {stressOn && <div className="absolute left-2 top-2 bg-white/95 border border-slate-200 shadow-2xs rounded px-2.5 py-2 text-[11px] text-slate-600 tabular-nums pointer-events-none flex flex-col items-center gap-1.5">
         <div className="font-semibold text-slate-700 text-center max-w-[96px] leading-tight">{STRESSES.find(t => t.key === opts.stress)!.label}</div>
         <span>{fmt(stressMesh.hi)} MPa</span>
         <span className="w-3 h-44 rounded-sm" style={{ background: `linear-gradient(to top, ${[0, 0.25, 0.5, 0.75, 1].map(jetCss).join(', ')})` }} />
@@ -811,7 +812,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
       {tip && <>
         <svg width={W} height={H} className="absolute inset-0 pointer-events-none">{tip.foot && <><line x1={tip.foot[0]} y1={tip.foot[1]} x2={tip.dot[0]} y2={tip.dot[1]} stroke={tip.colour} strokeWidth={1.25} /><circle cx={tip.foot[0]} cy={tip.foot[1]} r={2.5} fill={tip.colour} /></>}<circle cx={tip.dot[0]} cy={tip.dot[1]} r={4.5} fill="#fff" stroke={tip.colour} strokeWidth={2} /></svg>
         <div className="absolute z-10 pointer-events-none bg-white/95 border border-slate-200 rounded-md shadow-md px-2 py-1 text-[11px] text-slate-700 whitespace-nowrap" style={{ left: Math.min(tip.x + 14, W - 230), top: Math.min(tip.y + 14, H - 70) }}>
-          {tip.lines.map((l, i) => <div key={i} className={i === 1 ? 'font-semibold' : ''} style={i === 1 ? { color: tip.colour } : undefined}>{l}</div>)}
+          {tip.lines.map((l, i) => <div key={i} className={i === 1 ? 'font-semibold' : ''} style={i === 1 ? { color: tip.colour } : undefined}>{sym(l)}</div>)}
         </div>
       </>}
       {legend.length > 0 && <div className="absolute bottom-2 left-20 max-w-[45%] bg-white/85 border border-slate-200 rounded-md px-2 py-1 text-[11px] text-slate-700 space-y-0.5 pointer-events-none">

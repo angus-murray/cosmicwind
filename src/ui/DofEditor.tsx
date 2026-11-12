@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { sym } from './Sym';
 
 /** What a restraint or release editor needs to know about the six degrees of freedom it edits. */
 export interface DofSpec<T> {
@@ -47,12 +48,12 @@ export function DofEditor<T>({ spec, row, at, onChange, onClose }: { spec: DofSp
       <div className="absolute w-[320px] bg-white border border-slate-200 rounded-lg shadow-lg p-3 space-y-2.5" style={{ left, top }} onMouseDown={e => e.stopPropagation()}>
         <div className="text-xs font-semibold text-slate-700">{spec.title(row)}</div>
         <div className="flex flex-wrap gap-1">
-          {spec.presets.map(([c, l]) => <button key={c + l} className="btn !h-6 !px-2 !text-[11px]" onClick={() => set((c === '–' ? spec.dflt : c).split(''), k)}>{l}</button>)}
+          {spec.presets.map(([c, l]) => <button key={c + l} className="btn !h-6 !px-2 !text-[11px]" onClick={() => set((c === '–' ? spec.dflt : c).split(''), k)}>{sym(l)}</button>)}
         </div>
         <div className="space-y-1.5">
           {six.map((c, i) => (
             <div key={i} className="flex items-center gap-2 h-7">
-              <span className="w-8 text-[11px] font-medium text-slate-600">{spec.names[i]}</span>
+              <span className="w-8 text-[11px] font-medium text-slate-600">{sym(spec.names[i])}</span>
               <button className={`w-8 h-6 rounded border text-xs font-semibold ${TINT[c] ?? TINT.R}`} title="Click to change: F fixed, R released, S spring" onClick={() => cycle(i)}>{c}</button>
               {c === 'S'
                 ? <><input className="control-sm w-24 tabular-nums" inputMode="decimal" autoComplete="off" value={draft[i] ?? String(k[i])} onChange={e => setDraft({ ...draft, [i]: e.target.value })}
