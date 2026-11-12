@@ -359,10 +359,9 @@ export default function App() {
               <div className="panel">
                 <h2 className="panel-title">Analysis</h2>
                 <Check checked={model.settings.nonlinear} onChange={v => setModel(m => ({ ...m, settings: { ...m.settings, nonlinear: v } }))} title="Iterates with the geometric stiffness from the member axial forces">Second-Order (P-Δ) Analysis</Check>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 gap-2">
                   <NumberField label="Buckling Modes" value={model.settings.bucklingModes} min={0} max={20} onChange={v => setModel(m => ({ ...m, settings: { ...m.settings, bucklingModes: Math.round(v) } }))} />
                   <NumberField label="Vibration Modes" value={model.settings.modalModes} min={0} max={30} onChange={v => setModel(m => ({ ...m, settings: { ...m.settings, modalModes: Math.round(v) } }))} />
-                  <NumberField label="Stations" value={model.settings.stations} min={3} max={101} title="Result points along each member" onChange={v => setModel(m => ({ ...m, settings: { ...m.settings, stations: Math.round(v) } }))} />
                 </div>
               </div>
               <div className="panel">

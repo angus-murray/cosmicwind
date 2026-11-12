@@ -27,6 +27,30 @@ export const DIAGRAMS: { key: DiagramKey; label: string; unit: string; colour: s
   { key: 'Mz', label: 'Moment Mz', unit: 'kNm', colour: '#2563eb' }, { key: 'My', label: 'Moment My', unit: 'kNm', colour: '#7c3aed' },
   { key: 'Mres', label: 'Moment Resultant', unit: 'kNm', colour: '#be123c' },
 ];
+/** A drawn diagram: its edge and the member axis at each result station, in screen pixels. */
+interface Curve { key: DiagramKey; id: number; L: number; top: [number, number][]; axis: [number, number][]; xs: number[]; lines: (i: number, f: number) => string[] }
+/** The diagram under the pointer: anywhere between the member and the edge of the diagram, or within a few pixels of either.
+ *  The position along the member follows the pointer continuously, and the values are interpolated between stations. */
+function pickCurve(curves: Curve[], px: number, py: number, tol = 7) {
+  let best: { score: number; edgeDist: number; c: Curve; i: number; f: number; x: number; foot: [number, number]; edge: [number, number] } | null = null;
+  for (const c of curves) for (let i = 0; i + 1 < c.xs.length; i++) {
+    if (c.xs[i + 1] - c.xs[i] < 1e-9) continue; // a jump under a point load: covered by the neighbouring segments
+    const a0 = c.axis[i], a1 = c.axis[i + 1], ux = a1[0] - a0[0], uy = a1[1] - a0[1], len = Math.hypot(ux, uy);
+    if (len < 1e-6) continue;
+    const tx = ux / len, ty = uy / len, nx = -ty, ny = tx, sRaw = ((px - a0[0]) * tx + (py - a0[1]) * ty) / len;
+    if (sRaw < -tol / len || sRaw > 1 + tol / len) continue;
+    const s = Math.min(1, Math.max(0, sRaw)), foot: [number, number] = [a0[0] + ux * s, a0[1] + uy * s];
+    const o0 = [c.top[i][0] - a0[0], c.top[i][1] - a0[1]], o1 = [c.top[i + 1][0] - a1[0], c.top[i + 1][1] - a1[1]];
+    const edge: [number, number] = [foot[0] + o0[0] + (o1[0] - o0[0]) * s, foot[1] + o0[1] + (o1[1] - o0[1]) * s];
+    const on = (edge[0] - foot[0]) * nx + (edge[1] - foot[1]) * ny, dn = (px - foot[0]) * nx + (py - foot[1]) * ny;
+    const lo = Math.min(0, on), hi = Math.max(0, on), across = dn < lo ? lo - dn : dn > hi ? dn - hi : 0, endGap = sRaw < 0 ? -sRaw * len : sRaw > 1 ? (sRaw - 1) * len : 0;
+    const score = Math.hypot(across, endGap), edgeDist = Math.abs(dn - on);
+    if (score > tol) continue;
+    if (!best || score < best.score - 1e-9 || (Math.abs(score - best.score) <= 1e-9 && edgeDist < best.edgeDist))
+      best = { score, edgeDist, c, i, f: s, x: c.xs[i] + (c.xs[i + 1] - c.xs[i]) * s, foot, edge };
+  }
+  return best;
+}
 export type Tool = 'select' | 'node' | 'member' | 'measure';
 /** Points clicked in empty space lie on the global XY plane (Z = 0), to the nearest millimetre. */
 export interface ViewOpts {
@@ -159,9 +183,9 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   const noteDrag = useRef<{ id: number; dx: number; dy: number; x: number; y: number } | null>(null);
   const [noteOff, setNoteOff] = useState<Record<number, [number, number]>>({});
   const faceHit = useRef<{ id: number; v?: number } | null>(null);
-  const curvesRef = useRef<{ key: DiagramKey; id: number; L: number; top: [number, number][]; xs: number[]; lines: (i: number) => string[] }[]>([]);
+  const curvesRef = useRef<Curve[]>([]);
   /** Hover tip for the diagram curve under the pointer. */
-  const [tip, setTip] = useState<{ x: number; y: number; dot: [number, number]; colour: string; lines: string[] } | null>(null);
+  const [tip, setTip] = useState<{ x: number; y: number; dot: [number, number]; foot?: [number, number]; colour: string; lines: string[] } | null>(null);
   /** Node or member under the pointer, highlighted so the click target is clear. */
   const [hover, setHover] = useState<{ n: number | null; m: number | null }>({ n: null, m: null });
   /** First corner of a selection box that is waiting for its second click. */
@@ -210,11 +234,9 @@ export const Viewer = React.forwardRef<ViewerHandle, {
     if (!dragging) {
       const h = hitAt(lx, ly), hn = h.hitN, hm = tool === 'select' && !pick ? h.hitM : null; // draw tools snap to nodes only
       setHover(v => (v.n === hn && v.m === hm ? v : { n: hn, m: hm }));
-      let near: { d: number; c: (typeof curvesRef.current)[number]; i: number } | null = null; // nearest point of a diagram curve within 10 px
-      if (hn === null) for (const c of curvesRef.current) c.top.forEach((q, i) => { const d = Math.hypot(q[0] - lx, q[1] - ly); if (d < 10 && (!near || d < near.d)) near = { d, c, i }; });
-      const nr = near as { d: number; c: (typeof curvesRef.current)[number]; i: number } | null;
+      const nr = hn === null ? pickCurve(curvesRef.current, lx, ly) : null; // the diagram, or the member it hangs from, under the pointer
       const fh = faceHit.current, stressTip = !nr && hn === null && stressOn && fh && fh.v !== undefined ? { x: lx, y: ly, dot: [lx, ly] as [number, number], colour: '#475569', lines: [`Member ${fh.id}`, `${STRESSES.find(t => t.key === opts.stress)!.label.replace(/ \(.*\)$/, '')}: ${fmt(fh.v)} MPa`] } : null;
-      setTip(nr ? { x: lx, y: ly, dot: nr.c.top[nr.i], colour: DIAGRAMS.find(d => d.key === nr.c.key)!.colour, lines: [`Member ${nr.c.id}, x = ${nr.c.xs[nr.i].toFixed(3)} m (${(100 * nr.c.xs[nr.i] / nr.c.L).toFixed(0)}%)`, ...nr.c.lines(nr.i)] } : stressTip);
+      setTip(nr ? { x: lx, y: ly, dot: nr.edge, foot: nr.foot, colour: DIAGRAMS.find(d => d.key === nr.c.key)!.colour, lines: [`Member ${nr.c.id}, x = ${nr.x.toFixed(3)} m (${(100 * nr.x / nr.c.L).toFixed(0)}%)`, ...nr.c.lines(nr.i, nr.f)] } : stressTip);
       if (tool !== 'select' || pick) {
         const nn = hn !== null ? nodeMap.get(hn) : null, mid = !nn ? midAt(lx, ly) : null, drawing = tool === 'member' && chain !== null, dt = drawing && !nn && !mid ? drawTarget(lx, ly) : null;
         const pt: V3 | null = nn ? [nn.x, nn.y, nn.z] : mid ? mid.pt : dt ? dt.pt : onPlane(lx, ly), at = pt ? P(pt) : null;
@@ -520,7 +542,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   const diag: React.ReactNode[] = [], taken = new Set<string>();
   const free = (p: [number, number]) => { const k = `${Math.round(p[0] / 26)},${Math.round(p[1] / 12)}`; if (taken.has(k)) return false; taken.add(k); return true; };
   /** Points of the drawn diagrams, kept for the hover tip. */
-  const curves: { key: DiagramKey; id: number; L: number; top: [number, number][]; xs: number[]; lines: (i: number) => string[] }[] = [];
+  const curves: Curve[] = [];
   const active = DIAGRAMS.filter(d => opts.diagrams[d.key]);
   if (result && active.length && !mode) {
     for (const { key, colour, unit } of active) {
@@ -542,10 +564,13 @@ export const Viewer = React.forwardRef<ViewerHandle, {
           const lab = new Set([0, r.x.length - 1, im]);
           lab.forEach(i => { const v = mag(r, i); if ((Math.abs(v) > 1e-6 * vmax || i === im) && free(top[i])) diag.push(text([top[i][0], top[i][1] - 4], fmt(v), `gt${k}-${i}`, colour, 'middle', true)); });
         }
-        curves.push({ key, id: g.m.id, L: g.L, top, xs: r.x, lines: i => {
-          const c = comp(r, i), out = [`${DIAGRAMS.find(d => d.key === key)!.label}: ${fmt(mag(r, i))} ${unit}`];
-          if (key === 'Mres') out.push(`Mz ${fmt(r.Mz[i])}, My ${fmt(r.My[i])} kNm`);
-          if (key === 'Vres') out.push(`Vy ${fmt(r.Vy[i])}, Vz ${fmt(r.Vz[i])} kN`);
+        const axis = r.x.map(x => P(along(g, x)));
+        curves.push({ key, id: g.m.id, L: g.L, top, axis, xs: r.x, lines: (j, f) => { // the actions between stations j and j + 1, interpolated
+          const lerp = (a: number[]) => [a[j] + (a[Math.min(j + 1, a.length - 1)] - a[j]) * f];
+          const q = { N: lerp(r.N), T: lerp(r.T), Vy: lerp(r.Vy), Vz: lerp(r.Vz), My: lerp(r.My), Mz: lerp(r.Mz) } as unknown as typeof r, i = 0;
+          const c = comp(q, i), out = [`${DIAGRAMS.find(d => d.key === key)!.label}: ${fmt(mag(q, i))} ${unit}`];
+          if (key === 'Mres') out.push(`Mz ${fmt(q.Mz[i])}, My ${fmt(q.My[i])} kNm`);
+          if (key === 'Vres') out.push(`Vy ${fmt(q.Vy[i])}, Vz ${fmt(q.Vz[i])} kN`);
           if (res) out.push(`Drawn at ${(((Math.atan2(c[1], c[0]) * 180 / Math.PI) % 360 + 360) % 360).toFixed(0)}° from local y towards z`);
           return out;
         } });
@@ -717,7 +742,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
         <div className="flex items-center gap-2"><span>{fmt(stressMesh.lo)} MPa</span><span className="w-36 h-2.5 rounded-sm" style={{ background: `linear-gradient(to right, ${[0, 0.25, 0.5, 0.75, 1].map(jetCss).join(', ')})` }} /><span>{fmt(stressMesh.hi)} MPa</span></div>
       </div>}
       {tip && <>
-        <svg width={W} height={H} className="absolute inset-0 pointer-events-none"><circle cx={tip.dot[0]} cy={tip.dot[1]} r={4.5} fill="#fff" stroke={tip.colour} strokeWidth={2} /></svg>
+        <svg width={W} height={H} className="absolute inset-0 pointer-events-none">{tip.foot && <><line x1={tip.foot[0]} y1={tip.foot[1]} x2={tip.dot[0]} y2={tip.dot[1]} stroke={tip.colour} strokeWidth={1.25} /><circle cx={tip.foot[0]} cy={tip.foot[1]} r={2.5} fill={tip.colour} /></>}<circle cx={tip.dot[0]} cy={tip.dot[1]} r={4.5} fill="#fff" stroke={tip.colour} strokeWidth={2} /></svg>
         <div className="absolute z-10 pointer-events-none bg-white/95 border border-slate-200 rounded-md shadow-md px-2 py-1 text-[11px] text-slate-700 whitespace-nowrap" style={{ left: Math.min(tip.x + 14, W - 230), top: Math.min(tip.y + 14, H - 70) }}>
           {tip.lines.map((l, i) => <div key={i} className={i === 1 ? 'font-semibold' : ''} style={i === 1 ? { color: tip.colour } : undefined}>{l}</div>)}
         </div>

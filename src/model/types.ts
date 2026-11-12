@@ -34,7 +34,6 @@ export interface Settings {
   nonlinear: boolean;       // P-Δ (second-order) analysis
   bucklingModes: number;    // 0 = off
   modalModes: number;       // 0 = off
-  stations: number;         // result stations per member
 }
 
 export interface Model {
@@ -73,7 +72,7 @@ export const MATERIAL_PRESETS: Omit<Material, 'id'>[] = [
   { name: 'Timber GL17', E: 16700, G: 1110, rho: 650, alpha: 4e-6 },
 ];
 
-export const DEFAULT_SETTINGS: Settings = { nonlinear: false, bucklingModes: 0, modalModes: 0, stations: 21 };
+export const DEFAULT_SETTINGS: Settings = { nonlinear: false, bucklingModes: 0, modalModes: 0 };
 
 export const emptyModel = (): Model => ({
   title: 'Untitled', nodes: [], members: [], sections: [], materials: [{ ...STEEL }], springs: [],

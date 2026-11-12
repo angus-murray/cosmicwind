@@ -140,6 +140,9 @@ function fixedEnd(el: El, ld: Load): number[] {
   return f;
 }
 
+/** Result stations along each member, in addition to the ends of point and distributed loads. */
+const STATIONS = 21;
+
 /** Internal actions and deflections along a member from its end forces, end displacements and loads. */
 function stations(el: El, ld: Load, end: number[], u: number[], nStations: number, active: boolean): MemberResult {
   const L = el.L, xs: [number, boolean][] = [];
@@ -323,7 +326,7 @@ export function analyse(model: Model): Analysis {
     ...model.loadCases.map(c => ({ id: c.id, name: c.name, combo: false, f: [[c.id, 1]] as [number, number][] })),
     ...model.combos.map(c => ({ id: c.id, name: c.name, combo: true, f: Object.entries(c.f).map(([k, v]) => [Number(k), Number(v)] as [number, number]).filter(([k, v]) => v && lcs.has(k)) })),
   ];
-  const nStations = Math.max(3, Math.min(101, Math.round(model.settings.stations || 21)));
+  const nStations = STATIONS;
   const massVec = new Float64Array(neq);
   const shapeOf = (x: Float64Array) => {
     let mx = 0; for (let i = 0; i < neq; i++) if (eqDof[i] < 3) mx = Math.max(mx, Math.abs(x[i]));
