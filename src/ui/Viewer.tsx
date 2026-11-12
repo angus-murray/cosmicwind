@@ -85,6 +85,8 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   /** Loads to draw: load case id and factor. */
   loadCases: [number, number][];
   result?: CaseResult | null; mode?: Map<number, Vec6> | null;
+  /** Oscillates the mode shape about the undeformed position instead of showing it at full amplitude. */
+  animateMode?: boolean;
   onAddNode: (p: V3) => number; onAddMember: (a: number, b: number) => void;
   /** Right click (without dragging) in the select tool: where, and the node or member under the pointer. */
   /** Changes when a different model is loaded, which refits the view. */
@@ -96,7 +98,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   /** Notes drawn as call-outs; a box can be dragged, and double-clicked to edit. */
   notes?: Note[]; onNoteMove?: (id: number, dx: number, dy: number) => void; onNoteEdit?: (id: number, x: number, y: number) => void;
   onContext?: (c: { x: number; y: number; node: number | null; member: number | null; note?: number | null; /** Node at the end of the member that was clicked near, if any. */ endNode: number | null }) => void;
-}>(function Viewer({ model, opts, tool, sel, onSelect, loadCases, result, mode, onAddNode, onAddMember, onContext, fitRev = 0, pick, onPickEnd, onSplitMember, notes = [], onNoteMove, onNoteEdit }, handle) {
+}>(function Viewer({ model, opts, tool, sel, onSelect, loadCases, result, mode, animateMode, onAddNode, onAddMember, onContext, fitRev = 0, pick, onPickEnd, onSplitMember, notes = [], onNoteMove, onNoteEdit }, handle) {
   const [box, size] = useElementSize<HTMLDivElement>();
   const svgRef = useRef<SVGSVGElement>(null);
   // c is the orbit pivot (the model centre at the last fit); px, py are the screen offset of the pivot from the view centre.
@@ -184,6 +186,17 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   const [noteOff, setNoteOff] = useState<Record<number, [number, number]>>({});
   const faceHit = useRef<{ id: number; v?: number } | null>(null);
   const curvesRef = useRef<Curve[]>([]);
+  /** Phase of the vibration animation (radians); the shape is scaled by its sine. */
+  const [phase, setPhase] = useState(0);
+  const animating = !!mode && !!animateMode;
+  useEffect(() => {
+    if (!animating) { setPhase(0); return; }
+    if (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches) { setPhase(Math.PI / 2); return; }
+    let raf = 0, last = 0; const t0 = performance.now();
+    const tick = (t: number) => { raf = requestAnimationFrame(tick); if (t - last < 33) return; last = t; setPhase(((t - t0) / 1000) * 2 * Math.PI * 0.8); }; // about 0.8 cycles per second, 30 frames per second
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [animating, mode]);
   /** Hover tip for the diagram curve under the pointer. */
   const [tip, setTip] = useState<{ x: number; y: number; dot: [number, number]; foot?: [number, number]; colour: string; lines: string[] } | null>(null);
   /** Node or member under the pointer, highlighted so the click target is clear. */
@@ -583,7 +596,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   if (shape) {
     let dmax = 1e-12; shape.forEach(d => { dmax = Math.max(dmax, Math.hypot(d[0], d[1], d[2])); });
     if (!mode && result) result.members.forEach(r => r.dy.forEach((v, i) => { dmax = Math.max(dmax, Math.hypot(r.dx[i], v, r.dz[i])); }));
-    const sc = 0.07 * bounds.S * opts.defScale / dmax;
+    const sc = 0.07 * bounds.S * opts.defScale / dmax * (animating ? Math.sin(phase) : 1);
     for (const g of geo) {
       const r = !mode && result ? result.members.get(g.m.id) : null; let pts: [number, number][];
       if (r) pts = r.x.map((x, i) => P(along(g, x, [r.dx[i], r.dy[i], r.dz[i]], sc)));
@@ -664,7 +677,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
             {slide && <path fill="none" d={`M${f[0] - u[0] * 2 + nx * 5} ${f[1] - u[1] * 2 + ny * 5}L${f[0] - u[0] * 2 - nx * 5} ${f[1] - u[1] * 2 - ny * 5}M${f[0] + u[0] * 2 + nx * 5} ${f[1] + u[1] * 2 + ny * 5}L${f[0] + u[0] * 2 - nx * 5} ${f[1] + u[1] * 2 - ny * 5}`} />}
           </g>;
         }))}
-        {opts.localAxes && geo.map(g => { const c = along(g, g.L / 2), p = P(c); return <g key={`ax${g.m.id}`}>{[RED, GREEN, BLUE].map((col, i) => { const d = dirS(g.R[i] as V3); return d && <line key={i} x1={p[0]} y1={p[1]} x2={p[0] + d[0] * 16} y2={p[1] + d[1] * 16} stroke={col} strokeWidth={1.5} />; })}</g>; })}
+        {opts.localAxes && geo.map(g => { const c = along(g, g.L / 2), p = P(c); return <g key={`ax${g.m.id}`}>{[RED, GREEN, BLUE].map((col, i) => { const d = dirS(g.R[i] as V3); return d && <g key={i} strokeLinecap="round"><line x1={p[0]} y1={p[1]} x2={p[0] + d[0] * 20} y2={p[1] + d[1] * 20} stroke="#fff" strokeWidth={6} strokeOpacity={0.9} /><line x1={p[0]} y1={p[1]} x2={p[0] + d[0] * 20} y2={p[1] + d[1] * 20} stroke={col} strokeWidth={3.5} /></g>; })}</g>; })}
         {diag}{defl}{loads}
         {model.nodes.map(n => {
           const p = P([n.x, n.y, n.z]), r = restraintCode(n.r), t = r.slice(0, 3), on = sel.nodes.has(n.id);
