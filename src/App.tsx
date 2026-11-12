@@ -82,13 +82,13 @@ export default function App() {
   const delSel = useCallback(() => { setModel(m => deleteNodes(deleteMembersAndFreeNodes(m, sel.members), sel.nodes)); setSel(noSel()); }, [sel, setModel]);
   const patchMembers = (p: Partial<Member>) => setModel(m => ({ ...m, members: m.members.map(x => (sel.members.has(x.id) ? { ...x, ...p } : x)) }));
   const patchNodes = (p: Partial<Node>) => setModel(m => ({ ...m, nodes: m.nodes.map(x => (sel.nodes.has(x.id) ? { ...x, ...p } : x)) }));
-  const subdivide = (np: number = parts) => setModel(m => {
+  const subdivide = (np: number = parts, which: Set<number> = sel.members) => setModel(m => {
     const n = Math.max(2, Math.round(np)), nodes = m.nodes.slice(), members: Member[] = [], out = { ...m };
     let nid = nextId(nodes), mid = nextId(m.members);
     const dist: DistLoad[] = [], point: PointLoad[] = [], thermal: ThermalLoad[] = [];
     for (const mb of m.members) {
       const a = nodes.find(x => x.id === mb.a), b = nodes.find(x => x.id === mb.b);
-      if (!sel.members.has(mb.id) || !a || !b) { members.push(mb); continue; }
+      if (!which.has(mb.id) || !a || !b) { members.push(mb); continue; }
       const ids = [mb.a], mids: number[] = [];
       for (let i = 1; i < n; i++) { const t = i / n; nodes.push({ id: nid, x: +(a.x + (b.x - a.x) * t).toFixed(6), y: +(a.y + (b.y - a.y) * t).toFixed(6), z: +(a.z + (b.z - a.z) * t).toFixed(6), r: /^..F..R$/.test(a.r) && /^..F..R$/.test(b.r) ? 'RRFFFR' : FREE }); ids.push(nid++); }
       ids.push(mb.b);
@@ -101,9 +101,11 @@ export default function App() {
       for (const l of m.pointLoads.filter(x => x.member === mb.id)) { const i = Math.min(n - 1, Math.floor(l.pos * n / 100)); point.push({ ...l, member: mids[i], pos: +(l.pos * n - 100 * i).toFixed(6) }); }
       for (const l of m.thermal.filter(x => x.member === mb.id)) mids.forEach(id => thermal.push({ ...l, member: id }));
     }
-    const keep = <T extends { member: number }>(a: T[]) => a.filter(x => !sel.members.has(x.member));
+    const keep = <T extends { member: number }>(a: T[]) => a.filter(x => !which.has(x.member));
     return { ...out, nodes, members, distLoads: [...keep(m.distLoads), ...dist], pointLoads: [...keep(m.pointLoads), ...point], thermal: [...keep(m.thermal), ...thermal] };
   });
+  /** Splits a member at its midpoint (loads stay with their part) and returns the number of the new node. */
+  const splitMember = (id: number): number => { const nid = nextId(model.nodes); subdivide(2, new Set([id])); return nid; };
   const copyWith = (tf: (n: Node, k: number) => [number, number, number], count = 1) => setModel(m => {
     const mem = m.members.filter(x => sel.members.has(x.id) || (sel.nodes.has(x.a) && sel.nodes.has(x.b)));
     const ids = new Set([...sel.nodes, ...mem.flatMap(x => [x.a, x.b])]), nodes = m.nodes.slice(), members = m.members.slice();
@@ -378,7 +380,7 @@ export default function App() {
 
           <div className="results-column">
             <div ref={cvRef} className="relative bg-slate-50 rounded-lg border border-slate-200 shadow-2xs overflow-hidden h-[520px] lg:h-auto lg:flex-1 lg:min-h-[240px]">
-              <Viewer ref={viewer} fitRev={fitRev} pick={pickMove} onPickEnd={() => setPickMove(null)} model={model} opts={opts} tool={tool} sel={sel} onSelect={setSel} loadCases={drawLoads} result={tab === 'results' ? okRes : null} mode={tab === 'results' ? modeShape : null} onAddNode={addNode} onAddMember={addMember}
+              <Viewer ref={viewer} fitRev={fitRev} onSplitMember={splitMember} pick={pickMove} onPickEnd={() => setPickMove(null)} model={model} opts={opts} tool={tool} sel={sel} onSelect={setSel} loadCases={drawLoads} result={tab === 'results' ? okRes : null} mode={tab === 'results' ? modeShape : null} onAddNode={addNode} onAddMember={addMember}
                 onContext={c => { setCtx(c); if (c.node !== null && !sel.nodes.has(c.node)) setSel({ nodes: new Set([c.node]), members: new Set() }); else if (c.node === null && c.member !== null && !sel.members.has(c.member)) setSel({ nodes: new Set(), members: new Set([c.member]) }); }} />
               {ctx && menuOf() && <ContextMenu menu={menuOf()!} W={cvSize.width} H={cvSize.height} onClose={() => setCtx(null)} />}
               {prompt && <PromptBox prompt={prompt} W={cvSize.width} H={cvSize.height} onClose={() => setPrompt(null)} />}

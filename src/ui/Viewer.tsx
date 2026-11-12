@@ -58,10 +58,12 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   /** Right click (without dragging) in the select tool: where, and the node or member under the pointer. */
   /** Changes when a different model is loaded, which refits the view. */
   fitRev?: number;
+  /** A node placed on the midpoint of a member splits it there: returns the number of the new node. */
+  onSplitMember?: (memberId: number) => number;
   /** Move or copy to a point: the point to pick the offset from, the nodes that travel, and what to do with the offset. */
   pick?: { base: V3; nodes: number[]; repeat: boolean; apply: (d: V3) => void } | null; onPickEnd?: () => void;
   onContext?: (c: { x: number; y: number; node: number | null; member: number | null; /** Node at the end of the member that was clicked near, if any. */ endNode: number | null }) => void;
-}>(function Viewer({ model, opts, tool, sel, onSelect, loadCases, result, mode, onAddNode, onAddMember, onContext, fitRev = 0, pick, onPickEnd }, handle) {
+}>(function Viewer({ model, opts, tool, sel, onSelect, loadCases, result, mode, onAddNode, onAddMember, onContext, fitRev = 0, pick, onPickEnd, onSplitMember }, handle) {
   const [box, size] = useElementSize<HTMLDivElement>();
   const svgRef = useRef<SVGSVGElement>(null);
   // c is the orbit pivot (the model centre at the last fit); px, py are the screen offset of the pivot from the view centre.
@@ -142,6 +144,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   const commitRef = useRef<() => void>(() => undefined);
   /** Where the drawing cursor lands (screen pixels) when a node or the snap grid captures it. */
   const [snapAt, setSnapAt] = useState<[number, number] | null>(null);
+  const [snapMid, setSnapMid] = useState(false);
   const faceHit = useRef<{ id: number; v?: number } | null>(null);
   const curvesRef = useRef<{ key: DiagramKey; id: number; L: number; top: [number, number][]; xs: number[]; lines: (i: number) => string[] }[]>([]);
   /** Hover tip for the diagram curve under the pointer. */
@@ -198,9 +201,9 @@ export const Viewer = React.forwardRef<ViewerHandle, {
       const fh = faceHit.current, stressTip = !nr && hn === null && stressOn && fh && fh.v !== undefined ? { x: lx, y: ly, dot: [lx, ly] as [number, number], colour: '#475569', lines: [`Member ${fh.id}`, `${STRESSES.find(t => t.key === opts.stress)!.label.replace(/ \(.*\)$/, '')}: ${fmt(fh.v)} MPa`] } : null;
       setTip(nr ? { x: lx, y: ly, dot: nr.c.top[nr.i], colour: DIAGRAMS.find(d => d.key === nr.c.key)!.colour, lines: [`Member ${nr.c.id}, x = ${nr.c.xs[nr.i].toFixed(3)} m (${(100 * nr.c.xs[nr.i] / nr.c.L).toFixed(0)}%)`, ...nr.c.lines(nr.i)] } : stressTip);
       if (tool !== 'select' || pick) {
-        const nn = hn !== null ? nodeMap.get(hn) : null, drawing = tool === 'member' && chain !== null, dt = drawing && !nn ? drawTarget(lx, ly) : null;
-        const pt: V3 | null = nn ? [nn.x, nn.y, nn.z] : dt ? dt.pt : opts.snap > 0 ? onPlane(lx, ly) : null, at = pt ? P(pt) : null;
-        setSnapAt(at);
+        const nn = hn !== null ? nodeMap.get(hn) : null, mid = !nn ? midAt(lx, ly) : null, drawing = tool === 'member' && chain !== null, dt = drawing && !nn && !mid ? drawTarget(lx, ly) : null;
+        const pt: V3 | null = nn ? [nn.x, nn.y, nn.z] : mid ? mid.pt : dt ? dt.pt : opts.snap > 0 ? onPlane(lx, ly) : null, at = pt ? P(pt) : null;
+        setSnapAt(at); setSnapMid(!!mid);
         if (drawing) {
           setCursor(at ?? [lx, ly]);
           const c = nodeMap.get(chain!); // direction and length so far, kept for a typed length
@@ -223,6 +226,12 @@ export const Viewer = React.forwardRef<ViewerHandle, {
     else if (d.mode === 'orbit') setCam(c => ({ ...c, yaw: c.yaw + dx * 0.008, pitch: Math.max(-Math.PI / 2, Math.min(Math.PI / 2, c.pitch + dy * 0.008)) }));
   };
   /** Nearest node within 9 px, else nearest member within 6 px. */
+  /** The midpoint of a member within 9 px of the pointer: a snap point when drawing, measuring or moving. */
+  const midAt = (sx: number, sy: number): { id: number; pt: V3 } | null => {
+    let best = 9, out: { id: number; pt: V3 } | null = null;
+    for (const g of geo) { const m: V3 = [(g.A[0] + g.B[0]) / 2, (g.A[1] + g.B[1]) / 2, (g.A[2] + g.B[2]) / 2], q = P(m), d = Math.hypot(q[0] - sx, q[1] - sy); if (d < best) { best = d; out = { id: g.m.id, pt: m.map(v => Math.round(v * 1e6) / 1e6) as V3 }; } }
+    return out;
+  };
   const hitAt = (sx: number, sy: number): { hitN: number | null; hitM: number | null } => {
     let hitN: number | null = null, best = 9;
     for (const n of model.nodes) { const q = P([n.x, n.y, n.z]), dist = Math.hypot(q[0] - sx, q[1] - sy); if (dist < best) { best = dist; hitN = n.id; } }
@@ -284,12 +293,12 @@ export const Viewer = React.forwardRef<ViewerHandle, {
     const { hitN, hitM } = hitAt(sx, sy);
     const add = e.shiftKey || e.ctrlKey || e.metaKey;
     if (pick) { // move or copy to the point clicked: a node, or a point on the working plane
-      const nn = hitN !== null ? nodeMap.get(hitN) : null, pt: V3 | null = nn ? [nn.x, nn.y, nn.z] : onPlane(sx, sy); if (!pt) return;
+      const nn = hitN !== null ? nodeMap.get(hitN) : null, pt: V3 | null = nn ? [nn.x, nn.y, nn.z] : midAt(sx, sy)?.pt ?? onPlane(sx, sy); if (!pt) return;
       pick.apply([pt[0] - pick.base[0], pt[1] - pick.base[1], pt[2] - pick.base[2]]); if (!pick.repeat) onPickEnd?.();
       return;
     }
     if (tool === 'measure') { // first click, second click, then a new measurement
-      const nn = hitN !== null ? nodeMap.get(hitN) : null, pt: V3 | null = nn ? [nn.x, nn.y, nn.z] : onPlane(sx, sy); if (!pt) return;
+      const nn = hitN !== null ? nodeMap.get(hitN) : null, pt: V3 | null = nn ? [nn.x, nn.y, nn.z] : midAt(sx, sy)?.pt ?? onPlane(sx, sy); if (!pt) return;
       setMeasure(m => (m.a && !m.b ? { ...m, b: pt } : { a: pt, b: null })); setMLive(null);
       return;
     }
@@ -307,10 +316,14 @@ export const Viewer = React.forwardRef<ViewerHandle, {
       return;
     }
     let id = hitN;
-    if (id === null) { const dt = tool === 'member' && chain !== null ? drawTarget(sx, sy) : null, p = dt ? dt.pt : onPlane(sx, sy); if (!p) return; id = onAddNode(p); }
+    if (id === null) {
+      const mid = midAt(sx, sy);
+      if (mid && onSplitMember) id = onSplitMember(mid.id);
+      else { const dt = tool === 'member' && chain !== null ? drawTarget(sx, sy) : null, p = dt ? dt.pt : onPlane(sx, sy); if (!p) return; id = onAddNode(p); }
+    }
     if (tool === 'member') { if (chain !== null && chain !== id) onAddMember(chain, id); setChain(id); setLock(null); setLenText(''); dirRef.current = null; setGuide(null); }
   };
-  useEffect(() => { setChain(null); setCursor(null); anchor.current = null; setMarq(null); setMeasure({ a: null, b: null }); setMLive(null); setSnapAt(null); setLock(null); setLenText(''); setGuide(null); dirRef.current = null; }, [tool]);
+  useEffect(() => { setChain(null); setCursor(null); anchor.current = null; setMarq(null); setMeasure({ a: null, b: null }); setMLive(null); setSnapAt(null); setSnapMid(false); setLock(null); setLenText(''); setGuide(null); dirRef.current = null; }, [tool]);
   keyRef.current = { tool, chain, lenText, lock };
   commitRef.current = () => { // place a member of the typed length along the current direction
     const c = chain !== null ? nodeMap.get(chain) : null, d = dirRef.current, L = Number(lenText);
@@ -663,7 +676,9 @@ export const Viewer = React.forwardRef<ViewerHandle, {
             {text([mid[0], mid[1] - 9], `${Math.hypot(d[0], d[1], d[2]).toFixed(3)} m`, 'mlen', '#b45309', 'middle', true)}
             {text([mid[0], mid[1] + 14], `ΔX ${sg(d[0])}   ΔY ${sg(d[1])}   ΔZ ${sg(d[2])}`, 'mdel', '#475569')}</g>;
         })()}
-        {snapAt && (tool !== 'select' || !!pick) && <g pointerEvents="none" stroke={hover.n !== null ? AMBER : BLUE} strokeWidth={1.5} fill="none"><path d={`M${snapAt[0] - 8} ${snapAt[1]}h16M${snapAt[0]} ${snapAt[1] - 8}v16`} /><rect x={snapAt[0] - 4} y={snapAt[1] - 4} width={8} height={8} /></g>}
+        {snapAt && (tool !== 'select' || !!pick) && (snapMid
+          ? <g pointerEvents="none" stroke="#0d9488" strokeWidth={2} fill="#fff" fillOpacity={0.6}><path d={`M${snapAt[0]} ${snapAt[1] - 7}L${snapAt[0] + 7} ${snapAt[1] + 5}L${snapAt[0] - 7} ${snapAt[1] + 5}Z`} /></g>
+          : <g pointerEvents="none" stroke={hover.n !== null ? AMBER : BLUE} strokeWidth={1.5} fill="none"><path d={`M${snapAt[0] - 8} ${snapAt[1]}h16M${snapAt[0]} ${snapAt[1] - 8}v16`} /><rect x={snapAt[0] - 4} y={snapAt[1] - 4} width={8} height={8} /></g>)}
         {chainNode && cursor && tool === 'member' && (() => {
           const p = P([chainNode.x, chainNode.y, chainNode.z]), col = guide?.axis != null ? [RED, GREEN, BLUE][guide.axis] : BLUE, mid: [number, number] = [(p[0] + cursor[0]) / 2, (p[1] + cursor[1]) / 2];
           const shown = lenText ? `${lenText} m` : guide && guide.len > 1e-9 ? `${guide.len.toFixed(3)} m` : '';
