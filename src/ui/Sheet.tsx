@@ -1,0 +1,91 @@
+import React, { useRef } from 'react';
+import { Plus, X } from 'lucide-react';
+
+export interface Col<T> {
+  key: string; label: React.ReactNode; w?: number; title?: string;
+  type?: 'num' | 'text' | 'select' | 'ro';
+  options?: { value: string; label: string }[];
+  /** Suggestions for a text cell. */
+  list?: string[];
+  get?: (row: T) => string | number;
+  set?: (row: T, v: string | number) => T;
+}
+
+const show = (v: unknown) => (typeof v === 'number' ? String(Math.abs(v) >= 1e7 || (v !== 0 && Math.abs(v) < 1e-4) ? Number(v.toPrecision(6)) : Number(v.toPrecision(10))) : String(v ?? ''));
+const parseNum = (s: string) => { const v = Number(s.trim().replace('−', '-').replace(/,/g, '')); return s.trim() === '' || !isFinite(v) ? null : v; };
+
+/** Editable datasheet. Cells commit on Enter or blur; a block copied from a spreadsheet can be pasted in. */
+export function Sheet<T extends object>({ rows, cols, onChange, newRow, selected, onSelect, onDelete, rowLabel, empty }: {
+  rows: T[]; cols: Col<T>[]; onChange: (rows: T[]) => void; newRow?: () => T;
+  selected?: (row: T) => boolean; onSelect?: (row: T, additive: boolean) => void; onDelete?: (row: T, i: number) => void;
+  rowLabel?: (row: T, i: number) => React.ReactNode; empty?: string;
+}) {
+  const ref = useRef<HTMLTableElement>(null);
+  const val = (r: T, c: Col<T>) => (c.get ? c.get(r) : (r as Record<string, unknown>)[c.key]) as string | number;
+  const apply = (r: T, c: Col<T>, raw: string): T | null => {
+    let v: string | number = raw;
+    if (c.type === 'ro') return null;
+    if (c.type === 'num' || c.type === undefined) { const n = parseNum(raw); if (n === null) return null; v = n; }
+    return c.set ? c.set(r, v) : { ...r, [c.key]: v };
+  };
+  const commit = (i: number, c: Col<T>, raw: string) => {
+    if (raw === show(val(rows[i], c))) return;
+    const r = apply(rows[i], c, raw);
+    if (r) onChange(rows.map((x, k) => (k === i ? r : x)));
+  };
+  const focus = (i: number, j: number) => (ref.current?.querySelector(`[data-c="${i}-${j}"]`) as HTMLElement | null)?.focus();
+  const paste = (e: React.ClipboardEvent, i: number, j: number) => {
+    const text = e.clipboardData.getData('text');
+    if (!/[\t\n]/.test(text.trim())) return;
+    e.preventDefault();
+    const out = rows.slice();
+    text.replace(/\r/g, '').split('\n').filter((l, k, a) => l !== '' || k < a.length - 1).forEach((line, di) => {
+      if (i + di >= out.length) { if (!newRow) return; out.push(newRow()); }
+      line.split('\t').forEach((cell, dj) => { const c = cols[j + dj]; if (!c) return; const r = apply(out[i + di], c, cell); if (r) out[i + di] = r; });
+    });
+    onChange(out);
+  };
+  return (
+    <div className="space-y-1.5">
+      <div className="overflow-auto max-h-[calc(100vh-250px)] scroll-thin border border-slate-200 rounded">
+        <table className="sheet" ref={ref}>
+          <thead><tr><th style={{ width: 34 }}></th>{cols.map(c => <th key={c.key} title={c.title} style={{ minWidth: c.w ?? 56 }}>{c.label}</th>)}<th style={{ width: 22 }}></th></tr></thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={i} className={selected?.(r) ? 'sel' : ''}>
+                <td className="rowhead" onClick={e => onSelect?.(r, e.shiftKey || e.ctrlKey || e.metaKey)}>{rowLabel ? rowLabel(r, i) : i + 1}</td>
+                {cols.map((c, j) => {
+                  const v = show(val(r, c));
+                  return (
+                    <td key={c.key}>
+                      {c.type === 'select' ? (
+                        <select data-c={`${i}-${j}`} value={v} onChange={e => commit(i, c, e.target.value)}>
+                          {!c.options!.some(o => o.value === v) && <option value={v}>{v}</option>}
+                          {c.options!.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                        </select>
+                      ) : (
+                        <input data-c={`${i}-${j}`} key={v} defaultValue={v} readOnly={c.type === 'ro'} spellCheck={false} list={c.list ? `dl-${c.key}` : undefined}
+                          className={c.type === 'ro' ? 'text-slate-500' : ''}
+                          onFocus={e => e.target.select()} onBlur={e => commit(i, c, e.target.value)} onPaste={e => paste(e, i, j)}
+                          onKeyDown={e => {
+                            const t = e.currentTarget;
+                            if (e.key === 'Enter' || e.key === 'ArrowDown') { e.preventDefault(); commit(i, c, t.value); setTimeout(() => focus(i + 1, j)); }
+                            else if (e.key === 'ArrowUp') { e.preventDefault(); commit(i, c, t.value); setTimeout(() => focus(i - 1, j)); }
+                            else if (e.key === 'Escape') { t.value = v; t.blur(); }
+                          }} />
+                      )}
+                    </td>
+                  );
+                })}
+                <td><button className="w-full h-6 flex items-center justify-center text-slate-400 hover:text-rose-600" title="Delete Row" onClick={() => (onDelete ? onDelete(r, i) : onChange(rows.filter((_, k) => k !== i)))}><X className="w-3 h-3" /></button></td>
+              </tr>
+            ))}
+            {!rows.length && <tr><td colSpan={cols.length + 2} className="!p-2 text-center text-[11px] text-slate-400">{empty ?? 'No rows'}</td></tr>}
+          </tbody>
+        </table>
+      </div>
+      {cols.filter(c => c.list).map(c => <datalist key={c.key} id={`dl-${c.key}`}>{c.list!.map(o => <option key={o} value={o} />)}</datalist>)}
+      {newRow && <button className="btn" onClick={() => onChange([...rows, newRow()])}><Plus className="w-3.5 h-3.5" /> Add Row</button>}
+    </div>
+  );
+}
