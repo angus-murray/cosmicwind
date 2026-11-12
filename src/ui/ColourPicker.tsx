@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 
-/** Swatches offered for a colour: the colours given to sections automatically, then a second set. */
+/** Swatches offered for a colour: the ten colours given to sections automatically, then six more, each clearly different from all the others. */
 export const SWATCHES = [
   '#7c3aed', '#0d9488', '#ea580c', '#db2777', '#0284c7', '#ca8a04', '#4f46e5', '#0891b2', '#c026d3', '#64748b',
-  '#1e293b', '#78350f', '#be185d', '#65a30d', '#0f766e', '#1d4ed8', '#9333ea', '#a16207', '#b91c1c', '#f59e0b',
+  '#0f172a', '#7f1d1d', '#14532d', '#312e81', '#86198f', '#a16207',
 ];
 const HEX = /^#[0-9a-f]{6}$/i;
 
@@ -17,7 +17,7 @@ export function ColourPicker({ value, auto, at, onChange, onClose }: { value: st
   return (
     <div className="fixed inset-0 z-50" onMouseDown={onClose}>
       <div className="absolute w-[224px] bg-white border border-slate-200 rounded-lg shadow-lg p-3 space-y-2.5" style={{ left, top }} onMouseDown={e => e.stopPropagation()}>
-        <div className="grid grid-cols-5 gap-1.5">
+        <div className="grid grid-cols-8 gap-1.5">
           {SWATCHES.map(c => <button key={c} title={c} className={`h-6 rounded border ${c.toLowerCase() === value.toLowerCase() && !auto ? 'ring-2 ring-offset-1 ring-blue-600 border-white' : 'border-slate-200'}`} style={{ background: c }} onClick={() => { onChange(c); onClose(); }} />)}
         </div>
         <div className="flex items-center gap-2">
