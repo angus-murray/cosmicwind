@@ -64,7 +64,7 @@ export function Sheet<T extends object>({ rows, cols, onChange, newRow, selected
                           {c.options!.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                         </select>
                       ) : (
-                        <input data-c={`${i}-${j}`} key={v} defaultValue={v} readOnly={c.type === 'ro'} spellCheck={false} list={c.list ? `dl-${c.key}` : undefined}
+                        <input data-c={`${i}-${j}`} key={v} defaultValue={v} readOnly={c.type === 'ro'} spellCheck={false} autoComplete="off" list={c.list ? `dl-${c.key}` : undefined}
                           className={c.type === 'ro' ? 'text-slate-500' : ''}
                           onFocus={e => e.target.select()} onBlur={e => commit(i, c, e.target.value)} onPaste={e => paste(e, i, j)}
                           onKeyDown={e => {
