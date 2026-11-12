@@ -48,7 +48,7 @@ export function DofEditor<T>({ spec, row, at, onChange, onClose }: { spec: DofSp
       <div className="absolute w-[320px] bg-white border border-slate-200 rounded-lg shadow-lg p-3 space-y-2.5" style={{ left, top }} onMouseDown={e => e.stopPropagation()}>
         <div className="text-xs font-semibold text-slate-700">{spec.title(row)}</div>
         <div className="flex flex-wrap gap-1">
-          {spec.presets.map(([c, l]) => <button key={c + l} className="btn !h-6 !px-2 !text-[11px]" onClick={() => set((c === '–' ? spec.dflt : c).split(''), k)}>{sym(l)}</button>)}
+          {spec.presets.map(([c, l]) => <button key={c + l} className="btn !h-6 !px-2 !text-[11px]" onClick={() => set((c === '–' ? spec.dflt : c).split(''), k)}><span>{sym(l)}</span></button>)}
         </div>
         <div className="space-y-1.5">
           {six.map((c, i) => (

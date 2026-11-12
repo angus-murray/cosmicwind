@@ -61,9 +61,7 @@ export const restraintCode = (r: string | undefined) => (!r || r === DASH ? 'RRR
 /** The six-letter release code of a member end; an en-dash or blank means rigid. */
 export const releaseCode = (r: string | undefined) => (!r || r === DASH ? 'FFFFFF' : r.toUpperCase().padEnd(6, 'F'));
 export const RESTRAINTS: [string, string][] = [[FREE, 'Free'], [FIXED, 'Fixed'], [PIN, 'Pinned']];
-export const RELEASES: [string, string][] = [
-  [DASH, 'Rigid'], ['FFFFRR', 'Pinned (My, Mz)'], ['FFFRRR', 'Pinned (All)'], ['FFFFFR', 'Mz Released'], ['FFFFRF', 'My Released'], ['RFFFFF', 'Axial Released'],
-];
+export const RELEASES: [string, string][] = [[DASH, 'Rigid'], ['FFFFRR', 'Pinned (My, Mz)'], ['FFFRRR', 'Pinned (All)']];
 
 export const STEEL: Material = { id: 1, name: 'Steel', E: 200000, G: 80000, rho: 7850, alpha: 11.7e-6 };
 export const MATERIAL_PRESETS: Omit<Material, 'id'>[] = [
