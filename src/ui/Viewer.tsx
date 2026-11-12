@@ -57,7 +57,7 @@ export type Tool = 'select' | 'node' | 'member' | 'measure';
 /** Points clicked in empty space lie on the global XY plane (Z = 0), to the nearest millimetre. */
 export interface ViewOpts {
   notes: boolean; nodeNo: boolean; memberNo: boolean; secNames: boolean; loads: boolean; localAxes: boolean;
-  diagrams: Record<DiagramKey, boolean>; stress: StressKey; deflected: boolean; /** Support symbols at the nodes. */ restraints: boolean; /** Symbols for the member end releases. */ releases: boolean; /** Global displacement components written beside each node. */ defLabels: DefLabels; reactions: boolean; scale: number; defScale: number;
+  diagrams: Record<DiagramKey, boolean>; stress: StressKey; deflected: boolean; /** A marker at the global origin (0, 0, 0). */ origin: boolean; /** Support symbols at the nodes. */ restraints: boolean; /** Symbols for the member end releases. */ releases: boolean; /** Global displacement components written beside each node. */ defLabels: DefLabels; reactions: boolean; scale: number; defScale: number;
   /** Rendered 3D view of the member cross sections instead of the wireframe. */
   solid: boolean;
 }
@@ -729,6 +729,12 @@ export const Viewer = React.forwardRef<ViewerHandle, {
             {sprung && <title>{`Member ${g.m.id}, end ${end === 'A' ? 1 : 2}: spring on ${sprung}`}</title>}
           </g>;
         }))}
+        {opts.origin && (() => { const p = P([0, 0, 0]); return <g pointerEvents="none" stroke="#0f172a" strokeWidth={1.25}>
+          <circle cx={p[0]} cy={p[1]} r={7} fill="#fff" fillOpacity={0.85} />
+          <path d={`M${p[0]} ${p[1]}L${p[0] + 7} ${p[1]}A7 7 0 0 0 ${p[0]} ${p[1] - 7}ZM${p[0]} ${p[1]}L${p[0] - 7} ${p[1]}A7 7 0 0 0 ${p[0]} ${p[1] + 7}Z`} fill="#0f172a" stroke="none" />
+          <line x1={p[0] - 11} y1={p[1]} x2={p[0] + 11} y2={p[1]} /><line x1={p[0]} y1={p[1] - 11} x2={p[0]} y2={p[1] + 11} />
+          {text([p[0] + 12, p[1] + 20], 'Origin (0, 0, 0)', 'origin', '#0f172a', 'start', true)}
+        </g>; })()}
         {opts.localAxes && geo.map(g => { const c = along(g, g.L / 2), p = P(c); return <g key={`ax${g.m.id}`}>{[RED, GREEN, BLUE].map((col, i) => { const d = dirS(g.R[i] as V3); return d && <g key={i} strokeLinecap="round"><line x1={p[0]} y1={p[1]} x2={p[0] + d[0] * 20} y2={p[1] + d[1] * 20} stroke="#fff" strokeWidth={6} strokeOpacity={0.9} /><line x1={p[0]} y1={p[1]} x2={p[0] + d[0] * 20} y2={p[1] + d[1] * 20} stroke={col} strokeWidth={3.5} /></g>; })}</g>; })}
         {diag}{defl}{loads}
         {model.nodes.map(n => {
