@@ -110,7 +110,7 @@ export function Sheet<T extends object>({ rows, cols, onChange, newRow, selected
         onChange={r => onChange(rows.map((x, k) => (k === pop.i ? r : x)))} />}
       {cpop && cols[cpop.j]?.type === 'colour' && rows[cpop.i] && (() => {
         const c = cols[cpop.j], row = rows[cpop.i], cur = String(val(row, c));
-        return <ColourPicker value={cur} auto={!!(c.autoColour?.(row))} at={cpop} title={c.title ?? 'Colour'} onClose={() => setCpop(null)} onChange={h => { const r = c.set ? c.set(row, h ?? '') : row; onChange(rows.map((x, k) => (k === cpop.i ? r : x))); }} />;
+        return <ColourPicker value={cur} auto={!!(c.autoColour?.(row))} at={cpop} onClose={() => setCpop(null)} onChange={h => { const r = c.set ? c.set(row, h ?? '') : row; onChange(rows.map((x, k) => (k === cpop.i ? r : x))); }} />;
       })()}
       {cols.filter(c => c.list).map(c => <datalist key={c.key} id={`dl-${c.key}`}>{c.list!.map(o => <option key={o} value={o} />)}</datalist>)}
       {newRow && <button className="btn" onClick={() => onChange([...rows, newRow()])}><Plus className="w-3.5 h-3.5" /> Add Row</button>}

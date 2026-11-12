@@ -8,7 +8,7 @@ export const SWATCHES = [
 const HEX = /^#[0-9a-f]{6}$/i;
 
 /** Popover to choose a colour from the swatches, with the system colour picker, a hex field and a way back to the automatic colour. */
-export function ColourPicker({ value, auto, at, title, onChange, onClose }: { value: string; auto: boolean; at: { x: number; y: number }; title: string; onChange: (hex: string | null) => void; onClose: () => void }) {
+export function ColourPicker({ value, auto, at, onChange, onClose }: { value: string; auto: boolean; at: { x: number; y: number }; onChange: (hex: string | null) => void; onClose: () => void }) {
   const [hex, setHex] = useState(value);
   useEffect(() => setHex(value), [value]);
   useEffect(() => { const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); }; window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h); }, [onClose]);
@@ -17,7 +17,6 @@ export function ColourPicker({ value, auto, at, title, onChange, onClose }: { va
   return (
     <div className="fixed inset-0 z-50" onMouseDown={onClose}>
       <div className="absolute w-[224px] bg-white border border-slate-200 rounded-lg shadow-lg p-3 space-y-2.5" style={{ left, top }} onMouseDown={e => e.stopPropagation()}>
-        <div className="text-xs font-semibold text-slate-700">{title}</div>
         <div className="grid grid-cols-5 gap-1.5">
           {SWATCHES.map(c => <button key={c} title={c} className={`h-6 rounded border ${c.toLowerCase() === value.toLowerCase() && !auto ? 'ring-2 ring-offset-1 ring-blue-600 border-white' : 'border-slate-200'}`} style={{ background: c }} onClick={() => { onChange(c); onClose(); }} />)}
         </div>
