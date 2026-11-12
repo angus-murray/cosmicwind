@@ -7,7 +7,7 @@ import {
 } from './model/types';
 import { defaultModel } from './model/templates';
 import { analyse } from './solver/frame';
-import { type DofSpec } from './ui/DofEditor';
+import { DofEditor, type DofSpec } from './ui/DofEditor';
 import { Sheet, type Col } from './ui/Sheet';
 import { DIAGRAMS, STRESSES, sectionColour, Viewer, type DiagramKey, type StressKey, type Sel, type Tool, type ViewerHandle, type ViewOpts } from './ui/Viewer';
 import { ContextMenu, PromptBox, TextPromptBox, ToolFlyout, type MenuItem, type MenuState, type PromptState, type TextPromptState } from './ui/CanvasMenu';
@@ -49,6 +49,8 @@ export default function App() {
   const [modeIx, setModeIx] = useState<{ kind: 'buckling' | 'modal'; i: number } | null>(null);
   const [dialog, setDialog] = useState<'about' | 'report' | 'new' | 'section' | 'load' | null>(null);
   const [assignOnAdd, setAssignOnAdd] = useState(false);
+  /** The restraint or release editor opened from the right-click menu, and the nodes or members it changes. */
+  const [dofEdit, setDofEdit] = useState<{ kind: 'node' | 'member'; end: 'A' | 'B' | 'both'; ids: number[]; at: { x: number; y: number } } | null>(null);
   /** Section and material given to the members drawn with the Member tool; unset follows the last member. */
   const [drawSec, setDrawSec] = useState<number | null>(null), [drawMat, setDrawMat] = useState<number | null>(null), [assignDraw, setAssignDraw] = useState(false);
   /** Section number whose type is being changed in the section dialog, or null when adding a section. */
@@ -99,7 +101,6 @@ export default function App() {
   const newModel = () => { setModel(() => emptyModel()); setFitRev(r => r + 1); setSel(noSel()); setCaseId(1); setModeIx(null); setDialog(null); setTab('structure'); };
   const delSel = useCallback(() => { setModel(m => deleteNodes(deleteMembersAndFreeNodes(m, sel.members), sel.nodes)); setSel(noSel()); }, [sel, setModel]);
   const patchMembers = (p: Partial<Member>) => setModel(m => ({ ...m, members: m.members.map(x => (sel.members.has(x.id) ? { ...x, ...p } : x)) }));
-  const patchNodes = (p: Partial<Node>) => setModel(m => ({ ...m, nodes: m.nodes.map(x => (sel.nodes.has(x.id) ? { ...x, ...p } : x)) }));
   const subdivide = (np: number = 4, which: Set<number> = sel.members) => setModel(m => {
     const n = Math.max(2, Math.round(np)), nodes = m.nodes.slice(), members: Member[] = [], out = { ...m };
     let nid = nextId(nodes), mid = nextId(m.members);
@@ -196,6 +197,11 @@ export default function App() {
     if (!ctx) return null;
     const edit = tab !== 'results', nodes = [...sel.nodes], mems = [...sel.members], at = { x: ctx.x, y: ctx.y };
     const run = (fn: () => void) => () => { setCtx(null); fn(); };
+    /** Opens the restraint or release editor at the cursor for the selected nodes or members. */
+    const openDof = (kind: 'node' | 'member', end: 'A' | 'B' | 'both') => {
+      const r = cvRef.current?.getBoundingClientRect();
+      setCtx(null); setDofEdit({ kind, end, ids: kind === 'node' ? [...nodes] : [...mems], at: { x: (r?.left ?? 0) + ctx.x + 4, y: (r?.top ?? 0) + ctx.y + 4 } });
+    };
     const ask = (title: string, fields: PromptState['fields'], onSubmit: (v: number[]) => void) => { setCtx(null); setPrompt({ ...at, title, fields, onSubmit }); };
     const pick = (nn: Iterable<number>, mm: Iterable<number>) => setSel({ nodes: new Set(nn), members: new Set(mm) });
     const moved = new Set([...nodes, ...model.members.filter(x => sel.members.has(x.id)).flatMap(x => [x.a, x.b])]);
@@ -236,24 +242,22 @@ export default function App() {
       items.push(...noteItems('node', ctx.node));
       if (edit) items.push(
         { label: 'Apply Load…', onClick: run(() => { setLoadKind('node'); setDialog('load'); }) },
-        { label: 'Restraint', sub: RESTRAINTS.map(([c, l]) => ({ label: `${l} (${c})`, onClick: run(() => patchNodes({ r: c })) })) }, 'sep', ...moveCopy, 'sep');
+        { label: 'Restraint…', onClick: () => openDof('node', 'A') }, 'sep', ...moveCopy, 'sep');
       items.push({ label: 'Select Connected Members', onClick: run(() => pick(sel.nodes, [...sel.members, ...model.members.filter(m => sel.nodes.has(m.a) || sel.nodes.has(m.b)).map(m => m.id)])) });
       if (edit) items.push('sep', { label: nodes.length > 1 ? 'Delete Nodes' : 'Delete Node', danger: true, onClick: run(delSel) });
     } else if (ctx.member !== null && mems.length) {
       title = word(mems.length, 'Member', mems[0]);
       items.push(...noteItems('member', ctx.member));
       const mem0 = model.members.find(m => m.id === ctx.member), sec0 = mem0?.sec;
-      const selMembers = model.members.filter(m => sel.members.has(m.id));
       // Releases are set by end number: end 1 is the first node of a member and end 2 the second
-      const relMenu = (label: string, isOn: (m: Member, c: string) => boolean, apply: (c: string) => void): MenuItem => ({ label, sub: RELEASES.map(([c, l]) => ({ label: `${l} (${c})`, checked: selMembers.length > 0 && selMembers.every(m => isOn(m, c)), onClick: run(() => apply(c)) })) });
-      const endRel = (k: 1 | 2) => relMenu(`Release at End ${k}`, (m, c) => (k === 1 ? m.relA : m.relB) === c, c => patchMembers(k === 1 ? { relA: c } : { relB: c }));
-      const bothRel = relMenu('Release at Both Ends', (m, c) => m.relA === c && m.relB === c, c => patchMembers({ relA: c, relB: c }));
       const clickedEnd: 1 | 2 | null = mem0 && ctx.endNode !== null ? (ctx.endNode === mem0.a ? 1 : 2) : null;
-      const endItems: MenuItem[] = clickedEnd ? [endRel(clickedEnd), bothRel, endRel(clickedEnd === 1 ? 2 : 1)] : [bothRel, endRel(1), endRel(2)];
+      const endItem = (k: 1 | 2): MenuItem => ({ label: `End ${k}…`, onClick: () => openDof('member', k === 1 ? 'A' : 'B') });
+      const bothItem: MenuItem = { label: 'Both Ends…', onClick: () => openDof('member', 'both') };
+      const releaseItem: MenuItem = { label: 'Releases', sub: clickedEnd ? [endItem(clickedEnd), bothItem, endItem(clickedEnd === 1 ? 2 : 1)] : [bothItem, endItem(1), endItem(2)] };
       if (edit) items.push(
         { label: 'Apply Load…', onClick: run(() => { setLoadKind('member'); setDialog('load'); }) },
         { label: 'Section', sub: [...model.sections.map(x => ({ label: x.name, checked: mems.every(id => model.members.find(m => m.id === id)?.sec === x.id), onClick: run(() => patchMembers({ sec: x.id })) })), 'sep' as const, { label: 'Add Section…', onClick: run(() => { setAssignOnAdd(true); setReplaceSec(null); setDialog('section'); }) }] },
-        ...endItems,
+        releaseItem,
         { label: 'Angle…', onClick: () => ask('Member Angle', [{ label: 'Angle (°)', value: model.members.find(m => m.id === mems[0])?.angle ?? 0 }], ([ang]) => patchMembers({ angle: ang })) },
         { label: 'Member Type', sub: ([['N', 'Normal'], ['T', 'Tension Only'], ['C', 'Compression Only']] as const).map(([c, l]) => ({ label: l, onClick: run(() => patchMembers({ type: c })) })) },
         { label: 'Subdivide', sub: [2, 3, 4, 5, 6, 8, 10].map(k => ({ label: `Into ${k} Parts`, onClick: run(() => subdivide(k)) })) }, 'sep', ...moveCopy, 'sep');
@@ -537,6 +541,18 @@ export default function App() {
         </div>
       </main>
       {dialog === 'about' && <About onClose={() => setDialog(null)} />}
+      {dofEdit && (() => {
+        const { ids, end, at } = dofEdit, close = () => setDofEdit(null);
+        if (dofEdit.kind === 'node') {
+          const row = model.nodes.find(n => n.id === ids[0]); if (!row) return null;
+          const spec: DofSpec<Node> = { ...nodeSpec, title: n => (ids.length > 1 ? `${ids.length} Nodes: Restraint` : nodeSpec.title(n)) };
+          return <DofEditor spec={spec} row={row} at={at} onClose={close} onChange={r => setModel(m => ({ ...m, nodes: m.nodes.map(x => (ids.includes(x.id) ? { ...x, r: r.r, k: r.k } : x)) }))} />;
+        }
+        const row = model.members.find(x => x.id === ids[0]); if (!row) return null;
+        const base = memSpec(end === 'B' ? 'B' : 'A'), what = end === 'both' ? 'Release at Both Ends' : `Release at End ${end === 'A' ? 1 : 2}`;
+        const spec: DofSpec<Member> = { ...base, title: m => (ids.length > 1 ? `${ids.length} Members: ${what}` : `Member ${m.id}: ${what}`) };
+        return <DofEditor spec={spec} row={row} at={at} onClose={close} onChange={r => setModel(m => ({ ...m, members: m.members.map(x => (!ids.includes(x.id) ? x : end === 'A' ? { ...x, relA: r.relA, kA: r.kA } : end === 'B' ? { ...x, relB: r.relB, kB: r.kB } : { ...x, relA: r.relA, kA: r.kA, relB: r.relA, kB: r.kA })) }))} />;
+      })()}
       {dialog === 'load' && <LoadDialog kind={loadKind} count={loadKind === 'node' ? sel.nodes.size : sel.members.size} cases={model.loadCases} lc0={lcOnly} onClose={() => setDialog(null)} onApply={applyLoad} />}
       {dialog === 'section' && <SectionDialog replace={replaceSec ?? undefined} assign={assignOnAdd ? mSel : 0} onClose={() => { setDialog(null); setAssignDraw(false); }} onAdd={(name, p, outline) => {
         if (replaceSec !== null) { // the section keeps its number; only its type and properties change
