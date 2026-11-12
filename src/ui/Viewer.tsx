@@ -683,7 +683,6 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   });
 
   const memSec = new Map(model.members.map(m => [m.id, m.sec]));
-  const legend = [...new Set(model.members.map(m => m.sec))].sort((a, b) => a - b);
   const secName = new Map(model.sections.map(s => [s.id, s.name]));
   const chainNode = chain !== null ? nodeMap.get(chain) : null;
   const faded = !stressOn && !!(result || mode) && (active.length > 0 || opts.deflected || !!mode);
@@ -823,10 +822,6 @@ export const Viewer = React.forwardRef<ViewerHandle, {
           {tip.lines.map((l, i) => <div key={i} className={i === 1 ? 'font-semibold' : ''} style={i === 1 ? { color: tip.colour } : undefined}>{sym(l)}</div>)}
         </div>
       </>}
-      {legend.length > 0 && <div className="absolute bottom-2 left-20 max-w-[45%] bg-white/85 border border-slate-200 rounded-md px-2 py-1 text-[11px] text-slate-700 space-y-0.5 pointer-events-none">
-        {legend.slice(0, 8).map(id => <div key={id} className="flex items-center gap-1.5 whitespace-nowrap"><span className="inline-block w-3 h-1.5 rounded-sm shrink-0" style={{ background: sectionColour(id) }} />{id}: {secName.get(id) ?? '—'}</div>)}
-        {legend.length > 8 && <div>+{legend.length - 8} more</div>}
-      </div>}
     </div>
   );
 });
