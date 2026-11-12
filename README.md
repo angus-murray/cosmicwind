@@ -12,8 +12,9 @@ window and is solved on the user's computer; nothing is sent to a server.
   settlements and temperature loads; combination cases.
 - Linear static analysis, second-order (P-Δ) analysis, tension-only and compression-only members, elastic critical
   buckling and natural frequencies.
-- Graphics: rotate, pan and zoom; draw nodes and members on a working plane; loads, reactions, deflected shape,
-  action diagrams and mode shapes.
+- Graphics: wireframe or rendered 3D view of the member cross sections; left-drag selection box, middle-drag rotate,
+  right-drag pan, scroll zoom and right-click menus for nodes and members; draw nodes and members on a working plane;
+  loads, reactions, deflected shape, action diagrams and mode shapes.
 - Results tables, diagrams along a member, PDF report, model saved to and opened from a JSON file, undo and redo.
 - Templates: portal frame, multi-storey frame, truss, continuous beam.
 

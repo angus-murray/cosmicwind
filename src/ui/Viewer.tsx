@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { useElementSize } from 'engineering-ui';
 import type { Model } from '../model/types';
+import { equivalentOutline, outlineLoops } from '../model/sections';
 import { memberAxes, type CaseResult, type Vec6 } from '../solver/frame';
 
 export type Diagram = 'none' | 'N' | 'Vy' | 'Vz' | 'T' | 'My' | 'Mz';
@@ -9,6 +10,8 @@ export interface ViewOpts {
   nodeNo: boolean; memberNo: boolean; secNames: boolean; loads: boolean; localAxes: boolean;
   diagram: Diagram; deflected: boolean; reactions: boolean; values: boolean; scale: number; defScale: number;
   plane: 'XY' | 'XZ' | 'YZ'; offset: number; snap: number;
+  /** Rendered 3D view of the member cross sections instead of the wireframe. */
+  solid: boolean;
 }
 export interface Sel { nodes: Set<number>; members: Set<number> }
 export interface ViewerHandle { fit: () => void; view: (v: 'iso' | 'front' | 'top' | 'side') => void; svg: () => SVGSVGElement | null }
@@ -25,12 +28,17 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   loadCases: [number, number][];
   result?: CaseResult | null; mode?: Map<number, Vec6> | null;
   onAddNode: (p: V3) => number; onAddMember: (a: number, b: number) => void;
-}>(function Viewer({ model, opts, tool, sel, onSelect, loadCases, result, mode, onAddNode, onAddMember }, handle) {
+  /** Right click (without dragging) in the select tool: where, and the node or member under the pointer. */
+  onContext?: (c: { x: number; y: number; node: number | null; member: number | null }) => void;
+}>(function Viewer({ model, opts, tool, sel, onSelect, loadCases, result, mode, onAddNode, onAddMember, onContext }, handle) {
   const [box, size] = useElementSize<HTMLDivElement>();
   const svgRef = useRef<SVGSVGElement>(null);
-  const [cam, setCam] = useState({ yaw: -0.5, pitch: 0.35, zoom: 40, px: 0, py: 0 });
+  // c is the orbit pivot (the model centre at the last fit); px, py are the screen offset of the pivot from the view centre.
+  const [cam, setCam] = useState<{ yaw: number; pitch: number; zoom: number; px: number; py: number; c: V3 }>({ yaw: -0.5, pitch: 0.35, zoom: 40, px: 0, py: 0, c: [0, 0, 0] });
   const [chain, setChain] = useState<number | null>(null);
   const [cursor, setCursor] = useState<[number, number] | null>(null);
+  /** Selection box being dragged, in pixels. */
+  const [marq, setMarq] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
   const W = size.width || 800, H = size.height || 600;
 
   const nodeMap = useMemo(() => new Map(model.nodes.map(n => [n.id, n])), [model.nodes]);
@@ -45,10 +53,13 @@ export const Viewer = React.forwardRef<ViewerHandle, {
     const cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw), cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
     return { rx: [cy, 0, sy] as V3, ry: [sy * sp, cp, -cy * sp] as V3 };
   }, [cam.yaw, cam.pitch]);
-  const P = useCallback((p: V3): [number, number] => [
-    W / 2 + cam.px + cam.zoom * (basis.rx[0] * p[0] + basis.rx[1] * p[1] + basis.rx[2] * p[2]),
-    H / 2 + cam.py - cam.zoom * (basis.ry[0] * p[0] + basis.ry[1] * p[1] + basis.ry[2] * p[2]),
-  ], [W, H, cam, basis]);
+  const P = useCallback((p: V3): [number, number] => {
+    const a = p[0] - cam.c[0], b = p[1] - cam.c[1], c = p[2] - cam.c[2];
+    return [
+      W / 2 + cam.px + cam.zoom * (basis.rx[0] * a + basis.rx[1] * b + basis.rx[2] * c),
+      H / 2 + cam.py - cam.zoom * (basis.ry[0] * a + basis.ry[1] * b + basis.ry[2] * c),
+    ];
+  }, [W, H, cam, basis]);
   /** Screen direction (unit) of a world vector, or null when it points at the viewer. */
   const dirS = (d: V3): [number, number] | null => {
     const x = basis.rx[0] * d[0] + basis.rx[1] * d[1] + basis.rx[2] * d[2], y = -(basis.ry[0] * d[0] + basis.ry[1] * d[1] + basis.ry[2] * d[2]), l = Math.hypot(x, y);
@@ -57,14 +68,15 @@ export const Viewer = React.forwardRef<ViewerHandle, {
 
   const fitTo = useCallback((yaw: number, pitch: number) => {
     const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
+    const c: V3 = [(bounds.lo[0] + bounds.hi[0]) / 2, (bounds.lo[1] + bounds.hi[1]) / 2, (bounds.lo[2] + bounds.hi[2]) / 2];
     let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
     for (const i of [0, 1]) for (const j of [0, 1]) for (const k of [0, 1]) {
-      const p = [i ? bounds.hi[0] : bounds.lo[0], j ? bounds.hi[1] : bounds.lo[1], k ? bounds.hi[2] : bounds.lo[2]];
+      const p = [(i ? bounds.hi[0] : bounds.lo[0]) - c[0], (j ? bounds.hi[1] : bounds.lo[1]) - c[1], (k ? bounds.hi[2] : bounds.lo[2]) - c[2]];
       const x = cy * p[0] + sy * p[2], y = sy * sp * p[0] + cp * p[1] - cy * sp * p[2];
       x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
     }
     const zoom = Math.min((W - 300) / Math.max(x1 - x0, 1e-6), (H - 190) / Math.max(y1 - y0, 1e-6), 400);
-    setCam({ yaw, pitch, zoom, px: -zoom * (x0 + x1) / 2 + 30, py: zoom * (y0 + y1) / 2 });
+    setCam({ yaw, pitch, zoom, px: -zoom * (x0 + x1) / 2 + 30, py: zoom * (y0 + y1) / 2, c });
   }, [bounds, W, H]);
   const flat = bounds.hi[2] - bounds.lo[2] < 1e-9;
   useImperativeHandle(handle, () => ({
@@ -83,32 +95,37 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   }, [fitKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- Pointer interaction
-  const drag = useRef<{ x: number; y: number; moved: boolean; pan: boolean } | null>(null);
+  // Left drag: selection box (select tool). Middle drag: rotate. Right drag: pan. Right click: options.
+  const drag = useRef<{ x: number; y: number; sx: number; sy: number; moved: boolean; mode: 'box' | 'orbit' | 'pan' | null } | null>(null);
   const local = (e: { clientX: number; clientY: number }): [number, number] => { const r = svgRef.current!.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
   const onPlane = (sx: number, sy: number): V3 | null => {
     const X = (sx - W / 2 - cam.px) / cam.zoom, Y = -(sy - H / 2 - cam.py) / cam.zoom;
     const [i, j, k] = opts.plane === 'XY' ? [0, 1, 2] : opts.plane === 'XZ' ? [0, 2, 1] : [1, 2, 0];
     const { rx, ry } = basis, a = rx[i], b = rx[j], c = ry[i], d = ry[j], det = a * d - b * c;
     if (Math.abs(det) < 0.05) return null;
-    const ex = X - rx[k] * opts.offset, ey = Y - ry[k] * opts.offset, p: V3 = [0, 0, 0], s = opts.snap > 0 ? opts.snap : 0;
+    const C = cam.c, ex = X - rx[k] * (opts.offset - C[k]), ey = Y - ry[k] * (opts.offset - C[k]), p: V3 = [0, 0, 0], s = opts.snap > 0 ? opts.snap : 0;
     const snap = (v: number) => (s ? Math.round(v / s) * s : v);
-    p[i] = snap((ex * d - b * ey) / det); p[j] = snap((a * ey - c * ex) / det); p[k] = opts.offset;
+    p[i] = snap((ex * d - b * ey) / det + C[i]); p[j] = snap((a * ey - c * ex) / det + C[j]); p[k] = opts.offset;
     return p.map(v => Math.round(v * 1e6) / 1e6) as V3;
   };
-  const down = (e: React.PointerEvent) => { (e.target as Element).setPointerCapture?.(e.pointerId); drag.current = { x: e.clientX, y: e.clientY, moved: false, pan: e.button !== 0 || e.shiftKey }; };
+  const down = (e: React.PointerEvent) => {
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+    const [sx, sy] = local(e);
+    const mode = e.button === 2 ? 'pan' : e.button === 1 ? 'orbit' : e.button === 0 && tool === 'select' ? 'box' : null;
+    drag.current = { x: e.clientX, y: e.clientY, sx, sy, moved: false, mode };
+  };
   const move = (e: React.PointerEvent) => {
     if (tool === 'member' && chain !== null) setCursor(local(e));
     const d = drag.current; if (!d) return;
     const dx = e.clientX - d.x, dy = e.clientY - d.y;
     if (!d.moved && Math.hypot(dx, dy) < 4) return;
     d.moved = true; d.x = e.clientX; d.y = e.clientY;
-    setCam(c => (d.pan ? { ...c, px: c.px + dx, py: c.py + dy } : { ...c, yaw: c.yaw + dx * 0.008, pitch: Math.max(-Math.PI / 2, Math.min(Math.PI / 2, c.pitch + dy * 0.008)) }));
+    if (d.mode === 'box') { const [x, y] = local(e); setMarq({ x0: d.sx, y0: d.sy, x1: x, y1: y }); }
+    else if (d.mode === 'pan') setCam(c => ({ ...c, px: c.px + dx, py: c.py + dy }));
+    else if (d.mode === 'orbit') setCam(c => ({ ...c, yaw: c.yaw + dx * 0.008, pitch: Math.max(-Math.PI / 2, Math.min(Math.PI / 2, c.pitch + dy * 0.008)) }));
   };
-  const up = (e: React.PointerEvent) => {
-    const d = drag.current; drag.current = null;
-    if (!d || d.moved || e.button !== 0) return;
-    const [sx, sy] = local(e);
-    // nearest node within 9 px, else nearest member within 6 px
+  /** Nearest node within 9 px, else nearest member within 6 px. */
+  const hitAt = (sx: number, sy: number): { hitN: number | null; hitM: number | null } => {
     let hitN: number | null = null, best = 9;
     for (const n of model.nodes) { const q = P([n.x, n.y, n.z]), dist = Math.hypot(q[0] - sx, q[1] - sy); if (dist < best) { best = dist; hitN = n.id; } }
     let hitM: number | null = null;
@@ -122,6 +139,39 @@ export const Viewer = React.forwardRef<ViewerHandle, {
         if (dist < best) { best = dist; hitM = m.id; }
       }
     }
+    return { hitN, hitM };
+  };
+  /** Window (left to right): what lies wholly inside. Crossing (right to left): also members that touch the box. */
+  const boxSelect = (m: { x0: number; y0: number; x1: number; y1: number }, add: boolean) => {
+    const xa = Math.min(m.x0, m.x1), xb = Math.max(m.x0, m.x1), ya = Math.min(m.y0, m.y1), yb = Math.max(m.y0, m.y1), crossing = m.x1 < m.x0;
+    const inside = (q: [number, number]) => q[0] >= xa && q[0] <= xb && q[1] >= ya && q[1] <= yb;
+    const touches = (p: [number, number], q: [number, number]) => { // Liang-Barsky clip of the segment against the box
+      let t0 = 0, t1 = 1; const dx = q[0] - p[0], dy = q[1] - p[1];
+      for (const [pp, qq] of [[-dx, p[0] - xa], [dx, xb - p[0]], [-dy, p[1] - ya], [dy, yb - p[1]]] as const) {
+        if (pp === 0) { if (qq < 0) return false; } else { const r = qq / pp; if (pp < 0) { if (r > t1) return false; t0 = Math.max(t0, r); } else { if (r < t0) return false; t1 = Math.min(t1, r); } }
+      }
+      return true;
+    };
+    const s: Sel = add ? { nodes: new Set(sel.nodes), members: new Set(sel.members) } : { nodes: new Set(), members: new Set() };
+    const pos = new Map(model.nodes.map(n => [n.id, P([n.x, n.y, n.z])]));
+    pos.forEach((q, id) => { if (inside(q)) s.nodes.add(id); });
+    for (const mb of model.members) {
+      const p = pos.get(mb.a), q = pos.get(mb.b); if (!p || !q) continue;
+      if ((inside(p) && inside(q)) || (crossing && touches(p, q))) s.members.add(mb.id);
+    }
+    onSelect(s);
+  };
+  const up = (e: React.PointerEvent) => {
+    const d = drag.current; drag.current = null; setMarq(null);
+    if (!d) return;
+    const [sx, sy] = local(e);
+    if (d.moved) { if (d.mode === 'box') boxSelect({ x0: d.sx, y0: d.sy, x1: sx, y1: sy }, e.shiftKey || e.ctrlKey || e.metaKey); return; }
+    if (e.button === 2) {
+      if (tool === 'select') { const h = hitAt(sx, sy); onContext?.({ x: sx, y: sy, node: h.hitN, member: h.hitM }); } else setChain(null);
+      return;
+    }
+    if (e.button !== 0) return;
+    const { hitN, hitM } = hitAt(sx, sy);
     const add = e.shiftKey || e.ctrlKey || e.metaKey;
     if (tool === 'select') {
       const s: Sel = add ? { nodes: new Set(sel.nodes), members: new Set(sel.members) } : { nodes: new Set(), members: new Set() };
@@ -167,6 +217,44 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   };
   const text = (p: [number, number], s: React.ReactNode, key: string, colour = '#475569', anchor: 'start' | 'middle' | 'end' = 'middle', bold = false) =>
     <text key={key} x={p[0]} y={p[1]} fontSize={11} fontWeight={bold ? 600 : 400} textAnchor={anchor} fill={colour} style={halo}>{s}</text>;
+
+  // ---- Rendered view: each member is its cross section extruded along its length
+  const mesh = useMemo(() => {
+    if (!opts.solid) return [];
+    const secs = new Map(model.sections.map(x => [x.id, x]));
+    const loopCache = new Map<number, [number, number][][]>();
+    const loopsOf = (id: number) => {
+      let l = loopCache.get(id);
+      if (!l) { const sc = secs.get(id); l = sc ? outlineLoops(sc.outline ?? equivalentOutline(sc)) : outlineLoops({ shape: 'rect', dims: [200, 100] }); loopCache.set(id, l); }
+      return l;
+    };
+    type Face = { id: number; pts: V3[]; n: V3; caps?: V3[][] };
+    const faces: Face[] = [];
+    for (const g of geo) {
+      const loops = loopsOf(g.m.sec), at = (x: number, y: number, z: number): V3 => along(g, x, [0, y / 1000, z / 1000]);
+      const dir = (y: number, z: number): V3 => [0, 1, 2].map(i => g.R[1][i] * y + g.R[2][i] * z) as V3;
+      for (const l of loops) l.forEach((p, i) => {
+        const q = l[(i + 1) % l.length], ny = q[1] - p[1], nz = -(q[0] - p[0]), len = Math.hypot(ny, nz) || 1;
+        faces.push({ id: g.m.id, pts: [at(0, p[0], p[1]), at(0, q[0], q[1]), at(g.L, q[0], q[1]), at(g.L, p[0], p[1])], n: dir(ny / len, nz / len) });
+      });
+      for (const [x, sg] of [[0, -1], [g.L, 1]] as const)
+        faces.push({ id: g.m.id, pts: [], n: g.R[0].map(v => v * sg) as V3, caps: loops.map(l => l.map(p => at(x, p[0], p[1]))) });
+    }
+    return faces;
+  }, [opts.solid, geo, model.sections]); // eslint-disable-line react-hooks/exhaustive-deps
+  const solids = useMemo(() => {
+    if (!opts.solid) return [];
+    const rz: V3 = [basis.rx[1] * basis.ry[2] - basis.rx[2] * basis.ry[1], basis.rx[2] * basis.ry[0] - basis.rx[0] * basis.ry[2], basis.rx[0] * basis.ry[1] - basis.rx[1] * basis.ry[0]]; // towards the viewer
+    const light: V3 = [0, 1, 2].map(i => 0.55 * rz[i] - 0.35 * basis.rx[i] + 0.6 * basis.ry[i]) as V3, ll = Math.hypot(...light);
+    const dot = (a: V3, b: V3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    const out: { id: number; d: string; depth: number; shade: number }[] = [];
+    for (const f of mesh) {
+      if (dot(f.n, rz) <= 1e-6) continue;
+      const ring = f.caps ?? [f.pts], c = ring[0].reduce((m, p) => [m[0] + p[0] / ring[0].length, m[1] + p[1] / ring[0].length, m[2] + p[2] / ring[0].length], [0, 0, 0]) as V3;
+      out.push({ id: f.id, depth: dot(c, rz), shade: 0.3 + 0.7 * Math.max(0, dot(f.n, light) / ll), d: ring.map(l => `${path(l.map(P))}Z`).join('') });
+    }
+    return out.sort((a, b) => a.depth - b.depth);
+  }, [mesh, basis, P, opts.solid]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- Loads
   const loads: React.ReactNode[] = [];
@@ -290,14 +378,19 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   return (
     <div ref={box} className="absolute inset-0 overflow-hidden">
       <svg ref={svgRef} width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="block touch-none select-none" style={{ cursor: tool === 'select' ? 'default' : 'crosshair' }}
-        onPointerDown={down} onPointerMove={move} onPointerUp={up} onContextMenu={e => e.preventDefault()}>
+        onPointerDown={down} onPointerMove={move} onPointerUp={up} onMouseDown={e => { if (e.button === 1) e.preventDefault(); }} onContextMenu={e => e.preventDefault()}>
         <rect width={W} height={H} fill="#f8fafc" />
         {grid}
         {geo.map(g => {
           const p = P(g.A), q = P(g.B), on = sel.members.has(g.m.id), off = result?.members.get(g.m.id)?.active === false;
-          return <line key={g.m.id} x1={p[0]} y1={p[1]} x2={q[0]} y2={q[1]} stroke={on ? BLUE : faded ? '#94a3b8' : '#334155'} strokeWidth={on ? 3.5 : faded ? 1.5 : 2.25} strokeLinecap="round"
-            strokeDasharray={off || g.m.type !== 'N' ? '6 4' : undefined} opacity={off ? 0.5 : 1} />;
+          return <line key={g.m.id} x1={p[0]} y1={p[1]} x2={q[0]} y2={q[1]} stroke={on ? BLUE : faded ? '#94a3b8' : '#334155'} strokeWidth={opts.solid ? 1.25 : on ? 3.5 : faded ? 1.5 : 2.25} strokeLinecap="round"
+            strokeDasharray={!opts.solid && (off || g.m.type !== 'N') ? '6 4' : undefined} opacity={off ? 0.5 : 1} />;
         })}
+        {opts.solid && <g strokeLinejoin="round" strokeWidth={0.75} pointerEvents="none">{solids.map((f, i) => {
+          const on = sel.members.has(f.id), off = result?.members.get(f.id)?.active === false, lo = on ? [147, 197, 253] : faded ? [203, 213, 225] : [100, 116, 139], hi = on ? [29, 78, 216] : faded ? [226, 232, 240] : [226, 232, 240];
+          const col = `rgb(${lo.map((v, k) => Math.round(v + (hi[k] - v) * f.shade)).join()})`;
+          return <path key={i} d={f.d} fill={col} stroke={col} fillRule="evenodd" opacity={off ? 0.5 : 1} />;
+        })}</g>}
         {opts.localAxes && geo.map(g => { const c = along(g, g.L / 2), p = P(c); return <g key={`ax${g.m.id}`}>{[RED, GREEN, BLUE].map((col, i) => { const d = dirS(g.R[i] as V3); return d && <line key={i} x1={p[0]} y1={p[1]} x2={p[0] + d[0] * 16} y2={p[1] + d[1] * 16} stroke={col} strokeWidth={1.5} />; })}</g>; })}
         {diag}{defl}{loads}
         {model.nodes.map(n => {
@@ -318,6 +411,8 @@ export const Viewer = React.forwardRef<ViewerHandle, {
           return text([p[0], p[1] - 5], s, `m${g.m.id}`, sel.members.has(g.m.id) ? BLUE : '#0f172a', 'middle', true);
         })}
         {reacts}
+        {marq && <rect x={Math.min(marq.x0, marq.x1)} y={Math.min(marq.y0, marq.y1)} width={Math.abs(marq.x1 - marq.x0)} height={Math.abs(marq.y1 - marq.y0)} fill={BLUE} fillOpacity={0.08} stroke={BLUE} strokeWidth={1}
+          strokeDasharray={marq.x1 < marq.x0 ? '5 3' : undefined} pointerEvents="none" />}
         {chainNode && cursor && (() => { const p = P([chainNode.x, chainNode.y, chainNode.z]); return <line x1={p[0]} y1={p[1]} x2={cursor[0]} y2={cursor[1]} stroke={BLUE} strokeWidth={1.5} strokeDasharray="5 4" pointerEvents="none" />; })()}
         <g transform={`translate(34 ${H - 34})`}>
           {([[1, 0, 0], [0, 1, 0], [0, 0, 1]] as V3[]).map((a, i) => {

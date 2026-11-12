@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppHeader, Banner, Check, NumberField, ReportDialog, ResultsHeader, SelectField, StatusChip, today } from 'engineering-ui';
-import { Axis3d, Box, FilePlus, FolderOpen, Grid3x3, Hash, Maximize, MousePointer2, Redo2, Save, Scissors, Spline, Trash2, Type, Undo2, Weight, Copy, Dot, LineChart, Shapes } from 'lucide-react';
+import { Axis3d, Box, FilePlus, FolderOpen, Grid3x3, Hash, Maximize, MousePointer2, Redo2, Save, Scissors, Spline, Trash2, Type, Undo2, Weight, Copy, Dot, LineChart, Shapes, Cuboid, Waypoints } from 'lucide-react';
 import {
   deleteMembers, deleteNodes, FREE, MATERIAL_PRESETS, nextId, normalise, RELEASES, RESTRAINTS,
   type Combo, type DistLoad, type LoadCase, type Material, type Member, type Model, type Node, type NodeLoad, type NodeMass, type PointLoad, type Section, type Settlement, type Spring, type ThermalLoad,
@@ -10,6 +10,7 @@ import { analyse } from './solver/frame';
 import { Sheet, type Col } from './ui/Sheet';
 import { fmt, Viewer, type Diagram, type Sel, type Tool, type ViewerHandle, type ViewOpts } from './ui/Viewer';
 import { ResultTables } from './ui/Results';
+import { ContextMenu, type MenuItem } from './ui/ContextMenu';
 import { About, SectionDialog, TemplateDialog } from './ui/Dialogs';
 import type { ReportInfo } from './report';
 
@@ -33,7 +34,7 @@ export default function App() {
   const [sub, setSub] = useState({ structure: 'nodes', loads: 'cases' });
   const [sel, setSel] = useState<Sel>(noSel);
   const [tool, setTool] = useState<Tool>('select');
-  const [opts, setOpts] = useState<ViewOpts>({ nodeNo: true, memberNo: true, secNames: false, loads: true, localAxes: false, diagram: 'Mz', deflected: false, reactions: true, values: true, scale: 1, defScale: 1, plane: 'XY', offset: 0, snap: 0.5 });
+  const [opts, setOpts] = useState<ViewOpts>({ nodeNo: true, memberNo: true, secNames: false, loads: true, localAxes: false, diagram: 'Mz', deflected: false, reactions: true, values: true, scale: 1, defScale: 1, plane: 'XY', offset: 0, snap: 0.5, solid: false });
   const o = <K extends keyof ViewOpts>(k: K) => (v: ViewOpts[K]) => setOpts(p => ({ ...p, [k]: v }));
   const [caseId, setCaseId] = useState(1);
   const [modeIx, setModeIx] = useState<{ kind: 'buckling' | 'modal'; i: number } | null>(null);
@@ -42,6 +43,7 @@ export default function App() {
   const [copy, setCopy] = useState({ dx: 0, dy: 0, dz: 6, n: 1 });
   const [parts, setParts] = useState(4);
   const viewer = useRef<ViewerHandle>(null);
+  const [ctx, setCtx] = useState<{ x: number; y: number; node: number | null; member: number | null } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const cases = useMemo(() => [...model.loadCases.map(c => ({ id: c.id, name: c.name, combo: false })), ...model.combos.map(c => ({ id: c.id, name: c.name, combo: true }))], [model.loadCases, model.combos]);
@@ -71,8 +73,8 @@ export default function App() {
   const delSel = useCallback(() => { setModel(m => deleteNodes(deleteMembers(m, sel.members), sel.nodes)); setSel(noSel()); }, [sel, setModel]);
   const patchMembers = (p: Partial<Member>) => setModel(m => ({ ...m, members: m.members.map(x => (sel.members.has(x.id) ? { ...x, ...p } : x)) }));
   const patchNodes = (p: Partial<Node>) => setModel(m => ({ ...m, nodes: m.nodes.map(x => (sel.nodes.has(x.id) ? { ...x, ...p } : x)) }));
-  const subdivide = () => setModel(m => {
-    const n = Math.max(2, Math.round(parts)), nodes = m.nodes.slice(), members: Member[] = [], out = { ...m };
+  const subdivide = (np: number = parts) => setModel(m => {
+    const n = Math.max(2, Math.round(np)), nodes = m.nodes.slice(), members: Member[] = [], out = { ...m };
     let nid = nextId(nodes), mid = nextId(m.members);
     const dist: DistLoad[] = [], point: PointLoad[] = [], thermal: ThermalLoad[] = [];
     for (const mb of m.members) {
@@ -125,6 +127,34 @@ export default function App() {
     window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key);
   }, [undo, redo, delSel, sel, tab]);
   useEffect(() => { if (tab === 'results') setTool('select'); }, [tab]);
+
+  const menuItems = (): MenuItem[] => {
+    if (!ctx) return [];
+    const edit = tab !== 'results', nodes = [...sel.nodes], mems = [...sel.members];
+    const plural = (n: number, w: string) => (n === 1 ? `${w} ${n === 1 ? (w === 'Node' ? nodes[0] : mems[0]) : ''}` : `${n} ${w}s`);
+    const pick = (nn: Iterable<number>, mm: Iterable<number>) => setSel({ nodes: new Set(nn), members: new Set(mm) });
+    const items: MenuItem[] = [];
+    if (ctx.node !== null && nodes.length) {
+      items.push({ title: true, label: plural(nodes.length, 'Node') });
+      if (edit) items.push({ label: 'Restraint', children: RESTRAINTS.map(([c, l]) => ({ label: `${l} (${c})`, onClick: () => patchNodes({ r: c }) })) });
+      items.push({ label: 'Select Connected Members', onClick: () => pick(sel.nodes, [...sel.members, ...model.members.filter(m => sel.nodes.has(m.a) || sel.nodes.has(m.b)).map(m => m.id)]) });
+      if (edit) items.push({ sep: true }, { label: nodes.length > 1 ? 'Delete Nodes' : 'Delete Node', danger: true, onClick: delSel });
+    } else if (ctx.member !== null && mems.length) {
+      items.push({ title: true, label: plural(mems.length, 'Member') });
+      if (edit) items.push(
+        { label: 'Section', children: [...model.sections.map(x => ({ label: x.name, onClick: () => patchMembers({ sec: x.id }) })), { sep: true }, { label: 'Add Section…', onClick: () => setDialog('section') }] },
+        { label: 'End Releases', children: RELEASES.map(([c, l]) => ({ label: `${l} (${c})`, onClick: () => patchMembers({ relA: c, relB: c }) })) },
+        { label: 'Member Type', children: ([['N', 'Normal'], ['T', 'Tension Only'], ['C', 'Compression Only']] as const).map(([c, l]) => ({ label: l, onClick: () => patchMembers({ type: c }) })) },
+        { label: 'Subdivide', children: [2, 3, 4, 5, 6, 8, 10].map(k => ({ label: `Into ${k} Parts`, onClick: () => subdivide(k) })) },
+      );
+      items.push({ label: 'Select Connected Nodes', onClick: () => pick([...sel.nodes, ...model.members.filter(m => sel.members.has(m.id)).flatMap(m => [m.a, m.b])], sel.members) });
+      if (edit) items.push({ sep: true }, { label: mems.length > 1 ? 'Delete Members' : 'Delete Member', danger: true, onClick: delSel });
+    } else {
+      items.push({ label: 'Select All', onClick: () => pick(model.nodes.map(n => n.id), model.members.map(m => m.id)) },
+        { label: 'Clear Selection', disabled: !nodes.length && !mems.length, onClick: () => setSel(noSel()) }, { sep: true }, { label: 'Fit View', onClick: () => viewer.current?.fit() });
+    }
+    return items;
+  };
 
   const save = () => {
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(model, null, 1)], { type: 'application/json' }));
@@ -250,7 +280,7 @@ export default function App() {
               </div>
               {mSel > 0 && <div className="section grid grid-cols-2 gap-2 items-end">
                 <NumberField label="Subdivide Into" value={parts} min={2} max={50} onChange={setParts} />
-                <button className="btn" onClick={subdivide}><Scissors className="w-3.5 h-3.5" /> Subdivide</button>
+                <button className="btn" onClick={() => subdivide()}><Scissors className="w-3.5 h-3.5" /> Subdivide</button>
               </div>}
               <div className="section space-y-2">
                 <div className="grid grid-cols-4 gap-2">
@@ -302,25 +332,17 @@ export default function App() {
 
           <div className="results-column">
             <div className="relative bg-slate-50 rounded-lg border border-slate-200 shadow-2xs overflow-hidden h-[520px] lg:h-auto lg:flex-1 lg:min-h-[240px]">
-              <Viewer ref={viewer} model={model} opts={opts} tool={tool} sel={sel} onSelect={setSel} loadCases={drawLoads} result={tab === 'results' ? okRes : null} mode={tab === 'results' ? modeShape : null} onAddNode={addNode} onAddMember={addMember} />
-              <div className="absolute top-2 left-2 toolbar w-[104px]">
-                {tab !== 'results' && <>
+              <Viewer ref={viewer} model={model} opts={opts} tool={tool} sel={sel} onSelect={setSel} loadCases={drawLoads} result={tab === 'results' ? okRes : null} mode={tab === 'results' ? modeShape : null} onAddNode={addNode} onAddMember={addMember}
+                onContext={c => { setCtx(c); if (c.node !== null && !sel.nodes.has(c.node)) setSel({ nodes: new Set([c.node]), members: new Set() }); else if (c.node === null && c.member !== null && !sel.members.has(c.member)) setSel({ nodes: new Set(), members: new Set([c.member]) }); }} />
+              {ctx && <ContextMenu x={ctx.x} y={ctx.y} items={menuItems()} onClose={() => setCtx(null)} />}
+              {tab !== 'results' && <div className="absolute top-2 left-2 toolbar w-[104px]">
                   <button className={`tool-btn ${tool === 'select' ? 'tool-btn-active' : ''}`} onClick={() => setTool('select')}><MousePointer2 className="w-3.5 h-3.5" />Select</button>
                   <button className={`tool-btn ${tool === 'node' ? 'tool-btn-active' : ''}`} title="Click on the working plane to add nodes" onClick={() => setTool('node')}><Dot className="w-3.5 h-3.5" />Node</button>
                   <button className={`tool-btn ${tool === 'member' ? 'tool-btn-active' : ''}`} title="Click node to node to add members; Escape ends the chain" onClick={() => setTool('member')}><Spline className="w-3.5 h-3.5" />Member</button>
                   <button className="tool-btn" disabled={!nSel && !mSel} onClick={delSel}><Trash2 className="w-3.5 h-3.5" />Delete</button>
-                  <div className="tool-sep" />
-                </>}
-                <button className="tool-btn" onClick={() => viewer.current?.fit()}><Maximize className="w-3.5 h-3.5" />Fit</button>
-                {(['iso', 'front', 'top', 'side'] as const).map(v => <button key={v} className="tool-btn" onClick={() => viewer.current?.view(v)}><Box className="w-3.5 h-3.5" />{{ iso: '3D', front: 'Front', top: 'Top', side: 'Side' }[v]}</button>)}
-                <div className="tool-sep" />
-                <button className={`tool-btn ${opts.nodeNo ? '!text-blue-700' : ''}`} title="Node numbers" onClick={() => o('nodeNo')(!opts.nodeNo)}><Hash className="w-3.5 h-3.5" />Nodes</button>
-                <button className={`tool-btn ${opts.memberNo ? '!text-blue-700' : ''}`} title="Member numbers" onClick={() => o('memberNo')(!opts.memberNo)}><Hash className="w-3.5 h-3.5" />Members</button>
-                <button className={`tool-btn ${opts.secNames ? '!text-blue-700' : ''}`} title="Section names" onClick={() => o('secNames')(!opts.secNames)}><Type className="w-3.5 h-3.5" />Sections</button>
-                <button className={`tool-btn ${opts.localAxes ? '!text-blue-700' : ''}`} title="Member local axes: x red, y green, z blue" onClick={() => o('localAxes')(!opts.localAxes)}><Axis3d className="w-3.5 h-3.5" />Axes</button>
-                {tab !== 'results' && <button className={`tool-btn ${opts.loads ? '!text-blue-700' : ''}`} title="Loads of the case shown" onClick={() => o('loads')(!opts.loads)}><Weight className="w-3.5 h-3.5" />Loads</button>}
-              </div>
-              <div className="absolute top-2 right-2 flex items-start gap-2">
+              </div>}
+              <div className="absolute top-2 right-2 flex flex-col items-end gap-2">
+                <div className="flex items-start gap-2">
                 {tool !== 'select' && <div className="bg-white border border-slate-200 rounded-lg shadow-2xs p-2 flex items-end gap-2 w-[300px]">
                   <Grid3x3 className="w-3.5 h-3.5 text-slate-500 mb-2 shrink-0" />
                   <SelectField label="Plane" value={opts.plane} onChange={v => o('plane')(v as ViewOpts['plane'])} options={[{ value: 'XY', label: 'XY' }, { value: 'XZ', label: 'XZ' }, { value: 'YZ', label: 'YZ' }]} />
@@ -328,9 +350,23 @@ export default function App() {
                   <NumberField label="Snap (m)" value={opts.snap} min={0} step={0.1} onChange={o('snap')} />
                 </div>}
                 {tab !== 'results' && <select className="control-sm !w-48 bg-white" title="Case whose loads are shown" value={String(cur?.id ?? '')} onChange={e => setCaseId(Number(e.target.value))}>{cases.map(c => <option key={c.id} value={c.id}>{c.id}: {c.name}</option>)}</select>}
+                </div>
+                <div className="toolbar w-[112px]">
+                <button className="tool-btn" onClick={() => viewer.current?.fit()}><Maximize className="w-3.5 h-3.5" />Fit</button>
+                {(['iso', 'front', 'top', 'side'] as const).map(v => <button key={v} className="tool-btn" onClick={() => viewer.current?.view(v)}><Box className="w-3.5 h-3.5" />{{ iso: '3D', front: 'Front', top: 'Top', side: 'Side' }[v]}</button>)}
+                <div className="tool-sep" />
+                <button className={`tool-btn ${!opts.solid ? 'tool-btn-active' : ''}`} title="Wireframe view" onClick={() => o('solid')(false)}><Waypoints className="w-3.5 h-3.5" />Wireframe</button>
+                <button className={`tool-btn ${opts.solid ? 'tool-btn-active' : ''}`} title="Rendered 3D view of the member cross sections" onClick={() => o('solid')(true)}><Cuboid className="w-3.5 h-3.5" />Rendered</button>
+                <div className="tool-sep" />
+                <button className={`tool-btn ${opts.nodeNo ? '!text-blue-700' : ''}`} title="Node numbers" onClick={() => o('nodeNo')(!opts.nodeNo)}><Hash className="w-3.5 h-3.5" />Nodes</button>
+                <button className={`tool-btn ${opts.memberNo ? '!text-blue-700' : ''}`} title="Member numbers" onClick={() => o('memberNo')(!opts.memberNo)}><Hash className="w-3.5 h-3.5" />Members</button>
+                <button className={`tool-btn ${opts.secNames ? '!text-blue-700' : ''}`} title="Section names" onClick={() => o('secNames')(!opts.secNames)}><Type className="w-3.5 h-3.5" />Sections</button>
+                <button className={`tool-btn ${opts.localAxes ? '!text-blue-700' : ''}`} title="Member local axes: x red, y green, z blue" onClick={() => o('localAxes')(!opts.localAxes)}><Axis3d className="w-3.5 h-3.5" />Axes</button>
+                {tab !== 'results' && <button className={`tool-btn ${opts.loads ? '!text-blue-700' : ''}`} title="Loads of the case shown" onClick={() => o('loads')(!opts.loads)}><Weight className="w-3.5 h-3.5" />Loads</button>}
+                </div>
               </div>
               <div className="absolute bottom-2 right-3 text-[11px] text-slate-500 pointer-events-none">
-                {tool === 'select' ? 'Drag to rotate, Shift-drag or right-drag to pan, scroll to zoom' : tool === 'node' ? 'Click on the working plane to place nodes' : 'Click a node or the working plane to start and continue members; Escape to finish'}
+                {tool === 'select' ? 'Drag to select (left to right encloses, right to left touches), middle-drag to rotate, right-drag to pan, right-click for options, scroll to zoom' : tool === 'node' ? 'Click on the working plane to place nodes' : 'Click a node or the working plane to start and continue members; Escape to finish'}
               </div>
             </div>
             {tab === 'results' && analysis && <div className="panel flex flex-col lg:h-[42%] lg:min-h-[230px] !space-y-2">
@@ -348,10 +384,10 @@ export default function App() {
       </main>
       {dialog === 'about' && <About onClose={() => setDialog(null)} />}
       {dialog === 'new' && <TemplateDialog onClose={() => setDialog(null)} onCreate={m => { setModel(() => m); setSel(noSel()); setCaseId(1); setModeIx(null); setDialog(null); setTab('structure'); }} />}
-      {dialog === 'section' && <SectionDialog assign={mSel} onClose={() => setDialog(null)} onAdd={(name, p) => {
+      {dialog === 'section' && <SectionDialog assign={mSel} onClose={() => setDialog(null)} onAdd={(name, p, outline) => {
         setModel(m => {
           const ex = m.sections.find(s => s.name === name), id = ex?.id ?? nextId(m.sections);
-          const sections = ex ? m.sections : [...m.sections, { id, name, A: Math.round(p.A), Iy: Math.round(p.Iy), Iz: Math.round(p.Iz), J: Math.round(p.J) }];
+          const sections = ex ? m.sections : [...m.sections, { id, name, A: Math.round(p.A), Iy: Math.round(p.Iy), Iz: Math.round(p.Iz), J: Math.round(p.J), outline }];
           return { ...m, sections, members: m.members.map(x => (sel.members.has(x.id) ? { ...x, sec: id } : x)) };
         });
         setDialog(null);
