@@ -403,7 +403,7 @@ export default function App() {
                   <NumberField label="Diagram Scale" value={opts.scale} min={0.1} max={20} step={0.25} onChange={o('scale')} />
                 </div>
                 <div className="section !space-y-2.5">
-                  {[[0, 1], [2], [3]].map(row => <div key={row.join()} className={row.length > 1 ? 'grid grid-cols-2 gap-x-4' : ''}>
+                  {[[0], [1], [2], [3]].map(row => <div key={row.join()} className={row.length > 1 ? 'grid grid-cols-2 gap-x-4' : ''}>
                     {row.map(n => { const g = DIAGRAM_GROUPS[n]; return <div key={g.title}>
                       <h3 className="label">{g.title}</h3>
                       <div className="flex items-center gap-x-4 gap-y-1.5 flex-wrap">
