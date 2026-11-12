@@ -402,11 +402,13 @@ export default function App() {
                 <div className="grid grid-cols-2 gap-2">
                   <NumberField label="Diagram Scale" value={opts.scale} min={0.1} max={20} step={0.25} onChange={o('scale')} />
                 </div>
-                <div className="section !space-y-3 !pt-3">
+                <div className="section !space-y-2.5">
                   {[[0, 1], [2], [3]].map(row => <div key={row.join()} className={row.length > 1 ? 'grid grid-cols-2 gap-x-4' : ''}>
-                    {row.map(n => { const g = DIAGRAM_GROUPS[n]; return <div key={g.title} className="flex items-center gap-x-3 min-w-0">
-                      <span className={`text-[11px] font-medium text-slate-600 shrink-0 ${row.length > 1 ? '' : 'w-[60px]'}`}>{g.title}</span>
-                      {g.items.map(([key, text]) => { const d = DIAGRAMS.find(x => x.key === key)!; return <Check key={key} checked={opts.diagrams[key]} onChange={v => o('diagrams')({ ...opts.diagrams, [key]: v })} title={d.label}><span className="inline-block w-2 h-2 rounded-sm mr-1.5 align-middle" style={{ background: d.colour }} />{symbol(text)}</Check>; })}
+                    {row.map(n => { const g = DIAGRAM_GROUPS[n]; return <div key={g.title}>
+                      <h3 className="label">{g.title}</h3>
+                      <div className="flex items-center gap-x-4 gap-y-1.5 flex-wrap">
+                        {g.items.map(([key, text]) => { const d = DIAGRAMS.find(x => x.key === key)!; return <Check key={key} checked={opts.diagrams[key]} onChange={v => o('diagrams')({ ...opts.diagrams, [key]: v })} title={d.label}><span className="inline-block w-2 h-2 rounded-sm mr-1.5 align-middle" style={{ background: d.colour }} />{symbol(text)}</Check>; })}
+                      </div>
                     </div>; })}
                   </div>)}
                 </div>
