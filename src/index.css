@@ -14,6 +14,9 @@
   .subtab-active { @apply bg-blue-600 text-white hover:bg-blue-600; }
 }
 svg text { user-select: none; }
+/* Labels, panels and buttons are not selectable; text can be selected only where it is edited or meant to be copied. */
+body { user-select: none; -webkit-user-select: none; }
+input, textarea, [contenteditable='true'], .select-text { user-select: text; -webkit-user-select: text; }
 
 /* The app spans the whole window: the shared header and tabs lose their 1600 px limit, the graphics column keeps a fixed width and the two outer columns take the rest */
 .app-wide .max-w-\[1600px\] { max-width: none; }

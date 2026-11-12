@@ -64,7 +64,7 @@ export function SectionDialog({ onClose, onAdd, assign, replace }: { onClose: ()
 }
 
 export function About({ onClose }: { onClose: () => void }) {
-  const P = ({ children }: { children: React.ReactNode }) => <p className="text-xs text-slate-700 leading-relaxed">{Children.map(children, c => (typeof c === 'string' ? sym(c) : c))}</p>;
+  const P = ({ children }: { children: React.ReactNode }) => <p className="text-xs text-slate-700 leading-relaxed select-text">{Children.map(children, c => (typeof c === 'string' ? sym(c) : c))}</p>;
   return (
     <Modal title="About CosmicWind" onClose={onClose} variant="page">
       <div className="panel"><P>CosmicWind analyses three-dimensional frames and trusses in the browser. The model is built in datasheets or drawn in the
