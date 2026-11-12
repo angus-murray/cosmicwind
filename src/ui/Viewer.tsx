@@ -679,7 +679,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
           const q = n.kind === 'node' ? nodeMap.get(n.ref) : null, g = n.kind === 'member' ? geo.find(x => x.m.id === n.ref) : null;
           const a = q ? P([q.x, q.y, q.z]) : g ? P([(g.A[0] + g.B[0]) / 2, (g.A[1] + g.B[1]) / 2, (g.A[2] + g.B[2]) / 2]) : null; if (!a) return null;
           const lines = wrapText(n.text), off = noteOff[n.id] ?? [n.dx, n.dy], w = Math.max(48, Math.min(210, Math.max(...lines.map(l => l.length)) * 6 + 14)), h = lines.length * 14 + 8, x = a[0] + off[0], y = a[1] + off[1] - h;
-          const bx = Math.max(x + 9, Math.min(a[0], x + w - 9)), ey = a[1] < y + h / 2 ? y : y + h; // the tail leaves the nearer edge
+          const [bx, ey] = ([[x, y], [x + w, y], [x, y + h], [x + w, y + h]] as [number, number][]).reduce((c, q) => (Math.hypot(q[0] - a[0], q[1] - a[1]) < Math.hypot(c[0] - a[0], c[1] - a[1]) ? q : c)); // the leader starts at the nearest corner
           return <g key={`note${n.id}`} data-note={n.id} style={{ cursor: 'move' }} onDoubleClick={e => { const [lx, ly] = local(e); onNoteEdit?.(n.id, lx, ly); }}>
             <title>Drag to move, double-click to edit, right-click for options</title>
             <line x1={bx} y1={ey} x2={a[0]} y2={a[1]} stroke="#000" strokeWidth={1} />
