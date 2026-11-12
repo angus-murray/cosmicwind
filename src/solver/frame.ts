@@ -3,7 +3,7 @@
  * compression-only members, elastic critical buckling and natural frequencies.
  * Internal units: kN, m, t (so E is in kPa and frequencies come out in rad/s).
  */
-import type { Member, Model } from '../model/types';
+import { releaseCode, restraintCode, type Member, type Model } from '../model/types';
 import { Skyline, subspace } from './linalg';
 
 const G0 = 9.80665;
@@ -201,7 +201,7 @@ export function analyse(model: Model): Analysis {
     const { L, R } = memberAxes(nodes[ia], nodes[ib], m.angle || 0);
     if (L < 1e-6) { err(`Member ${m.id} has zero length.`); continue; }
     if (!(s.A > 0) || !(mt.E > 0)) { err(`Member ${m.id}: the section area and the material modulus must be positive.`); continue; }
-    const rel = [...(m.relA || 'FFFFFF').padEnd(6, 'F'), ...(m.relB || 'FFFFFF').padEnd(6, 'F')].map(c => c.toUpperCase() === 'R');
+    const rel = [...releaseCode(m.relA), ...releaseCode(m.relB)].map(c => c.toUpperCase() === 'R');
     let GJ = mt.G * 1e3 * s.J * 1e-12;
     if (rel[3] && rel[9]) { rel[3] = rel[9] = false; GJ = 0; } // torsion released at both ends: no torsional stiffness
     if (rel[0] && rel[6]) { err(`Member ${m.id}: the axial force is released at both ends.`); continue; }
@@ -234,7 +234,7 @@ export function analyse(model: Model): Analysis {
   const eqNode: number[] = [], eqDof: number[] = [];
   for (const i of order) {
     if (!adj[i].length) continue; // unconnected node: not part of the structure
-    const r = (nodes[i].r || 'RRRRRR').toUpperCase().padEnd(6, 'R');
+    const r = restraintCode(nodes[i].r);
     for (let d = 0; d < 6; d++) if (r[d] !== 'F') { eq[i * 6 + d] = neq++; eqNode.push(i); eqDof.push(d); }
   }
   const loose = nodes.filter((_, i) => !adj[i].length);

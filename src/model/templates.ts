@@ -1,5 +1,5 @@
 /** Parametric starting models. */
-import { emptyModel, type Model, type Section } from './types';
+import { DASH, FREE, emptyModel, type Model, type Section } from './types';
 import { LIBRARY } from './sections';
 
 export interface Template { key: string; label: string; params: { key: string; label: string; value: number; min?: number; step?: number }[]; build: (p: Record<string, number>) => Model }
@@ -18,7 +18,7 @@ function base(title: string, sections: Section[]): Model {
   ];
   return m;
 }
-const mem = (id: number, a: number, b: number, sec: number, pinned = false) => ({ id, a, b, sec, mat: 1, angle: 0, type: 'N' as const, relA: pinned ? 'FFFFRR' : 'FFFFFF', relB: pinned ? 'FFFFRR' : 'FFFFFF' });
+const mem = (id: number, a: number, b: number, sec: number, pinned = false) => ({ id, a, b, sec, mat: 1, angle: 0, type: 'N' as const, relA: pinned ? 'FFFFRR' : DASH, relB: pinned ? 'FFFFRR' : DASH });
 const udl = (lc: number, member: number, w: number) => ({ lc, member, axes: 'G' as const, dir: 'Y' as const, w1: w, w2: w, s: 0, e: 100 });
 const nl = (lc: number, node: number, fx: number, fy = 0) => ({ lc, node, fx, fy, fz: 0, mx: 0, my: 0, mz: 0 });
 
@@ -45,7 +45,7 @@ export const TEMPLATES: Template[] = [
       const m = base('Multi-Storey Frame', [lib(1, '310UB40.4'), lib(2, '200UC46.2')]);
       const nx = Math.round(p.bays) + 1, ny = Math.round(p.st) + 1, nz = Math.round(p.nz), id = (i: number, j: number, k: number) => 1 + i + nx * (j + ny * k);
       for (let k = 0; k < nz; k++) for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++)
-        m.nodes.push({ id: id(i, j, k), x: round(i * p.bw), y: round(j * p.sh), z: round(k * p.sz), r: j === 0 ? 'FFFFFF' : nz === 1 ? P2 : 'RRRRRR' });
+        m.nodes.push({ id: id(i, j, k), x: round(i * p.bw), y: round(j * p.sh), z: round(k * p.sz), r: j === 0 ? 'FFFFFF' : nz === 1 ? P2 : FREE });
       let n = 1;
       for (let k = 0; k < nz; k++) for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
         if (j > 0) m.members.push(mem(n++, id(i, j - 1, k), id(i, j, k), 2));

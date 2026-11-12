@@ -48,12 +48,18 @@ export interface Model {
   settings: Settings;
 }
 
-export const FREE = 'RRRRRR', FIXED = 'FFFFFF', PIN = 'FFFRRR';
+/** Shown for a node with no restraint and a member end with no release: the defaults, which are RRRRRR and FFFFFF. */
+export const DASH = '–';
+export const FREE = DASH, FIXED = 'FFFFFF', PIN = 'FFFRRR';
+/** The six-letter restraint code of a node; an en-dash or blank means free. */
+export const restraintCode = (r: string | undefined) => (!r || r === DASH ? 'RRRRRR' : r.toUpperCase().padEnd(6, 'R'));
+/** The six-letter release code of a member end; an en-dash or blank means rigid. */
+export const releaseCode = (r: string | undefined) => (!r || r === DASH ? 'FFFFFF' : r.toUpperCase().padEnd(6, 'F'));
 export const RESTRAINTS: [string, string][] = [
   [FREE, 'Free'], [FIXED, 'Fixed'], [PIN, 'Pinned'], ['RFRRRR', 'Roller (Y)'], ['RFFRRR', 'Roller (Y, Z)'], ['FFFFFR', 'Pin 2D (XY)'], ['RFFFFR', 'Roller 2D (XY)'], ['RRFFFR', 'Plane XY'],
 ];
 export const RELEASES: [string, string][] = [
-  ['FFFFFF', 'Rigid'], ['FFFFRR', 'Pinned (My, Mz)'], ['FFFRRR', 'Pinned (All)'], ['FFFFFR', 'Mz Released'], ['FFFFRF', 'My Released'], ['RFFFFF', 'Axial Released'],
+  [DASH, 'Rigid'], ['FFFFRR', 'Pinned (My, Mz)'], ['FFFRRR', 'Pinned (All)'], ['FFFFFR', 'Mz Released'], ['FFFFRF', 'My Released'], ['RFFFFF', 'Axial Released'],
 ];
 
 export const STEEL: Material = { id: 1, name: 'Steel', E: 200000, G: 80000, rho: 7850, alpha: 11.7e-6 };
@@ -84,6 +90,8 @@ export function normalise(m: Partial<Model>): Model {
   const out = { ...e, ...m, settings: { ...e.settings, ...(m.settings ?? {}) } } as Model;
   for (const k of ['nodes', 'members', 'sections', 'materials', 'springs', 'loadCases', 'combos', 'nodeLoads', 'distLoads', 'pointLoads', 'settlements', 'thermal', 'masses', 'notes'] as const)
     if (!Array.isArray(out[k])) (out as unknown as Record<string, unknown>)[k] = [];
+  out.nodes = out.nodes.map(n => (!n.r || n.r === 'RRRRRR' ? { ...n, r: DASH } : n));
+  out.members = out.members.map(b => ({ ...b, relA: !b.relA || b.relA === 'FFFFFF' ? DASH : b.relA, relB: !b.relB || b.relB === 'FFFFFF' ? DASH : b.relB }));
   return out;
 }
 

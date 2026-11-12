@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppHeader, Banner, useElementSize, Check, NumberField, ReportDialog, ResultsHeader, SelectField, StatusChip, today } from 'engineering-ui';
 import { Axis3d, Box, Eye, Ruler, FilePlus, FolderOpen, Hash, Maximize, MousePointer2, Redo2, Save, Scissors, Spline, Trash2, Type, Undo2, Weight, Copy, Dot, LineChart, Shapes, Cuboid, Waypoints, StickyNote } from 'lucide-react';
 import {
-  deleteMembersAndFreeNodes, deleteNodes, FREE, MATERIAL_PRESETS, nextId, normalise, RELEASES, RESTRAINTS,
+  deleteMembersAndFreeNodes, deleteNodes, DASH, FREE, MATERIAL_PRESETS, nextId, normalise, RELEASES, RESTRAINTS,
   type Combo, type DistLoad, type LoadCase, type Material, type Member, type Model, type Node, type NodeLoad, type NodeMass, type PointLoad, type Section, type Settlement, type Spring, type ThermalLoad,
 } from './model/types';
 import { defaultModel } from './model/templates';
@@ -17,7 +17,7 @@ import type { ReportInfo } from './report';
 type Tab = 'structure' | 'loads' | 'results';
 const STORE = 'moonrock-model';
 const load = (): Model => { try { const s = localStorage.getItem(STORE); if (s) return normalise(JSON.parse(s)); } catch { /* fall through */ } return defaultModel(); };
-const code = (v: string | number, old: string) => { const s = String(v).toUpperCase().trim(); return /^[FR]{6}$/.test(s) ? s : old; };
+const code = (v: string | number, old: string) => { const s = String(v).toUpperCase().trim(); return /^[-–—]?$/.test(s) ? DASH : /^[FR]{6}$/.test(s) ? s : old; };
 const opt = (rows: { id: number; name?: string }[]) => rows.map(r => ({ value: String(r.id), label: r.name ? `${r.id}: ${r.name}` : String(r.id) }));
 const noSel = (): Sel => ({ nodes: new Set(), members: new Set() });
 
@@ -78,7 +78,7 @@ export default function App() {
   const addMember = (a: number, b: number) => setModel(m0 => {
     const m = ensureSection(m0); if (m.members.some(x => (x.a === a && x.b === b) || (x.a === b && x.b === a))) return m0;
     const last = m.members[m.members.length - 1];
-    return { ...m, members: [...m.members, { id: nextId(m.members), a, b, sec: last?.sec ?? m.sections[0].id, mat: last?.mat ?? m.materials[0]?.id ?? 1, angle: 0, type: 'N', relA: 'FFFFFF', relB: 'FFFFFF' }] };
+    return { ...m, members: [...m.members, { id: nextId(m.members), a, b, sec: last?.sec ?? m.sections[0].id, mat: last?.mat ?? m.materials[0]?.id ?? 1, angle: 0, type: 'N', relA: DASH, relB: DASH }] };
   });
   const delSel = useCallback(() => { setModel(m => deleteNodes(deleteMembersAndFreeNodes(m, sel.members), sel.nodes)); setSel(noSel()); }, [sel, setModel]);
   const patchMembers = (p: Partial<Member>) => setModel(m => ({ ...m, members: m.members.map(x => (sel.members.has(x.id) ? { ...x, ...p } : x)) }));
@@ -93,7 +93,7 @@ export default function App() {
       const ids = [mb.a], mids: number[] = [];
       for (let i = 1; i < n; i++) { const t = i / n; nodes.push({ id: nid, x: +(a.x + (b.x - a.x) * t).toFixed(6), y: +(a.y + (b.y - a.y) * t).toFixed(6), z: +(a.z + (b.z - a.z) * t).toFixed(6), r: /^..F..R$/.test(a.r) && /^..F..R$/.test(b.r) ? 'RRFFFR' : FREE }); ids.push(nid++); }
       ids.push(mb.b);
-      for (let i = 0; i < n; i++) { const id = i === 0 ? mb.id : mid++; mids.push(id); members.push({ ...mb, id, a: ids[i], b: ids[i + 1], relA: i === 0 ? mb.relA : 'FFFFFF', relB: i === n - 1 ? mb.relB : 'FFFFFF' }); }
+      for (let i = 0; i < n; i++) { const id = i === 0 ? mb.id : mid++; mids.push(id); members.push({ ...mb, id, a: ids[i], b: ids[i + 1], relA: i === 0 ? mb.relA : DASH, relB: i === n - 1 ? mb.relB : DASH }); }
       for (const l of m.distLoads.filter(x => x.member === mb.id)) for (let i = 0; i < n; i++) {
         const lo = Math.max(l.s, 100 * i / n), hi = Math.min(l.e, 100 * (i + 1) / n); if (hi - lo < 1e-9) continue;
         const w = (p: number) => l.w1 + (l.w2 - l.w1) * (p - l.s) / (l.e - l.s);
@@ -430,7 +430,7 @@ export default function App() {
                   newRow={() => { const l = model.nodes[model.nodes.length - 1]; return { id: nextId(model.nodes), x: l?.x ?? 0, y: l?.y ?? 0, z: l?.z ?? 0, r: FREE }; }}
                   onDelete={r => setModel(m => deleteNodes(m, new Set([r.id])))} />}
                 {st === 'members' && <Sheet rows={model.members} cols={memCols} onChange={v => setModel(m => ({ ...ensureSection(m), members: v }))} rowLabel={idLabel} selected={r => sel.members.has(r.id)} onSelect={pickM}
-                  newRow={() => { const l = model.members[model.members.length - 1]; return { id: nextId(model.members), a: l?.b ?? model.nodes[0]?.id ?? 1, b: model.nodes[model.nodes.length - 1]?.id ?? 2, sec: l?.sec ?? model.sections[0]?.id ?? 1, mat: l?.mat ?? model.materials[0]?.id ?? 1, angle: 0, type: 'N' as const, relA: 'FFFFFF', relB: 'FFFFFF' }; }}
+                  newRow={() => { const l = model.members[model.members.length - 1]; return { id: nextId(model.members), a: l?.b ?? model.nodes[0]?.id ?? 1, b: model.nodes[model.nodes.length - 1]?.id ?? 2, sec: l?.sec ?? model.sections[0]?.id ?? 1, mat: l?.mat ?? model.materials[0]?.id ?? 1, angle: 0, type: 'N' as const, relA: DASH, relB: DASH }; }}
                   onDelete={r => setModel(m => deleteMembersAndFreeNodes(m, new Set([r.id])))} />}
                 {st === 'sections' && <>
                   <Sheet rows={model.sections} cols={secCols} onChange={set('sections')} rowLabel={idLabel} selected={r => r.id === secSel} onSelect={r => setSecSel(r.id)} newRow={() => ({ id: nextId(model.sections), name: `Section ${nextId(model.sections)}`, A: 5000, Iy: 1e7, Iz: 5e7, J: 1e5 })}

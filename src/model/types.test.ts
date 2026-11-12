@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { deleteMembersAndFreeNodes, emptyModel, type Member, type Model } from './types';
+import { deleteMembersAndFreeNodes, emptyModel, normalise, releaseCode, restraintCode, type Member, type Model } from './types';
 
 const mem = (id: number, a: number, b: number): Member => ({ id, a, b, sec: 1, mat: 1, angle: 0, type: 'N', relA: 'FFFFFF', relB: 'FFFFFF' });
 const frame = (): Model => ({
@@ -37,4 +37,12 @@ test('notes go with the node or member they are attached to', () => {
     { id: 3, kind: 'member' as const, ref: 1, text: 'other', dx: 20, dy: -20 },
   ] };
   expect(deleteMembersAndFreeNodes(f, new Set([3])).notes.map(n => n.id)).toEqual([3]);
+});
+
+test('an en-dash stands for the default restraint and release', () => {
+  expect(restraintCode('–')).toBe('RRRRRR');
+  expect(releaseCode('–')).toBe('FFFFFF');
+  const m = normalise({ nodes: [{ id: 1, x: 0, y: 0, z: 0, r: 'RRRRRR' }, { id: 2, x: 1, y: 0, z: 0, r: 'FFFFFF' }], members: [mem(1, 1, 2)] });
+  expect(m.nodes.map(n => n.r)).toEqual(['–', 'FFFFFF']);
+  expect([m.members[0].relA, m.members[0].relB]).toEqual(['–', '–']);
 });
