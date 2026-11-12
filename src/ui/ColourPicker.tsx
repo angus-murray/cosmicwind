@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { X } from 'lucide-react';
 
 /** Swatches offered for a colour: the ten colours given to sections automatically, then six more, each clearly different from all the others. */
 export const SWATCHES = [
@@ -16,7 +17,8 @@ export function ColourPicker({ value, auto, at, onChange, onClose }: { value: st
   const commit = () => { if (HEX.test(hex)) onChange(hex.toLowerCase()); else setHex(value); };
   return (
     <div className="fixed inset-0 z-50" onMouseDown={onClose}>
-      <div className="absolute w-[224px] bg-white border border-slate-200 rounded-lg shadow-lg p-3 space-y-2.5" style={{ left, top }} onMouseDown={e => e.stopPropagation()}>
+      <div className="absolute w-[224px] bg-white border border-slate-200 rounded-lg shadow-lg p-3 pt-2 space-y-2" style={{ left, top }} onMouseDown={e => e.stopPropagation()}>
+        <div className="flex justify-end -mr-1.5"><button className="w-6 h-6 flex items-center justify-center rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100" aria-label="Close" onClick={onClose}><X className="w-3.5 h-3.5" /></button></div>
         <div className="grid grid-cols-8 gap-1.5">
           {SWATCHES.map(c => <button key={c} title={c} className={`h-6 rounded border ${c.toLowerCase() === value.toLowerCase() && !auto ? 'ring-2 ring-offset-1 ring-blue-600 border-white' : 'border-slate-200'}`} style={{ background: c }} onClick={() => { onChange(c); onClose(); }} />)}
         </div>

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { X } from 'lucide-react';
 import { sym } from './Sym';
 
 /** What a restraint or release editor needs to know about the six degrees of freedom it edits. */
@@ -46,7 +47,10 @@ export function DofEditor<T>({ spec, row, at, onChange, onClose }: { spec: DofSp
   return (
     <div className="fixed inset-0 z-50" onMouseDown={onClose}>
       <div className="absolute w-[320px] bg-white border border-slate-200 rounded-lg shadow-lg p-3 space-y-2.5" style={{ left, top }} onMouseDown={e => e.stopPropagation()}>
-        <div className="text-xs font-semibold text-slate-700">{spec.title(row)}</div>
+        <div className="flex items-start justify-between gap-2">
+          <div className="text-xs font-semibold text-slate-700">{spec.title(row)}</div>
+          <button className="-mt-1 -mr-1 w-6 h-6 shrink-0 flex items-center justify-center rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100" aria-label="Close" onClick={onClose}><X className="w-3.5 h-3.5" /></button>
+        </div>
         <div className="flex flex-wrap gap-1">
           {spec.presets.map(([c, l]) => <button key={c + l} className="btn !h-6 !px-2 !text-[11px]" onClick={() => set((c === '–' ? spec.dflt : c).split(''), k)}><span>{sym(l)}</span></button>)}
         </div>
