@@ -2,13 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppHeader, Banner, useElementSize, Check, NumberField, ReportDialog, ResultsHeader, SelectField, StatusChip, today } from 'engineering-ui';
 import { Axis3d, Box, Eye, Ruler, FilePlus, FolderOpen, Hash, Maximize, MousePointer2, Redo2, Save, Scissors, Spline, Trash2, Type, Undo2, Weight, Copy, Dot, LineChart, Shapes, Cuboid, Waypoints } from 'lucide-react';
 import {
-  deleteMembers, deleteNodes, FREE, MATERIAL_PRESETS, nextId, normalise, RELEASES, RESTRAINTS,
+  deleteMembersAndFreeNodes, deleteNodes, FREE, MATERIAL_PRESETS, nextId, normalise, RELEASES, RESTRAINTS,
   type Combo, type DistLoad, type LoadCase, type Material, type Member, type Model, type Node, type NodeLoad, type NodeMass, type PointLoad, type Section, type Settlement, type Spring, type ThermalLoad,
 } from './model/types';
 import { defaultModel } from './model/templates';
 import { analyse } from './solver/frame';
 import { Sheet, type Col } from './ui/Sheet';
-import { fmt, Viewer, type Diagram, type Sel, type Tool, type ViewerHandle, type ViewOpts } from './ui/Viewer';
+import { DIAGRAMS, fmt, Viewer, type Sel, type Tool, type ViewerHandle, type ViewOpts } from './ui/Viewer';
 import { ResultTables } from './ui/Results';
 import { ContextMenu, PromptBox, ToolFlyout, type MenuItem, type MenuState, type PromptState } from './ui/CanvasMenu';
 import { About, LoadDialog, SectionDialog, TemplateDialog, type LoadSpec } from './ui/Dialogs';
@@ -34,7 +34,7 @@ export default function App() {
   const [sub, setSub] = useState({ structure: 'nodes', loads: 'cases' });
   const [sel, setSel] = useState<Sel>(noSel);
   const [tool, setTool] = useState<Tool>('select');
-  const [opts, setOpts] = useState<ViewOpts>({ nodeNo: true, memberNo: true, secNames: false, loads: true, localAxes: false, diagram: 'Mz', deflected: false, reactions: true, values: true, scale: 1, defScale: 1, plane: 'XY', offset: 0, snap: 0.5, solid: false });
+  const [opts, setOpts] = useState<ViewOpts>({ nodeNo: true, memberNo: true, secNames: false, loads: true, localAxes: false, diagrams: { N: false, T: false, Vy: false, Vz: false, Vres: false, Mz: true, My: false, Mres: false }, deflected: false, reactions: true, values: true, scale: 1, defScale: 1, plane: 'XY', offset: 0, snap: 0.5, solid: false });
   const o = <K extends keyof ViewOpts>(k: K) => (v: ViewOpts[K]) => setOpts(p => ({ ...p, [k]: v }));
   const [caseId, setCaseId] = useState(1);
   const [modeIx, setModeIx] = useState<{ kind: 'buckling' | 'modal'; i: number } | null>(null);
@@ -79,7 +79,7 @@ export default function App() {
     const last = m.members[m.members.length - 1];
     return { ...m, members: [...m.members, { id: nextId(m.members), a, b, sec: last?.sec ?? m.sections[0].id, mat: last?.mat ?? m.materials[0]?.id ?? 1, angle: 0, type: 'N', relA: 'FFFFFF', relB: 'FFFFFF' }] };
   });
-  const delSel = useCallback(() => { setModel(m => deleteNodes(deleteMembers(m, sel.members), sel.nodes)); setSel(noSel()); }, [sel, setModel]);
+  const delSel = useCallback(() => { setModel(m => deleteNodes(deleteMembersAndFreeNodes(m, sel.members), sel.nodes)); setSel(noSel()); }, [sel, setModel]);
   const patchMembers = (p: Partial<Member>) => setModel(m => ({ ...m, members: m.members.map(x => (sel.members.has(x.id) ? { ...x, ...p } : x)) }));
   const patchNodes = (p: Partial<Node>) => setModel(m => ({ ...m, nodes: m.nodes.map(x => (sel.nodes.has(x.id) ? { ...x, ...p } : x)) }));
   const subdivide = (np: number = parts) => setModel(m => {
@@ -133,14 +133,24 @@ export default function App() {
 
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      const el = e.target as HTMLElement, typing = /INPUT|SELECT|TEXTAREA/.test(el.tagName);
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !typing) { e.preventDefault(); if (e.shiftKey) redo(); else undo(); }
-      else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y' && !typing) { e.preventDefault(); redo(); }
+      const el = e.target as HTMLInputElement, typing = /INPUT|SELECT|TEXTAREA/.test(el.tagName);
+      // Undo, redo and select all belong to the model unless text is being edited: a text box keeps its own undo and select all, but a datasheet cell nobody has typed in does not
+      const textBox = (el.tagName === 'INPUT' && !/checkbox|radio|button|range/.test(el.type)) || el.tagName === 'TEXTAREA';
+      const model_ = !textBox || (!!el.closest?.('.sheet') && el.value === el.dataset.v0), mod = e.ctrlKey || e.metaKey, k = e.key.toLowerCase();
+      if (mod && k === 'z' && model_) { e.preventDefault(); if (e.shiftKey) redo(); else undo(); }
+      else if (mod && k === 'y' && model_) { e.preventDefault(); redo(); }
+      else if (mod && k === 'a' && model_) { e.preventDefault(); el.blur?.(); setSel({ nodes: new Set(model.nodes.map(n => n.id)), members: new Set(model.members.map(m => m.id)) }); }
       else if ((e.key === 'Delete' || e.key === 'Backspace') && !typing && tab !== 'results' && (sel.nodes.size || sel.members.size)) { e.preventDefault(); delSel(); }
       else if (e.key === 'Escape' && !typing) { setTool('select'); setSel(noSel()); setPickMove(null); setCtx(null); setPrompt(null); }
     };
     window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key);
-  }, [undo, redo, delSel, sel, tab]);
+  }, [undo, redo, delSel, sel, tab, model.nodes, model.members]);
+  // The value of a text box when it was entered or last committed, to tell whether it is being edited
+  useEffect(() => {
+    const mark = (e: Event) => { const t = e.target as HTMLInputElement; if (t?.tagName === 'INPUT' || t?.tagName === 'TEXTAREA') t.dataset.v0 = t.value; };
+    window.addEventListener('focusin', mark); window.addEventListener('change', mark);
+    return () => { window.removeEventListener('focusin', mark); window.removeEventListener('change', mark); };
+  }, []);
   useEffect(() => { if (tab === 'results') setTool('select'); }, [tab]);
 
   const applyLoad = (lc: number, sp: LoadSpec) => {
@@ -348,9 +358,14 @@ export default function App() {
                 <h2 className="panel-title">Display</h2>
                 <div className="grid grid-cols-2 gap-2">
                   <SelectField label="Case" value={String(cur?.id ?? '')} onChange={v => { setCaseId(Number(v)); setModeIx(m => (m?.kind === 'buckling' ? null : m)); }} options={cases.map(c => ({ value: String(c.id), label: `${c.id}: ${c.name}` }))} />
-                  <SelectField label="Diagram" value={opts.diagram} onChange={v => o('diagram')(v as Diagram)} options={[{ value: 'none', label: 'None' }, { value: 'Mz', label: 'Bending Moment Mz' }, { value: 'My', label: 'Bending Moment My' }, { value: 'Vy', label: 'Shear Force Vy' }, { value: 'Vz', label: 'Shear Force Vz' }, { value: 'N', label: 'Axial Force' }, { value: 'T', label: 'Torsion' }]} />
                   <NumberField label="Diagram Scale" value={opts.scale} min={0.1} max={20} step={0.25} onChange={o('scale')} />
                   <NumberField label="Deflection Scale" value={opts.defScale} min={0.1} max={20} step={0.25} onChange={o('defScale')} />
+                </div>
+                <div className="section">
+                  <h3 className="label mb-1">Diagrams</h3>
+                  <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
+                    {DIAGRAMS.map(d => <Check key={d.key} checked={opts.diagrams[d.key]} onChange={v => o('diagrams')({ ...opts.diagrams, [d.key]: v })}><span className="inline-block w-2 h-2 rounded-sm mr-1.5 align-middle" style={{ background: d.colour }} />{d.label}</Check>)}
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
                   <Check checked={opts.deflected} onChange={o('deflected')}>Deflected Shape</Check><Check checked={opts.reactions} onChange={o('reactions')}>Reactions</Check>
@@ -405,7 +420,7 @@ export default function App() {
                   onDelete={r => setModel(m => deleteNodes(m, new Set([r.id])))} />}
                 {st === 'members' && <Sheet rows={model.members} cols={memCols} onChange={v => setModel(m => ({ ...ensureSection(m), members: v }))} rowLabel={idLabel} selected={r => sel.members.has(r.id)} onSelect={pickM}
                   newRow={() => { const l = model.members[model.members.length - 1]; return { id: nextId(model.members), a: l?.b ?? model.nodes[0]?.id ?? 1, b: model.nodes[model.nodes.length - 1]?.id ?? 2, sec: l?.sec ?? model.sections[0]?.id ?? 1, mat: l?.mat ?? model.materials[0]?.id ?? 1, angle: 0, type: 'N' as const, relA: 'FFFFFF', relB: 'FFFFFF' }; }}
-                  onDelete={r => setModel(m => deleteMembers(m, new Set([r.id])))} />}
+                  onDelete={r => setModel(m => deleteMembersAndFreeNodes(m, new Set([r.id])))} />}
                 {st === 'sections' && <>
                   <Sheet rows={model.sections} cols={secCols} onChange={set('sections')} rowLabel={idLabel} selected={r => r.id === secSel} onSelect={r => setSecSel(r.id)} newRow={() => ({ id: nextId(model.sections), name: `Section ${nextId(model.sections)}`, A: 5000, Iy: 1e7, Iz: 5e7, J: 1e5 })}
                     onDelete={r => (used('sec', r.id) ? alert(`Section ${r.id} is used by members.`) : set('sections')(model.sections.filter(s => s.id !== r.id)))} />

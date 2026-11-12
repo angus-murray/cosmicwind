@@ -100,3 +100,11 @@ export function deleteMembers(m: Model, ids: Set<number>): Model {
     thermal: m.thermal.filter(l => !ids.has(l.member)),
   };
 }
+
+/** Removes members, then any node they leave with no member attached (a node still used by another member stays). */
+export function deleteMembersAndFreeNodes(m: Model, ids: Set<number>): Model {
+  const ends = new Set(m.members.filter(b => ids.has(b.id)).flatMap(b => [b.a, b.b]));
+  const rest = deleteMembers(m, ids), used = new Set(rest.members.flatMap(b => [b.a, b.b]));
+  const free = new Set([...ends].filter(n => !used.has(n)));
+  return free.size ? deleteNodes(rest, free) : rest;
+}

@@ -4,11 +4,19 @@ import type { Model } from '../model/types';
 import { outlineLoops, outlineOf } from '../model/sections';
 import { memberAxes, type CaseResult, type Vec6 } from '../solver/frame';
 
-export type Diagram = 'none' | 'N' | 'Vy' | 'Vz' | 'T' | 'My' | 'Mz';
+export type DiagramKey = 'N' | 'T' | 'Vy' | 'Vz' | 'Vres' | 'Mz' | 'My' | 'Mres';
+/** Member action diagrams that can be drawn together; each is scaled to its own maximum. */
+export const DIAGRAMS: { key: DiagramKey; label: string; unit: string; colour: string }[] = [
+  { key: 'N', label: 'Axial N', unit: 'kN', colour: '#ca8a04' }, { key: 'T', label: 'Torsion T', unit: 'kNm', colour: '#c026d3' },
+  { key: 'Vy', label: 'Shear Vy', unit: 'kN', colour: '#0d9488' }, { key: 'Vz', label: 'Shear Vz', unit: 'kN', colour: '#0ea5e9' },
+  { key: 'Vres', label: 'Shear Resultant', unit: 'kN', colour: '#15803d' },
+  { key: 'Mz', label: 'Moment Mz', unit: 'kNm', colour: '#2563eb' }, { key: 'My', label: 'Moment My', unit: 'kNm', colour: '#7c3aed' },
+  { key: 'Mres', label: 'Moment Resultant', unit: 'kNm', colour: '#be123c' },
+];
 export type Tool = 'select' | 'node' | 'member' | 'measure';
 export interface ViewOpts {
   nodeNo: boolean; memberNo: boolean; secNames: boolean; loads: boolean; localAxes: boolean;
-  diagram: Diagram; deflected: boolean; reactions: boolean; values: boolean; scale: number; defScale: number;
+  diagrams: Record<DiagramKey, boolean>; deflected: boolean; reactions: boolean; values: boolean; scale: number; defScale: number;
   plane: 'XY' | 'XZ' | 'YZ'; offset: number; snap: number;
   /** Rendered 3D view of the member cross sections instead of the wireframe. */
   solid: boolean;
@@ -26,7 +34,6 @@ const rgb = (h: string) => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
 const mixRgb = (a: number[], b: number[], t: number) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
 const toHex = (c: number[]) => `rgb(${c.join()})`;
 const halo: React.CSSProperties = { paintOrder: 'stroke', stroke: 'var(--color-slate-50)', strokeWidth: 3, strokeLinejoin: 'round' };
-const DIAGRAM_COLOUR: Record<Diagram, string> = { none: BLUE, N: AMBER, Vy: GREEN, Vz: GREEN, T: PINK, My: BLUE, Mz: BLUE };
 
 export const Viewer = React.forwardRef<ViewerHandle, {
   model: Model; opts: ViewOpts; tool: Tool; sel: Sel; onSelect: (s: Sel) => void;
@@ -114,6 +121,9 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   const [pickLive, setPickLive] = useState<V3 | null>(null);
   /** Where the drawing cursor lands (screen pixels) when a node or the snap grid captures it. */
   const [snapAt, setSnapAt] = useState<[number, number] | null>(null);
+  const curvesRef = useRef<{ key: DiagramKey; id: number; L: number; top: [number, number][]; xs: number[]; lines: (i: number) => string[] }[]>([]);
+  /** Hover tip for the diagram curve under the pointer. */
+  const [tip, setTip] = useState<{ x: number; y: number; dot: [number, number]; colour: string; lines: string[] } | null>(null);
   /** Node or member under the pointer, highlighted so the click target is clear. */
   const [hover, setHover] = useState<{ n: number | null; m: number | null }>({ n: null, m: null });
   /** First corner of a selection box that is waiting for its second click. */
@@ -140,6 +150,10 @@ export const Viewer = React.forwardRef<ViewerHandle, {
     if (!dragging) {
       const h = hitAt(lx, ly), hn = h.hitN, hm = tool === 'select' && !pick ? h.hitM : null; // draw tools snap to nodes only
       setHover(v => (v.n === hn && v.m === hm ? v : { n: hn, m: hm }));
+      let near: { d: number; c: (typeof curvesRef.current)[number]; i: number } | null = null; // nearest point of a diagram curve within 10 px
+      if (hn === null) for (const c of curvesRef.current) c.top.forEach((q, i) => { const d = Math.hypot(q[0] - lx, q[1] - ly); if (d < 10 && (!near || d < near.d)) near = { d, c, i }; });
+      const nr = near as { d: number; c: (typeof curvesRef.current)[number]; i: number } | null;
+      setTip(nr ? { x: lx, y: ly, dot: nr.c.top[nr.i], colour: DIAGRAMS.find(d => d.key === nr.c.key)!.colour, lines: [`Member ${nr.c.id}, x = ${nr.c.xs[nr.i].toFixed(3)} m (${(100 * nr.c.xs[nr.i] / nr.c.L).toFixed(0)}%)`, ...nr.c.lines(nr.i)] } : null);
       if (tool !== 'select' || pick) {
         const nn = hn !== null ? nodeMap.get(hn) : null, pt: V3 | null = nn ? [nn.x, nn.y, nn.z] : opts.snap > 0 ? onPlane(lx, ly) : null, at = pt ? P(pt) : null;
         setSnapAt(at);
@@ -365,22 +379,40 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   // ---- Results: diagrams, deflected shape, reactions
   const diag: React.ReactNode[] = [], taken = new Set<string>();
   const free = (p: [number, number]) => { const k = `${Math.round(p[0] / 26)},${Math.round(p[1] / 12)}`; if (taken.has(k)) return false; taken.add(k); return true; };
-  if (result && opts.diagram !== 'none' && !mode) {
-    const key = opts.diagram, colour = DIAGRAM_COLOUR[key];
-    let vmax = 1e-9; result.members.forEach(r => { for (const v of r[key]) vmax = Math.max(vmax, Math.abs(v)); });
-    const sc = 0.14 * bounds.S * opts.scale / vmax, axis = key === 'My' || key === 'Vz' ? 2 : 1, sign = key === 'Mz' ? -1 : 1; // moments on the tension side
-    for (const g of geo) {
-      const r = result.members.get(g.m.id); if (!r) continue;
-      const off = (v: number) => { const o = [0, 0, 0]; o[axis] = sign * v * sc; return o; };
-      const top = r.x.map((x, i) => P(along(g, x, off(r[key][i]))));
-      diag.push(<path key={`g${g.m.id}`} d={`${path([P(g.A), ...top, P(g.B)])}Z`} fill={colour} fillOpacity={0.14} stroke={colour} strokeWidth={1.25} strokeLinejoin="round" />);
-      if (opts.values) {
-        let im = 0; r[key].forEach((v, i) => { if (Math.abs(v) > Math.abs(r[key][im])) im = i; });
-        const lab = new Set([0, r.x.length - 1, im]);
-        lab.forEach(i => { const v = r[key][i]; if ((Math.abs(v) > 1e-6 * vmax || i === im) && free(top[i])) diag.push(text([top[i][0], top[i][1] - 4], fmt(v), `gt${g.m.id}-${i}`, colour, 'middle', true)); });
+  /** Points of the drawn diagrams, kept for the hover tip. */
+  const curves: { key: DiagramKey; id: number; L: number; top: [number, number][]; xs: number[]; lines: (i: number) => string[] }[] = [];
+  const active = DIAGRAMS.filter(d => opts.diagrams[d.key]);
+  if (result && active.length && !mode) {
+    for (const { key, colour, unit } of active) {
+      // Each action puts a vector in the plane of the section: the resultants use both components, so the side the curve is drawn on shows the direction
+      const comp = (r: NonNullable<ReturnType<typeof result.members.get>>, i: number): [number, number] => // [local y, local z] offset per unit
+        key === 'N' ? [r.N[i], 0] : key === 'T' ? [r.T[i], 0] : key === 'Vy' ? [r.Vy[i], 0] : key === 'Vz' ? [0, r.Vz[i]] : key === 'My' ? [0, r.My[i]] : key === 'Mz' ? [-r.Mz[i], 0]
+          : key === 'Vres' ? [r.Vy[i], r.Vz[i]] : [-r.Mz[i], r.My[i]]; // moments are drawn on the tension side
+      const mag = (r: NonNullable<ReturnType<typeof result.members.get>>, i: number) => { const c = comp(r, i); return key === 'Vres' || key === 'Mres' ? Math.hypot(c[0], c[1]) : key === 'Mz' ? -c[0] : c[0] + c[1]; };
+      let vmax = 1e-9; result.members.forEach(r => r.x.forEach((_, i) => { const c = comp(r, i); vmax = Math.max(vmax, Math.hypot(c[0], c[1])); }));
+      const sc = 0.14 * bounds.S * opts.scale / vmax, res = key === 'Vres' || key === 'Mres';
+      for (const g of geo) {
+        const r = result.members.get(g.m.id); if (!r) continue;
+        const top = r.x.map((x, i) => { const c = comp(r, i); return P(along(g, x, [0, c[0] * sc, c[1] * sc])); });
+        const k = `${key}${g.m.id}`;
+        diag.push(<path key={`g${k}`} d={`${path([P(g.A), ...top, P(g.B)])}Z`} fill={colour} fillOpacity={res ? 0.08 : 0.14} stroke={colour} strokeWidth={1.25} strokeLinejoin="round" />);
+        if (res) { const step = Math.max(1, Math.round(r.x.length / 10)); r.x.forEach((x, i) => { if (i % step === 0 && mag(r, i) > 1e-6 * vmax) { const q = P(along(g, x)); diag.push(<line key={`sp${k}-${i}`} x1={q[0]} y1={q[1]} x2={top[i][0]} y2={top[i][1]} stroke={colour} strokeOpacity={0.45} strokeWidth={1} />); } }); }
+        if (opts.values) {
+          let im = 0; r.x.forEach((_, i) => { if (Math.abs(mag(r, i)) > Math.abs(mag(r, im))) im = i; });
+          const lab = new Set([0, r.x.length - 1, im]);
+          lab.forEach(i => { const v = mag(r, i); if ((Math.abs(v) > 1e-6 * vmax || i === im) && free(top[i])) diag.push(text([top[i][0], top[i][1] - 4], fmt(v), `gt${k}-${i}`, colour, 'middle', true)); });
+        }
+        curves.push({ key, id: g.m.id, L: g.L, top, xs: r.x, lines: i => {
+          const c = comp(r, i), out = [`${DIAGRAMS.find(d => d.key === key)!.label}: ${fmt(mag(r, i))} ${unit}`];
+          if (key === 'Mres') out.push(`Mz ${fmt(r.Mz[i])}, My ${fmt(r.My[i])} kNm`);
+          if (key === 'Vres') out.push(`Vy ${fmt(r.Vy[i])}, Vz ${fmt(r.Vz[i])} kN`);
+          if (res) out.push(`Drawn at ${(((Math.atan2(c[1], c[0]) * 180 / Math.PI) % 360 + 360) % 360).toFixed(0)}° from local y towards z`);
+          return out;
+        } });
       }
     }
   }
+  curvesRef.current = curves;
   const defl: React.ReactNode[] = [];
   const shape = mode ?? (opts.deflected && result ? result.disp : null);
   if (shape) {
@@ -442,11 +474,11 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   const springNodes = new Set(model.springs.filter(s => s.k.some(v => v > 0)).map(s => s.node));
   const secName = new Map(model.sections.map(s => [s.id, s.name]));
   const chainNode = chain !== null ? nodeMap.get(chain) : null;
-  const faded = !!(result || mode) && (opts.diagram !== 'none' || opts.deflected || !!mode);
+  const faded = !!(result || mode) && (active.length > 0 || opts.deflected || !!mode);
   return (
     <div ref={box} className="absolute inset-0 overflow-hidden">
       <svg ref={svgRef} width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="block touch-none select-none" style={{ cursor: tool === 'select' && !pick ? 'default' : snapAt ? 'none' : 'crosshair' }}
-        onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerLeave={() => { setHover({ n: null, m: null }); setSnapAt(null); }} onMouseDown={e => { if (e.button === 1) e.preventDefault(); }} onContextMenu={e => e.preventDefault()}>
+        onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerLeave={() => { setHover({ n: null, m: null }); setSnapAt(null); setTip(null); }} onMouseDown={e => { if (e.button === 1) e.preventDefault(); }} onContextMenu={e => e.preventDefault()}>
         <rect width={W} height={H} fill="#f8fafc" />
         {grid}
         {geo.map(g => {
@@ -528,6 +560,12 @@ export const Viewer = React.forwardRef<ViewerHandle, {
           })}
         </g>
       </svg>
+      {tip && <>
+        <svg width={W} height={H} className="absolute inset-0 pointer-events-none"><circle cx={tip.dot[0]} cy={tip.dot[1]} r={4.5} fill="#fff" stroke={tip.colour} strokeWidth={2} /></svg>
+        <div className="absolute z-10 pointer-events-none bg-white/95 border border-slate-200 rounded-md shadow-md px-2 py-1 text-[11px] text-slate-700 whitespace-nowrap" style={{ left: Math.min(tip.x + 14, W - 230), top: Math.min(tip.y + 14, H - 70) }}>
+          {tip.lines.map((l, i) => <div key={i} className={i === 1 ? 'font-semibold' : ''} style={i === 1 ? { color: tip.colour } : undefined}>{l}</div>)}
+        </div>
+      </>}
       {legend.length > 0 && <div className="absolute bottom-2 left-20 max-w-[45%] bg-white/85 border border-slate-200 rounded-md px-2 py-1 text-[11px] text-slate-700 space-y-0.5 pointer-events-none">
         {legend.slice(0, 8).map(id => <div key={id} className="flex items-center gap-1.5 whitespace-nowrap"><span className="inline-block w-3 h-1.5 rounded-sm shrink-0" style={{ background: sectionColour(id) }} />{id}: {secName.get(id) ?? '—'}</div>)}
         {legend.length > 8 && <div>+{legend.length - 8} more</div>}
