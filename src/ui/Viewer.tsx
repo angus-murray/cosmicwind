@@ -29,8 +29,10 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   result?: CaseResult | null; mode?: Map<number, Vec6> | null;
   onAddNode: (p: V3) => number; onAddMember: (a: number, b: number) => void;
   /** Right click (without dragging) in the select tool: where, and the node or member under the pointer. */
+  /** Changes when a different model is loaded, which refits the view. */
+  fitRev?: number;
   onContext?: (c: { x: number; y: number; node: number | null; member: number | null }) => void;
-}>(function Viewer({ model, opts, tool, sel, onSelect, loadCases, result, mode, onAddNode, onAddMember, onContext }, handle) {
+}>(function Viewer({ model, opts, tool, sel, onSelect, loadCases, result, mode, onAddNode, onAddMember, onContext, fitRev = 0 }, handle) {
   const [box, size] = useElementSize<HTMLDivElement>();
   const svgRef = useRef<SVGSVGElement>(null);
   // c is the orbit pivot (the model centre at the last fit); px, py are the screen offset of the pivot from the view centre.
@@ -85,13 +87,13 @@ export const Viewer = React.forwardRef<ViewerHandle, {
     svg: () => svgRef.current,
   }));
   // Fit when the size first becomes known and whenever a different model is loaded (its extents change).
-  const fitKey = `${size.width > 0}|${Math.round(size.width / 40)}|${Math.round(size.height / 40)}|${bounds.lo.join()}|${bounds.hi.join()}`;
-  const lastFit = useRef(''), lastFlat = useRef(flat);
+  // Editing (deleting or moving nodes) never moves the camera: only the first display, a resize and a newly loaded model (fitRev) do.
+  const fitKey = `${size.width > 0}|${Math.round(size.width / 40)}|${Math.round(size.height / 40)}|${fitRev}`;
+  const lastFit = useRef(''), lastRev = useRef(fitRev);
   useEffect(() => {
     if (!size.width || lastFit.current === fitKey || tool !== 'select') return;
-    const first = lastFit.current === '' || lastFit.current.startsWith('false'); lastFit.current = fitKey;
-    if (first || lastFlat.current !== flat) fitTo(flat ? 0 : -0.5, flat ? 0 : 0.35); else fitTo(cam.yaw, cam.pitch);
-    lastFlat.current = flat;
+    const first = lastFit.current === '' || lastFit.current.startsWith('false'), loaded = lastRev.current !== fitRev; lastFit.current = fitKey; lastRev.current = fitRev;
+    if (first || loaded) fitTo(flat ? 0 : -0.5, flat ? 0 : 0.35); else fitTo(cam.yaw, cam.pitch);
   }, [fitKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- Pointer interaction

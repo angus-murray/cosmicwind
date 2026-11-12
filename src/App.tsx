@@ -43,6 +43,7 @@ export default function App() {
   const [copy, setCopy] = useState({ dx: 0, dy: 0, dz: 6, n: 1 });
   const [parts, setParts] = useState(4);
   const viewer = useRef<ViewerHandle>(null);
+  const [fitRev, setFitRev] = useState(0);
   const [ctx, setCtx] = useState<{ x: number; y: number; node: number | null; member: number | null } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -162,7 +163,7 @@ export default function App() {
   };
   const open = async (f: File | undefined) => {
     if (!f) return;
-    try { const m = normalise(JSON.parse(await f.text())); if (!Array.isArray(m.nodes)) throw new Error(); setModel(() => m); setSel(noSel()); }
+    try { const m = normalise(JSON.parse(await f.text())); if (!Array.isArray(m.nodes)) throw new Error(); setModel(() => m); setFitRev(r => r + 1); setSel(noSel()); }
     catch { alert('The file is not a CosmicWind model.'); }
   };
 
@@ -297,7 +298,7 @@ export default function App() {
 
           <div className="results-column">
             <div className="relative bg-slate-50 rounded-lg border border-slate-200 shadow-2xs overflow-hidden h-[520px] lg:h-auto lg:flex-1 lg:min-h-[240px]">
-              <Viewer ref={viewer} model={model} opts={opts} tool={tool} sel={sel} onSelect={setSel} loadCases={drawLoads} result={tab === 'results' ? okRes : null} mode={tab === 'results' ? modeShape : null} onAddNode={addNode} onAddMember={addMember}
+              <Viewer ref={viewer} fitRev={fitRev} model={model} opts={opts} tool={tool} sel={sel} onSelect={setSel} loadCases={drawLoads} result={tab === 'results' ? okRes : null} mode={tab === 'results' ? modeShape : null} onAddNode={addNode} onAddMember={addMember}
                 onContext={c => { setCtx(c); if (c.node !== null && !sel.nodes.has(c.node)) setSel({ nodes: new Set([c.node]), members: new Set() }); else if (c.node === null && c.member !== null && !sel.members.has(c.member)) setSel({ nodes: new Set(), members: new Set([c.member]) }); }} />
               {ctx && <ContextMenu x={ctx.x} y={ctx.y} items={menuItems()} onClose={() => setCtx(null)} />}
               {tab !== 'results' && <div className="absolute top-2 left-2 toolbar w-[104px]">
@@ -394,7 +395,7 @@ export default function App() {
         </div>
       </main>
       {dialog === 'about' && <About onClose={() => setDialog(null)} />}
-      {dialog === 'new' && <TemplateDialog onClose={() => setDialog(null)} onCreate={m => { setModel(() => m); setSel(noSel()); setCaseId(1); setModeIx(null); setDialog(null); setTab('structure'); }} />}
+      {dialog === 'new' && <TemplateDialog onClose={() => setDialog(null)} onCreate={m => { setModel(() => m); setFitRev(r => r + 1); setSel(noSel()); setCaseId(1); setModeIx(null); setDialog(null); setTab('structure'); }} />}
       {dialog === 'section' && <SectionDialog assign={mSel} onClose={() => setDialog(null)} onAdd={(name, p, outline) => {
         setModel(m => {
           const ex = m.sections.find(s => s.name === name), id = ex?.id ?? nextId(m.sections);
