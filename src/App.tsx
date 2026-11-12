@@ -43,7 +43,7 @@ export default function App() {
   const [sub, setSub] = useState({ structure: 'nodes', loads: 'cases' });
   const [sel, setSel] = useState<Sel>(noSel);
   const [tool, setTool] = useState<Tool>('select');
-  const [opts, setOpts] = useState<ViewOpts>({ notes: true, nodeNo: false, memberNo: false, secNames: false, loads: true, localAxes: false, diagrams: { N: false, T: false, Vy: false, Vz: false, Vres: false, Mz: true, My: false, Mres: false }, stress: 'none', deflected: false, defLabels: 'none', origin: false, restraints: true, releases: true, reactions: true, scale: 1, defScale: 1, solid: false });
+  const [opts, setOpts] = useState<ViewOpts>({ notes: true, nodeNo: false, memberNo: false, secNames: false, loads: true, localAxes: false, diagrams: { N: false, T: false, Vy: false, Vz: false, Vres: false, Mz: true, My: false, Mres: false }, stress: 'none', deflected: false, defLabels: 'none', origin: true, restraints: true, releases: true, reactions: true, scale: 1, defScale: 1, solid: false });
   const o = <K extends keyof ViewOpts>(k: K) => (v: ViewOpts[K]) => setOpts(p => ({ ...p, [k]: v }));
   const [caseId, setCaseId] = useState(1);
   const [modeIx, setModeIx] = useState<{ kind: 'buckling' | 'modal'; i: number } | null>(null);
@@ -521,7 +521,7 @@ export default function App() {
                 <button className={`tool-btn ${opts.memberNo ? '!text-blue-700' : ''}`} title="Member numbers" onClick={() => o('memberNo')(!opts.memberNo)}><Hash className="w-3.5 h-3.5" />Members</button>
                 <button className={`tool-btn ${opts.secNames ? '!text-blue-700' : ''}`} title="Section names" onClick={() => o('secNames')(!opts.secNames)}><Type className="w-3.5 h-3.5" />Sections</button>
                 <button className={`tool-btn ${opts.localAxes ? '!text-blue-700' : ''}`} title="Member local axes: x red, y green, z blue" onClick={() => o('localAxes')(!opts.localAxes)}><Axis3d className="w-3.5 h-3.5" />Axes</button>
-                <button className={`tool-btn ${opts.origin ? '!text-blue-700' : ''}`} title="Marks the global origin (0, 0, 0)" onClick={() => o('origin')(!opts.origin)}><Crosshair className="w-3.5 h-3.5" />Origin</button>
+                <button className={`tool-btn ${opts.origin ? '!text-blue-700' : ''}`} title="Marks the global origin (0, 0, 0), which then snaps" onClick={() => o('origin')(!opts.origin)}><Crosshair className="w-3.5 h-3.5" />Origin</button>
                 <button className={`tool-btn ${opts.restraints ? '!text-blue-700' : ''}`} title="Restraints and spring supports at the nodes" onClick={() => o('restraints')(!opts.restraints)}><Anchor className="w-3.5 h-3.5" />Restraints</button>
                 <button className={`tool-btn ${opts.releases ? '!text-blue-700' : ''}`} title="Member end releases and springs" onClick={() => o('releases')(!opts.releases)}><Unlink className="w-3.5 h-3.5" />Releases</button>
                 <button className={`tool-btn ${opts.loads ? '!text-blue-700' : ''}`} title="Loads of the case shown" onClick={() => o('loads')(!opts.loads)}><Weight className="w-3.5 h-3.5" />Loads</button>

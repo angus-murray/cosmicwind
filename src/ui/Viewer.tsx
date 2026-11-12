@@ -255,9 +255,9 @@ export const Viewer = React.forwardRef<ViewerHandle, {
       const fh = faceHit.current, stressTip = !nr && hn === null && stressOn && fh && fh.v !== undefined ? { x: lx, y: ly, dot: [lx, ly] as [number, number], colour: '#475569', lines: [`Member ${fh.id}`, `${STRESSES.find(t => t.key === opts.stress)!.label.replace(/ \(.*\)$/, '')}: ${fmt(fh.v)} MPa`] } : null;
       setTip(nr ? { x: lx, y: ly, dot: nr.edge, foot: nr.foot, colour: DIAGRAMS.find(d => d.key === nr.c.key)!.colour, lines: [`Member ${nr.c.id}, x = ${nr.x.toFixed(3)} m (${(100 * nr.x / nr.c.L).toFixed(0)}%)`, ...nr.c.lines(nr.i, nr.f)] } : stressTip);
       if (tool !== 'select' || pick) {
-        const nn = hn !== null ? nodeMap.get(hn) : null, mid = !nn ? midAt(lx, ly) : null, drawing = tool === 'member' && chain !== null, dt = drawing && !nn && !mid ? drawTarget(lx, ly) : null;
-        const pt: V3 | null = nn ? [nn.x, nn.y, nn.z] : mid ? mid.pt : dt ? dt.pt : onPlane(lx, ly), at = pt ? P(pt) : null;
-        setSnapAt(nn || mid || dt ? at : null); setSnapMid(!!mid);
+        const nn = hn !== null ? nodeMap.get(hn) : null, mid = !nn ? midAt(lx, ly) : null, org = !nn && !mid ? originAt(lx, ly) : null, drawing = tool === 'member' && chain !== null, dt = drawing && !nn && !mid && !org ? drawTarget(lx, ly) : null;
+        const pt: V3 | null = nn ? [nn.x, nn.y, nn.z] : mid ? mid.pt : org ? org : dt ? dt.pt : onPlane(lx, ly), at = pt ? P(pt) : null;
+        setSnapAt(nn || mid || org || dt ? at : null); setSnapMid(!!mid);
         if (drawing) {
           setCursor(at ?? [lx, ly]);
           const c = nodeMap.get(chain!); // direction and length so far, kept for a typed length
@@ -282,6 +282,8 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   };
   /** Nearest node within 9 px, else nearest member within 6 px. */
   /** The midpoint of a member within 9 px of the pointer: a snap point when drawing, measuring or moving. */
+  /** The global origin, a snap point within 9 px of the pointer while the Origin option is on. */
+  const originAt = (sx: number, sy: number): V3 | null => { if (!opts.origin) return null; const q = P([0, 0, 0]); return Math.hypot(q[0] - sx, q[1] - sy) < 9 ? [0, 0, 0] : null; };
   const midAt = (sx: number, sy: number): { id: number; pt: V3 } | null => {
     let best = 9, out: { id: number; pt: V3 } | null = null;
     for (const g of geo) { const m: V3 = [(g.A[0] + g.B[0]) / 2, (g.A[1] + g.B[1]) / 2, (g.A[2] + g.B[2]) / 2], q = P(m), d = Math.hypot(q[0] - sx, q[1] - sy); if (d < best) { best = d; out = { id: g.m.id, pt: m.map(v => Math.round(v * 1e6) / 1e6) as V3 }; } }
@@ -351,12 +353,12 @@ export const Viewer = React.forwardRef<ViewerHandle, {
     const { hitN, hitM } = hitAt(sx, sy);
     const add = e.shiftKey || e.ctrlKey || e.metaKey;
     if (pick) { // move or copy to the point clicked: a node, or a point on the working plane
-      const nn = hitN !== null ? nodeMap.get(hitN) : null, pt: V3 | null = nn ? [nn.x, nn.y, nn.z] : midAt(sx, sy)?.pt ?? onPlane(sx, sy); if (!pt) return;
+      const nn = hitN !== null ? nodeMap.get(hitN) : null, pt: V3 | null = nn ? [nn.x, nn.y, nn.z] : midAt(sx, sy)?.pt ?? originAt(sx, sy) ?? onPlane(sx, sy); if (!pt) return;
       pick.apply([pt[0] - pick.base[0], pt[1] - pick.base[1], pt[2] - pick.base[2]]); if (!pick.repeat) onPickEnd?.();
       return;
     }
     if (tool === 'measure') { // first click, second click, then a new measurement
-      const nn = hitN !== null ? nodeMap.get(hitN) : null, pt: V3 | null = nn ? [nn.x, nn.y, nn.z] : midAt(sx, sy)?.pt ?? onPlane(sx, sy); if (!pt) return;
+      const nn = hitN !== null ? nodeMap.get(hitN) : null, pt: V3 | null = nn ? [nn.x, nn.y, nn.z] : midAt(sx, sy)?.pt ?? originAt(sx, sy) ?? onPlane(sx, sy); if (!pt) return;
       setMeasure(m => (m.a && !m.b ? { ...m, b: pt } : { a: pt, b: null })); setMLive(null);
       return;
     }
@@ -377,7 +379,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
     if (id === null) {
       const mid = midAt(sx, sy);
       if (mid && onSplitMember) id = onSplitMember(mid.id);
-      else { const dt = tool === 'member' && chain !== null ? drawTarget(sx, sy) : null, p = dt ? dt.pt : onPlane(sx, sy); if (!p) return; id = onAddNode(p); }
+      else { const org = originAt(sx, sy), dt = !org && tool === 'member' && chain !== null ? drawTarget(sx, sy) : null, p = org ?? (dt ? dt.pt : onPlane(sx, sy)); if (!p) return; id = onAddNode(p); }
     }
     if (tool === 'member') { if (chain !== null && chain !== id) onAddMember(chain, id); setChain(id); setLock(null); setLenText(''); dirRef.current = null; setGuide(null); }
   };
