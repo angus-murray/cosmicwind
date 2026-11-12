@@ -366,7 +366,7 @@ export default function App() {
                 </div>
               </div>
               <div className="absolute bottom-2 right-3 text-[11px] text-slate-500 pointer-events-none">
-                {tool === 'select' ? 'Drag to select (left to right encloses, right to left touches), middle-drag to rotate, right-drag to pan, right-click for options, scroll to zoom' : tool === 'node' ? 'Click on the working plane to place nodes' : 'Click a node or the working plane to start and continue members; Escape to finish'}
+                {tool === 'select' ? 'Drag to rotate; click empty space, then click again, to select with a box (left to right encloses, right to left touches); middle-drag or scroll to zoom, right-drag to pan, right-click for options' : tool === 'node' ? 'Click on the working plane to place nodes' : 'Click a node or the working plane to start and continue members; Escape to finish'}
               </div>
             </div>
             {tab === 'results' && analysis && <div className="panel flex flex-col lg:h-[42%] lg:min-h-[230px] !space-y-2">
