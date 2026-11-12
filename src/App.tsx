@@ -49,6 +49,8 @@ export default function App() {
   const [modeIx, setModeIx] = useState<{ kind: 'buckling' | 'modal'; i: number } | null>(null);
   const [dialog, setDialog] = useState<'about' | 'report' | 'new' | 'section' | 'load' | null>(null);
   const [assignOnAdd, setAssignOnAdd] = useState(false);
+  /** Section and material given to the members drawn with the Member tool; unset follows the last member. */
+  const [drawSec, setDrawSec] = useState<number | null>(null), [drawMat, setDrawMat] = useState<number | null>(null), [assignDraw, setAssignDraw] = useState(false);
   /** Section number whose type is being changed in the section dialog, or null when adding a section. */
   const [replaceSec, setReplaceSec] = useState<number | null>(null);
   const [secSel, setSecSel] = useState<number | null>(null);
@@ -87,7 +89,7 @@ export default function App() {
   const addMember = (a: number, b: number) => setModel(m0 => {
     const m = ensureSection(m0); if (m.members.some(x => (x.a === a && x.b === b) || (x.a === b && x.b === a))) return m0;
     const last = m.members[m.members.length - 1];
-    return { ...m, members: [...m.members, { id: nextId(m.members), a, b, sec: last?.sec ?? m.sections[0].id, mat: last?.mat ?? m.materials[0]?.id ?? 1, angle: 0, type: 'N', relA: DASH, relB: DASH }] };
+    return { ...m, members: [...m.members, { id: nextId(m.members), a, b, sec: m.sections.some(s => s.id === drawSec) ? drawSec! : last?.sec ?? m.sections[0].id, mat: m.materials.some(s => s.id === drawMat) ? drawMat! : last?.mat ?? m.materials[0]?.id ?? 1, angle: 0, type: 'N', relA: DASH, relB: DASH }] };
   });
   const delSel = useCallback(() => { setModel(m => deleteNodes(deleteMembersAndFreeNodes(m, sel.members), sel.nodes)); setSel(noSel()); }, [sel, setModel]);
   const patchMembers = (p: Partial<Member>) => setModel(m => ({ ...m, members: m.members.map(x => (sel.members.has(x.id) ? { ...x, ...p } : x)) }));
@@ -339,6 +341,20 @@ export default function App() {
                 <SelectField label="Case Shown" value={String(cur?.id ?? '')} onChange={v => setCaseId(Number(v))} options={cases.map(c => ({ value: String(c.id), label: `${c.id}: ${c.name}` }))} />
               </div>
             </>}
+            {tab === 'structure' && tool === 'member' && (() => {
+              const lastM = model.members[model.members.length - 1];
+              const secV = model.sections.some(s => s.id === drawSec) ? drawSec : lastM?.sec ?? model.sections[0]?.id, matV = model.materials.some(s => s.id === drawMat) ? drawMat : lastM?.mat ?? model.materials[0]?.id;
+              const presets = MATERIAL_PRESETS.map((p, i) => ({ p, i })).filter(({ p }) => !model.materials.some(x => x.name === p.name));
+              return <div className="panel">
+                <h2 className="panel-title">New Members</h2>
+                <div className="grid grid-cols-2 gap-2">
+                  <SelectField label="Section" value={secV === undefined ? '' : String(secV)} onChange={v => v === '+' ? (setAssignOnAdd(false), setAssignDraw(true), setReplaceSec(null), setDialog('section')) : setDrawSec(Number(v))} options={[...secOpt, { value: '+', label: 'Add Section…' }]} />
+                  <SelectField label="Material" value={matV === undefined ? '' : String(matV)} onChange={v => {
+                    if (v.startsWith('p')) { const p = MATERIAL_PRESETS[Number(v.slice(1))], id = nextId(model.materials); setModel(m => ({ ...m, materials: [...m.materials, { ...p, id }] })); setDrawMat(id); } else setDrawMat(Number(v));
+                  }} options={[...matOpt, ...presets.map(({ p, i }) => ({ value: `p${i}`, label: `Add ${p.name}` }))]} />
+                </div>
+              </div>;
+            })()}
             {tab === 'structure' && (nSel > 0 || mSel > 0) && <div className="panel">
               <h2 className="panel-title">Selection: {[nSel && `${nSel} Node${nSel > 1 ? 's' : ''}`, mSel && `${mSel} Member${mSel > 1 ? 's' : ''}`].filter(Boolean).join(', ')}</h2>
               <div className="grid grid-cols-2 gap-2">
@@ -380,9 +396,7 @@ export default function App() {
                   <NumberField label="Deflection Scale" value={opts.defScale} min={0.1} max={20} step={0.25} onChange={o('defScale')} />
                 </div>
                 <SelectField label="Stress in Rendered View" value={opts.stress} onChange={v => setOpts(q => ({ ...q, stress: v as StressKey, solid: v !== 'none' ? true : q.solid }))} options={STRESSES.map(t => ({ value: t.key, label: t.label }))} />
-                <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
-                  <Check checked={opts.deflected} onChange={o('deflected')}>Deflected Shape</Check><Check checked={opts.reactions} onChange={o('reactions')}>Reactions</Check>
-                </div>
+                <Check checked={opts.deflected} onChange={o('deflected')}>Deflected Shape</Check>
               </div>
               <div className="panel">
                 <h2 className="panel-title">Diagrams</h2>
@@ -395,6 +409,10 @@ export default function App() {
                     {g.items.map(([key, text]) => { const d = DIAGRAMS.find(x => x.key === key)!; return <Check key={key} checked={opts.diagrams[key]} onChange={v => o('diagrams')({ ...opts.diagrams, [key]: v })} title={d.label}><span className="inline-block w-2 h-2 rounded-sm mr-1.5 align-middle" style={{ background: d.colour }} />{symbol(text)}</Check>; })}
                   </div>
                 </div>)}
+              </div>
+              <div className="panel">
+                <h2 className="panel-title">Reactions</h2>
+                <Check checked={opts.reactions} onChange={o('reactions')}>Show Reactions</Check>
               </div>
             </>}
           </div>
@@ -504,17 +522,18 @@ export default function App() {
       {dialog === 'about' && <About onClose={() => setDialog(null)} />}
       {dialog === 'new' && <TemplateDialog onClose={() => setDialog(null)} onCreate={m => { setModel(() => m); setFitRev(r => r + 1); setSel(noSel()); setCaseId(1); setModeIx(null); setDialog(null); setTab('structure'); }} />}
       {dialog === 'load' && <LoadDialog kind={loadKind} count={loadKind === 'node' ? sel.nodes.size : sel.members.size} cases={model.loadCases} lc0={lcOnly} onClose={() => setDialog(null)} onApply={applyLoad} />}
-      {dialog === 'section' && <SectionDialog replace={replaceSec ?? undefined} assign={assignOnAdd ? mSel : 0} onClose={() => setDialog(null)} onAdd={(name, p, outline) => {
+      {dialog === 'section' && <SectionDialog replace={replaceSec ?? undefined} assign={assignOnAdd ? mSel : 0} onClose={() => { setDialog(null); setAssignDraw(false); }} onAdd={(name, p, outline) => {
         if (replaceSec !== null) { // the section keeps its number; only its type and properties change
           setModel(m => ({ ...m, sections: m.sections.map(x => (x.id === replaceSec ? { id: x.id, name, A: Math.round(p.A), Iy: Math.round(p.Iy), Iz: Math.round(p.Iz), J: Math.round(p.J), outline } : x)) }));
           setReplaceSec(null); setDialog(null); return;
         }
+        if (assignDraw) setDrawSec(model.sections.find(s => s.name === name)?.id ?? nextId(model.sections));
         setModel(m => {
           const ex = m.sections.find(s => s.name === name), id = ex?.id ?? nextId(m.sections);
           const sections = ex ? m.sections : [...m.sections, { id, name, A: Math.round(p.A), Iy: Math.round(p.Iy), Iz: Math.round(p.Iz), J: Math.round(p.J), outline }];
           return { ...m, sections, members: assignOnAdd ? m.members.map(x => (sel.members.has(x.id) ? { ...x, sec: id } : x)) : m.members };
         });
-        setDialog(null);
+        setDialog(null); setAssignDraw(false);
       }} />}
       {dialog === 'report' && <ReportDialog info={info} setInfo={setInfo} onClose={() => setDialog(null)}
         fields={[['project', 'Project'], ['number', 'Project Number'], ['structure', 'Structure'], ['designer', 'Designer'], ['date', 'Date']]}
