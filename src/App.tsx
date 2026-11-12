@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppHeader, Banner, Check, NumberField, ReportDialog, ResultsHeader, SelectField, StatusChip, today } from 'engineering-ui';
-import { Axis3d, Box, FilePlus, FolderOpen, Grid3x3, Hash, Maximize, MousePointer2, Redo2, Save, Scissors, Spline, Trash2, Type, Undo2, Weight, Copy, Dot, LineChart, Shapes, Cuboid, Waypoints } from 'lucide-react';
+import { Axis3d, Box, Ruler, FilePlus, FolderOpen, Hash, Maximize, MousePointer2, Redo2, Save, Scissors, Spline, Trash2, Type, Undo2, Weight, Copy, Dot, LineChart, Shapes, Cuboid, Waypoints } from 'lucide-react';
 import {
   deleteMembers, deleteNodes, FREE, MATERIAL_PRESETS, nextId, normalise, RELEASES, RESTRAINTS,
   type Combo, type DistLoad, type LoadCase, type Material, type Member, type Model, type Node, type NodeLoad, type NodeMass, type PointLoad, type Section, type Settlement, type Spring, type ThermalLoad,
@@ -122,7 +122,7 @@ export default function App() {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !typing) { e.preventDefault(); if (e.shiftKey) redo(); else undo(); }
       else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y' && !typing) { e.preventDefault(); redo(); }
       else if ((e.key === 'Delete' || e.key === 'Backspace') && !typing && tab !== 'results' && (sel.nodes.size || sel.members.size)) { e.preventDefault(); delSel(); }
-      else if (e.key === 'Escape' && !typing) setTool('select');
+      else if (e.key === 'Escape' && !typing) { setTool('select'); setSel(noSel()); }
     };
     window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key);
   }, [undo, redo, delSel, sel, tab]);
@@ -228,46 +228,22 @@ export default function App() {
           <input ref={fileRef} type="file" accept=".json,application/json" className="hidden" onChange={e => { open(e.target.files?.[0]); e.target.value = ''; }} />
         </div>} />
       <main className="flex-1 flex flex-col lg:min-h-0 p-3 max-w-[1600px] w-full mx-auto">
-        <div className="tab-grid lg:!grid-cols-[minmax(460px,1fr)_minmax(0,2fr)]">
+        <div className="tab-grid lg:!grid-cols-[minmax(320px,1fr)_minmax(0,3fr)_minmax(320px,1fr)]">
           <div className="input-column scroll-thin">
-            {tab !== 'results' && <div className="panel">
-              <div className="flex gap-1 flex-wrap">{SUBS[tab].map(([k, l]) => <button key={k} className={`subtab ${sub[tab] === k ? 'subtab-active' : ''}`} onClick={() => setSub({ ...sub, [tab]: k })}>{l}</button>)}</div>
-              {tab === 'structure' && <>
-                {st === 'nodes' && <Sheet rows={model.nodes} cols={nodeCols} onChange={set('nodes')} rowLabel={idLabel} selected={r => sel.nodes.has(r.id)} onSelect={pickN}
-                  newRow={() => { const l = model.nodes[model.nodes.length - 1]; return { id: nextId(model.nodes), x: l?.x ?? 0, y: l?.y ?? 0, z: l?.z ?? 0, r: FREE }; }}
-                  onDelete={r => setModel(m => deleteNodes(m, new Set([r.id])))} />}
-                {st === 'members' && <Sheet rows={model.members} cols={memCols} onChange={v => setModel(m => ({ ...ensureSection(m), members: v }))} rowLabel={idLabel} selected={r => sel.members.has(r.id)} onSelect={pickM}
-                  newRow={() => { const l = model.members[model.members.length - 1]; return { id: nextId(model.members), a: l?.b ?? model.nodes[0]?.id ?? 1, b: model.nodes[model.nodes.length - 1]?.id ?? 2, sec: l?.sec ?? model.sections[0]?.id ?? 1, mat: l?.mat ?? model.materials[0]?.id ?? 1, angle: 0, type: 'N' as const, relA: 'FFFFFF', relB: 'FFFFFF' }; }}
-                  onDelete={r => setModel(m => deleteMembers(m, new Set([r.id])))} />}
-                {st === 'sections' && <>
-                  <Sheet rows={model.sections} cols={secCols} onChange={set('sections')} rowLabel={idLabel} newRow={() => ({ id: nextId(model.sections), name: `Section ${nextId(model.sections)}`, A: 5000, Iy: 1e7, Iz: 5e7, J: 1e5 })}
-                    onDelete={r => (used('sec', r.id) ? alert(`Section ${r.id} is used by members.`) : set('sections')(model.sections.filter(s => s.id !== r.id)))} />
-                  <button className="btn-primary" onClick={() => setDialog('section')}><Shapes className="w-3.5 h-3.5" /> Add From Library or Shape</button>
-                </>}
-                {st === 'materials' && <>
-                  <Sheet rows={model.materials} cols={matCols} onChange={set('materials')} rowLabel={idLabel}
-                    onDelete={r => (used('mat', r.id) ? alert(`Material ${r.id} is used by members.`) : set('materials')(model.materials.filter(s => s.id !== r.id)))} />
-                  <select className="control" value="" onChange={e => { const p = MATERIAL_PRESETS[Number(e.target.value)]; if (p) set('materials')([...model.materials, { ...p, id: nextId(model.materials) }]); }}>
-                    <option value="">Add Material…</option>{MATERIAL_PRESETS.map((p, i) => <option key={p.name} value={i}>{p.name}</option>)}</select>
-                </>}
-                {st === 'springs' && <Sheet rows={model.springs} cols={springCols} onChange={set('springs')} newRow={() => ({ node: firstNode, k: [0, 0, 0, 0, 0, 0] })} empty="No spring supports" />}
-                {st === 'masses' && <Sheet rows={model.masses} cols={massCols} onChange={set('masses')} newRow={() => ({ node: firstNode, m: 1 })} empty="No node masses (used for natural frequencies)" />}
-              </>}
-              {tab === 'loads' && <>
-                {ld === 'cases' && <Sheet rows={model.loadCases} cols={lcCols} onChange={set('loadCases')} rowLabel={idLabel} newRow={() => ({ id: nextId(cases), name: 'Load Case', gx: 0, gy: 0, gz: 0 })}
-                  onDelete={r => setModel(m => {
-                    const f = <T extends { lc: number }>(a: T[]) => a.filter(x => x.lc !== r.id);
-                    return { ...m, loadCases: m.loadCases.filter(c => c.id !== r.id), nodeLoads: f(m.nodeLoads), distLoads: f(m.distLoads), pointLoads: f(m.pointLoads), settlements: f(m.settlements), thermal: f(m.thermal),
-                      combos: m.combos.map(c => { const { [r.id]: _, ...rest } = c.f; return { ...c, f: rest }; }) };
-                  })} />}
-                {ld === 'combos' && <Sheet rows={model.combos} cols={comboCols} onChange={set('combos')} rowLabel={idLabel} newRow={() => ({ id: Math.max(nextId(cases), 10), name: 'Combination', f: {} })} empty="No combinations" />}
-                {ld === 'node' && <Sheet rows={model.nodeLoads} cols={nlCols} onChange={set('nodeLoads')} newRow={() => ({ lc: lcOnly, node: firstNode, fx: 0, fy: -10, fz: 0, mx: 0, my: 0, mz: 0 })} empty="No node loads" />}
-                {ld === 'dist' && <Sheet rows={model.distLoads} cols={dlCols} onChange={set('distLoads')} newRow={() => ({ lc: lcOnly, member: firstMem, axes: 'G' as const, dir: 'Y' as const, w1: -5, w2: -5, s: 0, e: 100 })} empty="No distributed loads" />}
-                {ld === 'point' && <Sheet rows={model.pointLoads} cols={plCols} onChange={set('pointLoads')} newRow={() => ({ lc: lcOnly, member: firstMem, axes: 'G' as const, dir: 'Y' as const, p: -10, pos: 50 })} empty="No point loads" />}
-                {ld === 'settle' && <Sheet rows={model.settlements} cols={stCols} onChange={set('settlements')} newRow={() => ({ lc: lcOnly, node: firstNode, dx: 0, dy: -10, dz: 0 })} empty="No support settlements" />}
-                {ld === 'thermal' && <Sheet rows={model.thermal} cols={thCols} onChange={set('thermal')} newRow={() => ({ lc: lcOnly, member: firstMem, dT: 20 })} empty="No temperature loads" />}
-              </>}
-            </div>}
+            {tab !== 'results' && <>
+              <div className="panel">
+                <h2 className="panel-title">Load Case</h2>
+                <SelectField label="Case Shown" value={String(cur?.id ?? '')} onChange={v => setCaseId(Number(v))} options={cases.map(c => ({ value: String(c.id), label: `${c.id}: ${c.name}` }))} />
+              </div>
+              <div className="panel">
+                <h2 className="panel-title">Working Plane</h2>
+                <div className="grid grid-cols-3 gap-2">
+                  <SelectField label="Plane" value={opts.plane} onChange={v => o('plane')(v as ViewOpts['plane'])} options={[{ value: 'XY', label: 'XY' }, { value: 'XZ', label: 'XZ' }, { value: 'YZ', label: 'YZ' }]} />
+                  <NumberField label={`${{ XY: 'Z', XZ: 'Y', YZ: 'X' }[opts.plane]} (m)`} value={opts.offset} step={0.5} onChange={o('offset')} />
+                  <NumberField label="Snap (m)" value={opts.snap} min={0} step={0.1} onChange={o('snap')} />
+                </div>
+              </div>
+            </>}
             {tab === 'structure' && (nSel > 0 || mSel > 0) && <div className="panel">
               <h2 className="panel-title">Selection: {[nSel && `${nSel} Node${nSel > 1 ? 's' : ''}`, mSel && `${mSel} Member${mSel > 1 ? 's' : ''}`].filter(Boolean).join(', ')}</h2>
               <div className="grid grid-cols-2 gap-2">
@@ -316,17 +292,6 @@ export default function App() {
                   <Check checked={opts.values} onChange={o('values')}>Values</Check><Check checked={opts.loads} onChange={o('loads')}>Loads</Check>
                 </div>
               </div>
-              {summary && okRes && <div className="panel">
-                <h2 className="panel-title">Summary: Case {okRes.id}</h2>
-                <div className="readout"><span>Maximum Displacement</span><span className="readout-value">{fmt(summary.d * 1000)} mm at node {summary.dn}</span></div>
-                <div className="readout"><span>Maximum Moment <i>M</i><sub>z</sub></span><span className="readout-value">{fmt(summary.mz)} kNm in member {summary.mm}</span></div>
-                <div className="readout"><span>Maximum Tension</span><span className="readout-value">{fmt(summary.nmax)} kN</span></div>
-                <div className="readout"><span>Maximum Compression</span><span className="readout-value">{fmt(-summary.nmin)} kN</span></div>
-                <div className="readout"><span>Total Vertical Reaction</span><span className="readout-value">{fmt(summary.fy)} kN</span></div>
-                {okRes.buckling?.values.length ? <div className="readout"><span>Buckling Load Factor</span><span className="readout-value">{fmt(okRes.buckling.values[0])}</span></div> : null}
-                {analysis?.modal?.values.length ? <div className="readout"><span>Fundamental Frequency</span><span className="readout-value">{fmt(analysis.modal.values[0])} Hz</span></div> : null}
-                {okRes.iterations > 1 && <div className="readout"><span>Iterations</span><span className="readout-value">{okRes.iterations}</span></div>}
-              </div>}
             </>}
           </div>
 
@@ -339,18 +304,10 @@ export default function App() {
                   <button className={`tool-btn ${tool === 'select' ? 'tool-btn-active' : ''}`} onClick={() => setTool('select')}><MousePointer2 className="w-3.5 h-3.5" />Select</button>
                   <button className={`tool-btn ${tool === 'node' ? 'tool-btn-active' : ''}`} title="Click on the working plane to add nodes" onClick={() => setTool('node')}><Dot className="w-3.5 h-3.5" />Node</button>
                   <button className={`tool-btn ${tool === 'member' ? 'tool-btn-active' : ''}`} title="Click node to node to add members; Escape ends the chain" onClick={() => setTool('member')}><Spline className="w-3.5 h-3.5" />Member</button>
+                  <button className={`tool-btn ${tool === 'measure' ? 'tool-btn-active' : ''}`} title="Click two points to measure the distance; nodes snap, Esc clears" onClick={() => setTool('measure')}><Ruler className="w-3.5 h-3.5" />Measure</button>
                   <button className="tool-btn" disabled={!nSel && !mSel} onClick={delSel}><Trash2 className="w-3.5 h-3.5" />Delete</button>
               </div>}
-              <div className="absolute top-2 right-2 flex flex-col items-end gap-2">
-                <div className="flex items-start gap-2">
-                {tool !== 'select' && <div className="bg-white border border-slate-200 rounded-lg shadow-2xs p-2 flex items-end gap-2 w-[300px]">
-                  <Grid3x3 className="w-3.5 h-3.5 text-slate-500 mb-2 shrink-0" />
-                  <SelectField label="Plane" value={opts.plane} onChange={v => o('plane')(v as ViewOpts['plane'])} options={[{ value: 'XY', label: 'XY' }, { value: 'XZ', label: 'XZ' }, { value: 'YZ', label: 'YZ' }]} />
-                  <NumberField label={`${{ XY: 'Z', XZ: 'Y', YZ: 'X' }[opts.plane]} (m)`} value={opts.offset} step={0.5} onChange={o('offset')} />
-                  <NumberField label="Snap (m)" value={opts.snap} min={0} step={0.1} onChange={o('snap')} />
-                </div>}
-                {tab !== 'results' && <select className="control-sm !w-48 bg-white" title="Case whose loads are shown" value={String(cur?.id ?? '')} onChange={e => setCaseId(Number(e.target.value))}>{cases.map(c => <option key={c.id} value={c.id}>{c.id}: {c.name}</option>)}</select>}
-                </div>
+              <div className="absolute top-2 right-2">
                 <div className="toolbar w-[112px]">
                 <button className="tool-btn" onClick={() => viewer.current?.fit()}><Maximize className="w-3.5 h-3.5" />Fit</button>
                 {(['iso', 'front', 'top', 'side'] as const).map(v => <button key={v} className="tool-btn" onClick={() => viewer.current?.view(v)}><Box className="w-3.5 h-3.5" />{{ iso: '3D', front: 'Front', top: 'Top', side: 'Side' }[v]}</button>)}
@@ -365,11 +322,65 @@ export default function App() {
                 {tab !== 'results' && <button className={`tool-btn ${opts.loads ? '!text-blue-700' : ''}`} title="Loads of the case shown" onClick={() => o('loads')(!opts.loads)}><Weight className="w-3.5 h-3.5" />Loads</button>}
                 </div>
               </div>
-              <div className="absolute bottom-2 right-3 text-[11px] text-slate-500 pointer-events-none">
-                {tool === 'select' ? 'Drag to rotate; click empty space, then click again, to select with a box (left to right encloses, right to left touches); middle-drag or scroll to zoom, right-drag to pan, right-click for options' : tool === 'node' ? 'Click on the working plane to place nodes' : 'Click a node or the working plane to start and continue members; Escape to finish'}
+              <div className="absolute bottom-2 right-3 max-w-[70%] text-right text-[11px] text-slate-500 pointer-events-none">
+                {tool === 'select' ? 'Drag to rotate · click twice on empty space to box-select · middle-drag or scroll to zoom · right-drag to pan · right-click for options' : tool === 'node' ? 'Click on the working plane to place nodes' : tool === 'measure' ? 'Click two points to measure (nodes snap, others lie on the working plane); right-click or Esc clears' : 'Click a node or the working plane to start and continue members; Escape to finish'}
               </div>
             </div>
-            {tab === 'results' && analysis && <div className="panel flex flex-col lg:h-[42%] lg:min-h-[230px] !space-y-2">
+          </div>
+
+          <div className="input-column scroll-thin">
+            {tab !== 'results' && <div className="panel">
+              <div className="flex gap-1 flex-wrap">{SUBS[tab].map(([k, l]) => <button key={k} className={`subtab ${sub[tab] === k ? 'subtab-active' : ''}`} onClick={() => setSub({ ...sub, [tab]: k })}>{l}</button>)}</div>
+              {tab === 'structure' && <>
+                {st === 'nodes' && <Sheet rows={model.nodes} cols={nodeCols} onChange={set('nodes')} rowLabel={idLabel} selected={r => sel.nodes.has(r.id)} onSelect={pickN}
+                  newRow={() => { const l = model.nodes[model.nodes.length - 1]; return { id: nextId(model.nodes), x: l?.x ?? 0, y: l?.y ?? 0, z: l?.z ?? 0, r: FREE }; }}
+                  onDelete={r => setModel(m => deleteNodes(m, new Set([r.id])))} />}
+                {st === 'members' && <Sheet rows={model.members} cols={memCols} onChange={v => setModel(m => ({ ...ensureSection(m), members: v }))} rowLabel={idLabel} selected={r => sel.members.has(r.id)} onSelect={pickM}
+                  newRow={() => { const l = model.members[model.members.length - 1]; return { id: nextId(model.members), a: l?.b ?? model.nodes[0]?.id ?? 1, b: model.nodes[model.nodes.length - 1]?.id ?? 2, sec: l?.sec ?? model.sections[0]?.id ?? 1, mat: l?.mat ?? model.materials[0]?.id ?? 1, angle: 0, type: 'N' as const, relA: 'FFFFFF', relB: 'FFFFFF' }; }}
+                  onDelete={r => setModel(m => deleteMembers(m, new Set([r.id])))} />}
+                {st === 'sections' && <>
+                  <Sheet rows={model.sections} cols={secCols} onChange={set('sections')} rowLabel={idLabel} newRow={() => ({ id: nextId(model.sections), name: `Section ${nextId(model.sections)}`, A: 5000, Iy: 1e7, Iz: 5e7, J: 1e5 })}
+                    onDelete={r => (used('sec', r.id) ? alert(`Section ${r.id} is used by members.`) : set('sections')(model.sections.filter(s => s.id !== r.id)))} />
+                  <button className="btn-primary" onClick={() => setDialog('section')}><Shapes className="w-3.5 h-3.5" /> Add From Library or Shape</button>
+                </>}
+                {st === 'materials' && <>
+                  <Sheet rows={model.materials} cols={matCols} onChange={set('materials')} rowLabel={idLabel}
+                    onDelete={r => (used('mat', r.id) ? alert(`Material ${r.id} is used by members.`) : set('materials')(model.materials.filter(s => s.id !== r.id)))} />
+                  <select className="control" value="" onChange={e => { const p = MATERIAL_PRESETS[Number(e.target.value)]; if (p) set('materials')([...model.materials, { ...p, id: nextId(model.materials) }]); }}>
+                    <option value="">Add Material…</option>{MATERIAL_PRESETS.map((p, i) => <option key={p.name} value={i}>{p.name}</option>)}</select>
+                </>}
+                {st === 'springs' && <Sheet rows={model.springs} cols={springCols} onChange={set('springs')} newRow={() => ({ node: firstNode, k: [0, 0, 0, 0, 0, 0] })} empty="No spring supports" />}
+                {st === 'masses' && <Sheet rows={model.masses} cols={massCols} onChange={set('masses')} newRow={() => ({ node: firstNode, m: 1 })} empty="No node masses (used for natural frequencies)" />}
+              </>}
+              {tab === 'loads' && <>
+                {ld === 'cases' && <Sheet rows={model.loadCases} cols={lcCols} onChange={set('loadCases')} rowLabel={idLabel} newRow={() => ({ id: nextId(cases), name: 'Load Case', gx: 0, gy: 0, gz: 0 })}
+                  onDelete={r => setModel(m => {
+                    const f = <T extends { lc: number }>(a: T[]) => a.filter(x => x.lc !== r.id);
+                    return { ...m, loadCases: m.loadCases.filter(c => c.id !== r.id), nodeLoads: f(m.nodeLoads), distLoads: f(m.distLoads), pointLoads: f(m.pointLoads), settlements: f(m.settlements), thermal: f(m.thermal),
+                      combos: m.combos.map(c => { const { [r.id]: _, ...rest } = c.f; return { ...c, f: rest }; }) };
+                  })} />}
+                {ld === 'combos' && <Sheet rows={model.combos} cols={comboCols} onChange={set('combos')} rowLabel={idLabel} newRow={() => ({ id: Math.max(nextId(cases), 10), name: 'Combination', f: {} })} empty="No combinations" />}
+                {ld === 'node' && <Sheet rows={model.nodeLoads} cols={nlCols} onChange={set('nodeLoads')} newRow={() => ({ lc: lcOnly, node: firstNode, fx: 0, fy: -10, fz: 0, mx: 0, my: 0, mz: 0 })} empty="No node loads" />}
+                {ld === 'dist' && <Sheet rows={model.distLoads} cols={dlCols} onChange={set('distLoads')} newRow={() => ({ lc: lcOnly, member: firstMem, axes: 'G' as const, dir: 'Y' as const, w1: -5, w2: -5, s: 0, e: 100 })} empty="No distributed loads" />}
+                {ld === 'point' && <Sheet rows={model.pointLoads} cols={plCols} onChange={set('pointLoads')} newRow={() => ({ lc: lcOnly, member: firstMem, axes: 'G' as const, dir: 'Y' as const, p: -10, pos: 50 })} empty="No point loads" />}
+                {ld === 'settle' && <Sheet rows={model.settlements} cols={stCols} onChange={set('settlements')} newRow={() => ({ lc: lcOnly, node: firstNode, dx: 0, dy: -10, dz: 0 })} empty="No support settlements" />}
+                {ld === 'thermal' && <Sheet rows={model.thermal} cols={thCols} onChange={set('thermal')} newRow={() => ({ lc: lcOnly, member: firstMem, dT: 20 })} empty="No temperature loads" />}
+              </>}
+            </div>}
+            {tab === 'results' && <>
+              {summary && okRes && <div className="panel">
+                <h2 className="panel-title">Summary: Case {okRes.id}</h2>
+                <div className="readout"><span>Maximum Displacement</span><span className="readout-value">{fmt(summary.d * 1000)} mm at node {summary.dn}</span></div>
+                <div className="readout"><span>Maximum Moment <i>M</i><sub>z</sub></span><span className="readout-value">{fmt(summary.mz)} kNm in member {summary.mm}</span></div>
+                <div className="readout"><span>Maximum Tension</span><span className="readout-value">{fmt(summary.nmax)} kN</span></div>
+                <div className="readout"><span>Maximum Compression</span><span className="readout-value">{fmt(-summary.nmin)} kN</span></div>
+                <div className="readout"><span>Total Vertical Reaction</span><span className="readout-value">{fmt(summary.fy)} kN</span></div>
+                {okRes.buckling?.values.length ? <div className="readout"><span>Buckling Load Factor</span><span className="readout-value">{fmt(okRes.buckling.values[0])}</span></div> : null}
+                {analysis?.modal?.values.length ? <div className="readout"><span>Fundamental Frequency</span><span className="readout-value">{fmt(analysis.modal.values[0])} Hz</span></div> : null}
+                {okRes.iterations > 1 && <div className="readout"><span>Iterations</span><span className="readout-value">{okRes.iterations}</span></div>}
+              </div>}
+            </>}
+            {tab === 'results' && analysis && <div className="panel flex flex-col !space-y-2">
               <ResultsHeader title={cur ? `Results: Case ${cur.id}, ${cur.name}` : 'Results'}>
                 {analysis.errors.length ? <StatusChip kind="fail">Not Solved</StatusChip> : res?.error ? <StatusChip kind="fail">Case Not Solved</StatusChip>
                   : <StatusChip kind="pass">{model.settings.nonlinear ? 'Second-Order' : 'Linear'} Analysis Solved in {analysis.ms < 10 ? analysis.ms.toFixed(1) : analysis.ms.toFixed(0)} ms</StatusChip>}

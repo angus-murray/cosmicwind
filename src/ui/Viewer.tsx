@@ -5,7 +5,7 @@ import { equivalentOutline, outlineLoops } from '../model/sections';
 import { memberAxes, type CaseResult, type Vec6 } from '../solver/frame';
 
 export type Diagram = 'none' | 'N' | 'Vy' | 'Vz' | 'T' | 'My' | 'Mz';
-export type Tool = 'select' | 'node' | 'member';
+export type Tool = 'select' | 'node' | 'member' | 'measure';
 export interface ViewOpts {
   nodeNo: boolean; memberNo: boolean; secNames: boolean; loads: boolean; localAxes: boolean;
   diagram: Diagram; deflected: boolean; reactions: boolean; values: boolean; scale: number; defScale: number;
@@ -75,8 +75,8 @@ export const Viewer = React.forwardRef<ViewerHandle, {
       const x = cy * p[0] + sy * p[2], y = sy * sp * p[0] + cp * p[1] - cy * sp * p[2];
       x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
     }
-    const zoom = Math.min((W - 300) / Math.max(x1 - x0, 1e-6), (H - 190) / Math.max(y1 - y0, 1e-6), 400);
-    setCam({ yaw, pitch, zoom, px: -zoom * (x0 + x1) / 2 + 30, py: zoom * (y0 + y1) / 2, c });
+    const zoom = Math.min((W - 340) / Math.max(x1 - x0, 1e-6), (H - 190) / Math.max(y1 - y0, 1e-6), 400);
+    setCam({ yaw, pitch, zoom, px: -zoom * (x0 + x1) / 2 + 4, py: zoom * (y0 + y1) / 2, c });
   }, [bounds, W, H]);
   const flat = bounds.hi[2] - bounds.lo[2] < 1e-9;
   useImperativeHandle(handle, () => ({
@@ -98,6 +98,13 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   // Left drag: rotate. Left click: pick a node or member, or on empty space start a selection box that the next left click completes.
   // Middle drag: zoom (as does the wheel). Right drag: pan. Right click: options.
   const drag = useRef<{ x: number; y: number; sx: number; sy: number; moved: boolean; mode: 'orbit' | 'zoom' | 'pan' | null } | null>(null);
+  /** Measure tool: the two points, and the point under the pointer while the second is pending. */
+  const [measure, setMeasure] = useState<{ a: V3 | null; b: V3 | null }>({ a: null, b: null });
+  const [mLive, setMLive] = useState<V3 | null>(null);
+  /** Where the drawing cursor lands (screen pixels) when a node or the snap grid captures it. */
+  const [snapAt, setSnapAt] = useState<[number, number] | null>(null);
+  /** Node or member under the pointer, highlighted so the click target is clear. */
+  const [hover, setHover] = useState<{ n: number | null; m: number | null }>({ n: null, m: null });
   /** First corner of a selection box that is waiting for its second click. */
   const anchor = useRef<[number, number] | null>(null);
   const local = (e: { clientX: number; clientY: number }): [number, number] => { const r = svgRef.current!.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
@@ -118,7 +125,20 @@ export const Viewer = React.forwardRef<ViewerHandle, {
     drag.current = { x: e.clientX, y: e.clientY, sx, sy, moved: false, mode };
   };
   const move = (e: React.PointerEvent) => {
-    if (tool === 'member' && chain !== null) setCursor(local(e));
+    const [lx, ly] = local(e), dragging = !!drag.current?.moved;
+    if (!dragging) {
+      const h = hitAt(lx, ly), hn = h.hitN, hm = tool === 'select' ? h.hitM : null; // draw tools snap to nodes only
+      setHover(v => (v.n === hn && v.m === hm ? v : { n: hn, m: hm }));
+      if (tool !== 'select') {
+        const nn = hn !== null ? nodeMap.get(hn) : null, pt: V3 | null = nn ? [nn.x, nn.y, nn.z] : opts.snap > 0 ? onPlane(lx, ly) : null, at = pt ? P(pt) : null;
+        setSnapAt(at);
+        if (tool === 'member' && chain !== null) setCursor(at ?? [lx, ly]);
+        if (tool === 'measure' && measure.a && !measure.b) setMLive(pt ?? onPlane(lx, ly));
+      }
+    } else {
+      setHover(v => (v.n === null && v.m === null ? v : { n: null, m: null })); setSnapAt(null);
+      if (tool === 'member' && chain !== null) setCursor([lx, ly]);
+    }
     if (anchor.current) { const [x, y] = local(e); setMarq({ x0: anchor.current[0], y0: anchor.current[1], x1: x, y1: y }); }
     const d = drag.current; if (!d) return;
     const dx = e.clientX - d.x, dy = e.clientY - d.y;
@@ -172,12 +192,17 @@ export const Viewer = React.forwardRef<ViewerHandle, {
     if (d.moved) return;
     if (e.button === 2) {
       if (anchor.current) { anchor.current = null; setMarq(null); return; }
-      if (tool === 'select') { const h = hitAt(sx, sy); onContext?.({ x: sx, y: sy, node: h.hitN, member: h.hitM }); } else setChain(null);
+      if (tool === 'select') { const h = hitAt(sx, sy); onContext?.({ x: sx, y: sy, node: h.hitN, member: h.hitM }); } else { setChain(null); setMeasure({ a: null, b: null }); }
       return;
     }
     if (e.button !== 0) return;
     const { hitN, hitM } = hitAt(sx, sy);
     const add = e.shiftKey || e.ctrlKey || e.metaKey;
+    if (tool === 'measure') { // first click, second click, then a new measurement
+      const nn = hitN !== null ? nodeMap.get(hitN) : null, pt: V3 | null = nn ? [nn.x, nn.y, nn.z] : onPlane(sx, sy); if (!pt) return;
+      setMeasure(m => (m.a && !m.b ? { ...m, b: pt } : { a: pt, b: null })); setMLive(null);
+      return;
+    }
     if (tool === 'select' && anchor.current) { // second click: complete the box (a click without moving clears the selection)
       const [x0, y0] = anchor.current; anchor.current = null; setMarq(null);
       if (Math.hypot(sx - x0, sy - y0) < 4) { if (!add) onSelect({ nodes: new Set(), members: new Set() }); } else boxSelect({ x0, y0, x1: sx, y1: sy }, add);
@@ -195,9 +220,9 @@ export const Viewer = React.forwardRef<ViewerHandle, {
     if (id === null) { const p = onPlane(sx, sy); if (!p) return; id = onAddNode(p); }
     if (tool === 'member') { if (chain !== null && chain !== id) onAddMember(chain, id); setChain(id); }
   };
-  useEffect(() => { setChain(null); setCursor(null); anchor.current = null; setMarq(null); }, [tool]);
+  useEffect(() => { setChain(null); setCursor(null); anchor.current = null; setMarq(null); setMeasure({ a: null, b: null }); setMLive(null); setSnapAt(null); }, [tool]);
   useEffect(() => {
-    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') { setChain(null); anchor.current = null; setMarq(null); } };
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') { setChain(null); anchor.current = null; setMarq(null); setMeasure({ a: null, b: null }); } };
     window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key);
   }, []);
   /** Zooms by factor f about the point (mx, my), measured from the centre of the view. */
@@ -390,8 +415,8 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   const faded = !!(result || mode) && (opts.diagram !== 'none' || opts.deflected || !!mode);
   return (
     <div ref={box} className="absolute inset-0 overflow-hidden">
-      <svg ref={svgRef} width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="block touch-none select-none" style={{ cursor: tool === 'select' ? 'default' : 'crosshair' }}
-        onPointerDown={down} onPointerMove={move} onPointerUp={up} onMouseDown={e => { if (e.button === 1) e.preventDefault(); }} onContextMenu={e => e.preventDefault()}>
+      <svg ref={svgRef} width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="block touch-none select-none" style={{ cursor: tool === 'select' ? 'default' : snapAt ? 'none' : 'crosshair' }}
+        onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerLeave={() => { setHover({ n: null, m: null }); setSnapAt(null); }} onMouseDown={e => { if (e.button === 1) e.preventDefault(); }} onContextMenu={e => e.preventDefault()}>
         <rect width={W} height={H} fill="#f8fafc" />
         {grid}
         {geo.map(g => {
@@ -404,6 +429,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
           const col = `rgb(${lo.map((v, k) => Math.round(v + (hi[k] - v) * f.shade)).join()})`;
           return <path key={i} d={f.d} fill={col} stroke={col} fillRule="evenodd" opacity={off ? 0.5 : 1} />;
         })}</g>}
+        {hover.m !== null && (() => { const g = geo.find(x => x.m.id === hover.m); if (!g) return null; const p = P(g.A), q = P(g.B); return <line x1={p[0]} y1={p[1]} x2={q[0]} y2={q[1]} stroke={AMBER} strokeWidth={9} strokeOpacity={0.4} strokeLinecap="round" pointerEvents="none" />; })()}
         {opts.localAxes && geo.map(g => { const c = along(g, g.L / 2), p = P(c); return <g key={`ax${g.m.id}`}>{[RED, GREEN, BLUE].map((col, i) => { const d = dirS(g.R[i] as V3); return d && <line key={i} x1={p[0]} y1={p[1]} x2={p[0] + d[0] * 16} y2={p[1] + d[1] * 16} stroke={col} strokeWidth={1.5} />; })}</g>; })}
         {diag}{defl}{loads}
         {model.nodes.map(n => {
@@ -414,6 +440,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
                 : t[1] === 'F' ? <g stroke="#64748b" strokeWidth={1.5}><path d={`M${p[0]} ${p[1] + 2}l6 9h-12z`} style={{ fill: 'var(--color-white)' }} /><line x1={p[0] - 8} y1={p[1] + 14} x2={p[0] + 8} y2={p[1] + 14} /></g>
                   : t.includes('F') && r !== 'RRFFFR' ? <path d={`M${p[0]} ${p[1] + 2}l5 5l-5 5l-5 -5z`} style={{ fill: 'var(--color-white)' }} stroke="#64748b" strokeWidth={1.5} /> : null}
             {springNodes.has(n.id) && <path d={`M${p[0]} ${p[1] + 2}v3l-4 2l8 3l-8 3l8 3l-4 2v2m-6 0h12`} fill="none" stroke={AMBER} strokeWidth={1.5} />}
+            {hover.n === n.id && <circle cx={p[0]} cy={p[1]} r={9} fill={AMBER} fillOpacity={0.3} stroke={AMBER} strokeWidth={2} pointerEvents="none" />}
             <rect x={p[0] - (on ? 4 : 2.5)} y={p[1] - (on ? 4 : 2.5)} width={on ? 8 : 5} height={on ? 8 : 5} fill={on || chain === n.id ? BLUE : '#334155'} />
             {opts.nodeNo && text([p[0] + 6, p[1] - 6], n.id, `t${n.id}`, on ? BLUE : '#64748b', 'start')}
           </g>;
@@ -426,6 +453,15 @@ export const Viewer = React.forwardRef<ViewerHandle, {
         {reacts}
         {marq && <rect x={Math.min(marq.x0, marq.x1)} y={Math.min(marq.y0, marq.y1)} width={Math.abs(marq.x1 - marq.x0)} height={Math.abs(marq.y1 - marq.y0)} fill={BLUE} fillOpacity={0.08} stroke={BLUE} strokeWidth={1}
           strokeDasharray={marq.x1 < marq.x0 ? '5 3' : undefined} pointerEvents="none" />}
+        {measure.a && (() => {
+          const a = measure.a, b = measure.b ?? mLive, pa = P(a); if (!b) return <circle cx={pa[0]} cy={pa[1]} r={4} fill={AMBER} pointerEvents="none" />;
+          const pb = P(b), d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], mid: [number, number] = [(pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2], sg = (v: number) => v.toFixed(3).replace('-', '−');
+          return <g pointerEvents="none"><line x1={pa[0]} y1={pa[1]} x2={pb[0]} y2={pb[1]} stroke={AMBER} strokeWidth={1.75} strokeDasharray={measure.b ? undefined : '5 4'} />
+            <circle cx={pa[0]} cy={pa[1]} r={4} fill={AMBER} /><circle cx={pb[0]} cy={pb[1]} r={4} fill={AMBER} />
+            {text([mid[0], mid[1] - 9], `${Math.hypot(d[0], d[1], d[2]).toFixed(3)} m`, 'mlen', '#b45309', 'middle', true)}
+            {text([mid[0], mid[1] + 14], `ΔX ${sg(d[0])}   ΔY ${sg(d[1])}   ΔZ ${sg(d[2])}`, 'mdel', '#475569')}</g>;
+        })()}
+        {snapAt && tool !== 'select' && <g pointerEvents="none" stroke={hover.n !== null ? AMBER : BLUE} strokeWidth={1.5} fill="none"><path d={`M${snapAt[0] - 8} ${snapAt[1]}h16M${snapAt[0]} ${snapAt[1] - 8}v16`} /><rect x={snapAt[0] - 4} y={snapAt[1] - 4} width={8} height={8} /></g>}
         {chainNode && cursor && (() => { const p = P([chainNode.x, chainNode.y, chainNode.z]); return <line x1={p[0]} y1={p[1]} x2={cursor[0]} y2={cursor[1]} stroke={BLUE} strokeWidth={1.5} strokeDasharray="5 4" pointerEvents="none" />; })()}
         <g transform={`translate(34 ${H - 34})`}>
           {([[1, 0, 0], [0, 1, 0], [0, 0, 1]] as V3[]).map((a, i) => {
