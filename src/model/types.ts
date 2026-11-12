@@ -1,5 +1,5 @@
 /**
- * MoonRock model. Units: coordinates m, forces kN, moments kNm, section properties mm-based, E and G in MPa,
+ * CosmicWind model. Units: coordinates m, forces kN, moments kNm, section properties mm-based, E and G in MPa,
  * density kg/m³. Global Y is vertical (up).
  */
 export interface Node { id: number; x: number; y: number; z: number; /** Six characters, F (fixed) or R (released), for DX DY DZ RX RY RZ. */ r: string }

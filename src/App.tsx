@@ -158,12 +158,12 @@ export default function App() {
 
   const save = () => {
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(model, null, 1)], { type: 'application/json' }));
-    a.download = `${(model.title || 'model').replace(/[^\w-]+/g, '_')}.moonrock.json`; a.click(); URL.revokeObjectURL(a.href);
+    a.download = `${(model.title || 'model').replace(/[^\w-]+/g, '_')}.cosmicwind.json`; a.click(); URL.revokeObjectURL(a.href);
   };
   const open = async (f: File | undefined) => {
     if (!f) return;
     try { const m = normalise(JSON.parse(await f.text())); if (!Array.isArray(m.nodes)) throw new Error(); setModel(() => m); setSel(noSel()); }
-    catch { alert('The file is not a MoonRock model.'); }
+    catch { alert('The file is not a CosmicWind model.'); }
   };
 
   // ---- Datasheet columns
@@ -216,7 +216,7 @@ export default function App() {
 
   return (
     <div className="fill-window min-h-screen bg-slate-100 lg:h-screen lg:overflow-hidden flex flex-col">
-      <AppHeader name="MoonRock" logoSrc="/favicon.svg" onAbout={() => setDialog('about')} onReport={() => setDialog('report')}
+      <AppHeader name="CosmicWind" logoSrc="/favicon.svg" onAbout={() => setDialog('about')} onReport={() => setDialog('report')}
         tabs={[{ key: 'structure', label: 'Structure', icon: <Box className="w-3.5 h-3.5" /> }, { key: 'loads', label: 'Loads', icon: <Weight className="w-3.5 h-3.5" /> }, { key: 'results', label: 'Analysis and Results', icon: <LineChart className="w-3.5 h-3.5" /> }]}
         activeTab={tab} onTab={setTab}
         actions={<div className="flex items-center gap-1">
@@ -366,7 +366,7 @@ export default function App() {
                 </div>
               </div>
               <div className="absolute bottom-2 right-3 text-[11px] text-slate-500 pointer-events-none">
-                {tool === 'select' ? 'Drag to select (left to right encloses, right to left touches), middle-drag to rotate, right-drag to pan, right-click for options, scroll to zoom' : tool === 'node' ? 'Click on the working plane to place nodes' : 'Click a node or the working plane to start and continue members; Escape to finish'}
+                {tool === 'select' ? 'Drag to rotate; click empty space, then click again, to select with a box (left to right encloses, right to left touches); middle-drag or scroll to zoom, right-drag to pan, right-click for options' : tool === 'node' ? 'Click on the working plane to place nodes' : 'Click a node or the working plane to start and continue members; Escape to finish'}
               </div>
             </div>
             {tab === 'results' && analysis && <div className="panel flex flex-col lg:h-[42%] lg:min-h-[230px] !space-y-2">

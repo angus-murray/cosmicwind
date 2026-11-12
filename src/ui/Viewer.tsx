@@ -95,8 +95,11 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   }, [fitKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- Pointer interaction
-  // Left drag: selection box (select tool). Middle drag: rotate. Right drag: pan. Right click: options.
-  const drag = useRef<{ x: number; y: number; sx: number; sy: number; moved: boolean; mode: 'box' | 'orbit' | 'pan' | null } | null>(null);
+  // Left drag: rotate. Left click: pick a node or member, or on empty space start a selection box that the next left click completes.
+  // Middle drag: zoom (as does the wheel). Right drag: pan. Right click: options.
+  const drag = useRef<{ x: number; y: number; sx: number; sy: number; moved: boolean; mode: 'orbit' | 'zoom' | 'pan' | null } | null>(null);
+  /** First corner of a selection box that is waiting for its second click. */
+  const anchor = useRef<[number, number] | null>(null);
   const local = (e: { clientX: number; clientY: number }): [number, number] => { const r = svgRef.current!.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
   const onPlane = (sx: number, sy: number): V3 | null => {
     const X = (sx - W / 2 - cam.px) / cam.zoom, Y = -(sy - H / 2 - cam.py) / cam.zoom;
@@ -111,16 +114,17 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   const down = (e: React.PointerEvent) => {
     (e.target as Element).setPointerCapture?.(e.pointerId);
     const [sx, sy] = local(e);
-    const mode = e.button === 2 ? 'pan' : e.button === 1 ? 'orbit' : e.button === 0 && tool === 'select' ? 'box' : null;
+    const mode = e.button === 2 ? 'pan' : e.button === 1 ? 'zoom' : e.button === 0 ? 'orbit' : null;
     drag.current = { x: e.clientX, y: e.clientY, sx, sy, moved: false, mode };
   };
   const move = (e: React.PointerEvent) => {
     if (tool === 'member' && chain !== null) setCursor(local(e));
+    if (anchor.current) { const [x, y] = local(e); setMarq({ x0: anchor.current[0], y0: anchor.current[1], x1: x, y1: y }); }
     const d = drag.current; if (!d) return;
     const dx = e.clientX - d.x, dy = e.clientY - d.y;
     if (!d.moved && Math.hypot(dx, dy) < 4) return;
     d.moved = true; d.x = e.clientX; d.y = e.clientY;
-    if (d.mode === 'box') { const [x, y] = local(e); setMarq({ x0: d.sx, y0: d.sy, x1: x, y1: y }); }
+    if (d.mode === 'zoom') zoomAt(d.sx - W / 2, d.sy - H / 2, Math.exp(-dy * 0.01));
     else if (d.mode === 'pan') setCam(c => ({ ...c, px: c.px + dx, py: c.py + dy }));
     else if (d.mode === 'orbit') setCam(c => ({ ...c, yaw: c.yaw + dx * 0.008, pitch: Math.max(-Math.PI / 2, Math.min(Math.PI / 2, c.pitch + dy * 0.008)) }));
   };
@@ -162,17 +166,24 @@ export const Viewer = React.forwardRef<ViewerHandle, {
     onSelect(s);
   };
   const up = (e: React.PointerEvent) => {
-    const d = drag.current; drag.current = null; setMarq(null);
+    const d = drag.current; drag.current = null;
     if (!d) return;
     const [sx, sy] = local(e);
-    if (d.moved) { if (d.mode === 'box') boxSelect({ x0: d.sx, y0: d.sy, x1: sx, y1: sy }, e.shiftKey || e.ctrlKey || e.metaKey); return; }
+    if (d.moved) return;
     if (e.button === 2) {
+      if (anchor.current) { anchor.current = null; setMarq(null); return; }
       if (tool === 'select') { const h = hitAt(sx, sy); onContext?.({ x: sx, y: sy, node: h.hitN, member: h.hitM }); } else setChain(null);
       return;
     }
     if (e.button !== 0) return;
     const { hitN, hitM } = hitAt(sx, sy);
     const add = e.shiftKey || e.ctrlKey || e.metaKey;
+    if (tool === 'select' && anchor.current) { // second click: complete the box (a click without moving clears the selection)
+      const [x0, y0] = anchor.current; anchor.current = null; setMarq(null);
+      if (Math.hypot(sx - x0, sy - y0) < 4) { if (!add) onSelect({ nodes: new Set(), members: new Set() }); } else boxSelect({ x0, y0, x1: sx, y1: sy }, add);
+      return;
+    }
+    if (tool === 'select' && hitN === null && hitM === null) { anchor.current = [sx, sy]; setMarq({ x0: sx, y0: sy, x1: sx, y1: sy }); return; }
     if (tool === 'select') {
       const s: Sel = add ? { nodes: new Set(sel.nodes), members: new Set(sel.members) } : { nodes: new Set(), members: new Set() };
       const toggle = (set: Set<number>, id: number) => (set.has(id) && add ? set.delete(id) : set.add(id));
@@ -184,17 +195,19 @@ export const Viewer = React.forwardRef<ViewerHandle, {
     if (id === null) { const p = onPlane(sx, sy); if (!p) return; id = onAddNode(p); }
     if (tool === 'member') { if (chain !== null && chain !== id) onAddMember(chain, id); setChain(id); }
   };
-  useEffect(() => { setChain(null); setCursor(null); }, [tool]);
+  useEffect(() => { setChain(null); setCursor(null); anchor.current = null; setMarq(null); }, [tool]);
   useEffect(() => {
-    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') setChain(null); };
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') { setChain(null); anchor.current = null; setMarq(null); } };
     window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key);
   }, []);
+  /** Zooms by factor f about the point (mx, my), measured from the centre of the view. */
+  const zoomAt = (mx: number, my: number, f: number) =>
+    setCam(c => { const z = Math.max(0.5, Math.min(5000, c.zoom * f)), k = z / c.zoom; return { ...c, zoom: z, px: mx - (mx - c.px) * k, py: my - (my - c.py) * k }; });
   useEffect(() => {
     const el = svgRef.current; if (!el) return;
     const wheel = (e: WheelEvent) => {
       e.preventDefault();
-      const r = el.getBoundingClientRect(), mx = e.clientX - r.left - r.width / 2, my = e.clientY - r.top - r.height / 2, f = Math.exp(-e.deltaY * 0.0012);
-      setCam(c => { const z = Math.max(0.5, Math.min(5000, c.zoom * f)), k = z / c.zoom; return { ...c, zoom: z, px: mx - (mx - c.px) * k, py: my - (my - c.py) * k }; });
+      const r = el.getBoundingClientRect(); zoomAt(e.clientX - r.left - r.width / 2, e.clientY - r.top - r.height / 2, Math.exp(-e.deltaY * 0.0012));
     };
     el.addEventListener('wheel', wheel, { passive: false }); return () => el.removeEventListener('wheel', wheel);
   }, []);

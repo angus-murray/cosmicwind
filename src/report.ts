@@ -24,7 +24,7 @@ async function svgImage(svg: SVGSVGElement): Promise<{ data: string; w: number; 
 export async function makeReport(model: Model, an: Analysis, info: ReportInfo, svg: SVGSVGElement | null) {
   const doc = new jsPDF({ unit: 'mm', format: 'a4' }), M = 15, W = 210 - 2 * M;
   let y = 20, sec = 0;
-  doc.setFont('helvetica', 'bold').setFontSize(18).setTextColor(30, 41, 59).text('MoonRock Analysis Report', M, y); y += 7;
+  doc.setFont('helvetica', 'bold').setFontSize(18).setTextColor(30, 41, 59).text('CosmicWind Analysis Report', M, y); y += 7;
   doc.setFont('helvetica', 'normal').setFontSize(9).setTextColor(100, 116, 139);
   const head = [['Project', info.project], ['Project No.', info.number], ['Structure', info.structure || model.title], ['Designer', info.designer], ['Date', info.date]].filter(r => r[1]);
   head.forEach(([k, v]) => { doc.text(`${k}: ${v}`, M, y); y += 4.5; });
@@ -74,7 +74,7 @@ export async function makeReport(model: Model, an: Analysis, info: ReportInfo, s
   const pages = doc.getNumberOfPages();
   for (let i = 1; i <= pages; i++) {
     doc.setPage(i); doc.setFont('helvetica', 'normal').setFontSize(7.5).setTextColor(100, 116, 139);
-    doc.text(`MoonRock  |  ${info.structure || model.title}`, M, 10); doc.text(`Page ${i} of ${pages}`, 210 - M, 10, { align: 'right' });
+    doc.text(`CosmicWind  |  ${info.structure || model.title}`, M, 10); doc.text(`Page ${i} of ${pages}`, 210 - M, 10, { align: 'right' });
   }
-  doc.save(`${(info.structure || model.title || 'MoonRock').replace(/[^\w-]+/g, '_')}.pdf`);
+  doc.save(`${(info.structure || model.title || 'CosmicWind').replace(/[^\w-]+/g, '_')}.pdf`);
 }
