@@ -88,6 +88,8 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   result?: CaseResult | null; mode?: Map<number, Vec6> | null;
   /** Oscillates the mode shape about the undeformed position instead of showing it at full amplitude. */
   animateMode?: boolean;
+  /** Multiplies the deflection scale (middle-drag while a deflected shape is shown). */
+  onDefScale?: (factor: number) => void;
   onAddNode: (p: V3) => number; onAddMember: (a: number, b: number) => void;
   /** Right click (without dragging) in the select tool: where, and the node or member under the pointer. */
   /** Changes when a different model is loaded, which refits the view. */
@@ -99,7 +101,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   /** Notes drawn as call-outs; a box can be dragged, and double-clicked to edit. */
   notes?: Note[]; onNoteMove?: (id: number, dx: number, dy: number) => void; onNoteEdit?: (id: number, x: number, y: number) => void;
   onContext?: (c: { x: number; y: number; node: number | null; member: number | null; note?: number | null; /** Node at the end of the member that was clicked near, if any. */ endNode: number | null }) => void;
-}>(function Viewer({ model, opts, tool, sel, onSelect, loadCases, result, mode, animateMode, onAddNode, onAddMember, onContext, fitRev = 0, pick, onPickEnd, onSplitMember, notes = [], onNoteMove, onNoteEdit }, handle) {
+}>(function Viewer({ model, opts, tool, sel, onSelect, loadCases, result, mode, animateMode, onDefScale, onAddNode, onAddMember, onContext, fitRev = 0, pick, onPickEnd, onSplitMember, notes = [], onNoteMove, onNoteEdit }, handle) {
   const [box, size] = useElementSize<HTMLDivElement>();
   const svgRef = useRef<SVGSVGElement>(null);
   // c is the orbit pivot (the model centre at the last fit); px, py are the screen offset of the pivot from the view centre.
@@ -165,7 +167,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
 
   // ---- Pointer interaction
   // Left drag: rotate. Left click: pick a node or member, or on empty space start a selection box that the next left click completes.
-  // Middle drag: zoom (as does the wheel). Right drag: pan. Right click: options.
+  // Middle drag: scales the deflected shape up and down while one is shown, otherwise zooms (the wheel always zooms). Right drag: pan. Right click: options.
   const drag = useRef<{ x: number; y: number; sx: number; sy: number; moved: boolean; mode: 'orbit' | 'zoom' | 'pan' | 'note' | null } | null>(null);
   const noteHit = useRef<number | null>(null);
   /** Measure tool: the two points, and the point under the pointer while the second is pending. */
@@ -273,7 +275,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
     if (!d.moved && Math.hypot(dx, dy) < 4) return;
     d.moved = true; d.x = e.clientX; d.y = e.clientY;
     if (d.mode === 'note' && noteDrag.current) { const nd = noteDrag.current; nd.dx += dx; nd.dy += dy; setNoteOff({ [nd.id]: [nd.dx, nd.dy] }); }
-    else if (d.mode === 'zoom') zoomAt(d.sx - W / 2, d.sy - H / 2, Math.exp(-dy * 0.01));
+    else if (d.mode === 'zoom') { if (onDefScale && (mode || (opts.deflected && result))) onDefScale(Math.exp(-dy * 0.01)); else zoomAt(d.sx - W / 2, d.sy - H / 2, Math.exp(-dy * 0.01)); }
     else if (d.mode === 'pan') setCam(c => ({ ...c, px: c.px + dx, py: c.py + dy }));
     else if (d.mode === 'orbit') setCam(c => ({ ...c, yaw: c.yaw + dx * 0.008, pitch: Math.max(-Math.PI / 2, Math.min(Math.PI / 2, c.pitch + dy * 0.008)) }));
   };
