@@ -71,7 +71,7 @@ export function About({ onClose }: { onClose: () => void }) {
           controls what is drawn. The load case or combination shown is chosen in the graphics window, which also shows its gravity load under the selector
           when Loads is on.</P>
         <P>In the graphics window, drag with the left button to rotate, click twice to draw a selection box, use the wheel to zoom, and drag with the right
-          button to pan. Dragging with the middle button scales the deflected shape up and down while one is shown, and otherwise zooms. Right-clicking a
+          button to pan. Dragging with the middle button scales the deflected shape up and down on the Analysis and Results tab. Right-clicking a
           node, a member or empty space gives the actions that apply, such as loads, restraints, releases, section, angle, subdivide, move and copy. The
           buttons at the right of the graphics window switch on the node and member numbers, section names, local axes, the origin, restraints, releases,
           loads and notes. The origin is a snap point while it is switched on.</P>

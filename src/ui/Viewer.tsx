@@ -168,7 +168,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
 
   // ---- Pointer interaction
   // Left drag: rotate. Left click: pick a node or member, or on empty space start a selection box that the next left click completes.
-  // Middle drag: scales the deflected shape up and down while one is shown, otherwise zooms (the wheel always zooms). Right drag: pan. Right click: options.
+  // Middle drag: scales the deflected shape up and down while one is shown, and does nothing otherwise (the wheel zooms). Right drag: pan. Right click: options.
   const drag = useRef<{ x: number; y: number; sx: number; sy: number; moved: boolean; mode: 'orbit' | 'zoom' | 'pan' | 'note' | null } | null>(null);
   const noteHit = useRef<number | null>(null);
   /** Measure tool: the two points, and the point under the pointer while the second is pending. */
@@ -283,7 +283,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
     if (!d.moved && Math.hypot(dx, dy) < 4) return;
     d.moved = true; d.x = e.clientX; d.y = e.clientY;
     if (d.mode === 'note' && noteDrag.current) { const nd = noteDrag.current; nd.dx += dx; nd.dy += dy; setNoteOff({ [nd.id]: [nd.dx, nd.dy] }); }
-    else if (d.mode === 'zoom') { if (onDefScale && (mode || (opts.deflected && result))) onDefScale(Math.exp(-dy * 0.01)); else zoomAt(d.sx - W / 2, d.sy - H / 2, Math.exp(-dy * 0.01)); }
+    else if (d.mode === 'zoom') { if (onDefScale && (mode || (opts.deflected && result))) onDefScale(Math.exp(-dy * 0.01)); } // middle drag only scales the deflected shape
     else if (d.mode === 'pan') setCam(c => ({ ...c, px: c.px + dx, py: c.py + dy }));
     else if (d.mode === 'orbit') setCam(c => ({ ...c, yaw: c.yaw + dx * 0.008, pitch: Math.max(-Math.PI / 2, Math.min(Math.PI / 2, c.pitch + dy * 0.008)) }));
   };
