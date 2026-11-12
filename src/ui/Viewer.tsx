@@ -228,6 +228,13 @@ export const Viewer = React.forwardRef<ViewerHandle, {
       const pt: V3 = [...st]; pt[lock] = st[lock] + ((lx - o[0]) * vx + (ly - o[1]) * vy) / vv;
       return { pt: r3(pt), axis: lock };
     }
+    { // the Z axis is not in the drawing plane: the member is held to it when the pointer is within 8 degrees of its direction on the screen
+      const o = P(st), t = P([st[0], st[1], st[2] + 1]), vx = t[0] - o[0], vy = t[1] - o[1], zl = Math.hypot(vx, vy), px = lx - o[0], py = ly - o[1], pl = Math.hypot(px, py);
+      if (zl > 0.15 * cam.zoom && pl > 8 && Math.abs(px * vx + py * vy) / (pl * zl) > Math.cos(8 * Math.PI / 180)) {
+        const pt: V3 = [st[0], st[1], st[2] + (px * vx + py * vy) / (zl * zl)];
+        return { pt: r3(pt), axis: 2 };
+      }
+    }
     const raw = onPlane(lx, ly); if (!raw) return null;
     const [i, j, k] = [0, 1, 2];
     const di = raw[i] - st[i], dj = raw[j] - st[j], tol = Math.tan(8 * Math.PI / 180), pt: V3 = [0, 0, 0]; pt[k] = 0;

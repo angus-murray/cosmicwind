@@ -46,22 +46,42 @@ export function About({ onClose }: { onClose: () => void }) {
   return (
     <Modal title="About CosmicWind" onClose={onClose} variant="page">
       <div className="panel"><P>CosmicWind analyses three-dimensional frames and trusses in the browser. The model is built in datasheets or drawn in the
-        graphics window, and is solved by the direct stiffness method for load cases and combinations. Everything runs on the user's computer; the model
-        is kept in the browser's storage and can be saved to and opened from a file.</P></div>
+        graphics window, and is solved by the direct stiffness method for load cases and combinations. Inputs and datasheets are in the left column and the
+        graphics window is on the right. Everything runs on the user's computer; the model is kept in the browser's storage and can be saved to and opened
+        from a file. New starts a blank model, and Undo brings the previous one back.</P></div>
       <CollapsePanel title="Units and Axes" defaultOpen>
         <P>Coordinates are in metres, forces in kN, moments in kNm, section properties in mm units, moduli in MPa and density in kg/m³. Global Y is
           vertical. A member's local x axis runs from end 1 to end 2. For a member that is not vertical, the local y axis lies in the vertical plane
           through the member and points upward, and the local z axis is horizontal. For a vertical member the local z axis is parallel to global Z. The
-          Angle column rotates the y and z axes about the member. <i>I</i><sub>z</sub> is the second moment about the local z axis, the major axis of a
-          beam in its usual orientation.</P>
+          Angle column rotates the y and z axes about the member, and can also be set from the right-click menu of a member. <i>I</i><sub>z</sub> is the second
+          moment about the local z axis, the major axis of a beam in its usual orientation. Global axes are always written in upper case (X, Y, Z) and local
+          axes in lower case (x, y, z), including in the direction of a member load, which shows x, y, z when the load is in local axes.</P>
         <P>Restraint codes have six characters for DX, DY, DZ, RX, RY and RZ: F is fixed, R is released and S is a spring. Click the arrow in a Restraint or
           Release cell to set each degree of freedom and the stiffness of its spring (kN/m for a displacement or axial force, kNm/rad for a rotation or
           moment). Member end releases use the same form for the three local forces and three local moments at each end, but there are no springs on the
-          two shear forces. Loads are positive in the positive axis direction, so a downward load is
-          negative in Y. Moments follow the right-hand rule and are drawn as double-headed arrows.</P>
+          two shear forces. Restraints and releases can also be set from the right-click menu of a node or member. Loads are positive in the positive axis
+          direction, so a downward load is negative in Y. Moments follow the right-hand rule and are drawn as double-headed arrows.</P>
         <P>The Gravity columns of a load case are multipliers of <i>g</i>, where <i>g</i> = {G0} m/s², the standard gravitational acceleration. The self-weight
           of a member is its density times its cross-sectional area times <i>g</i>, applied along its length, and node masses and member masses for vibration
           modes are in tonnes.</P>
+      </CollapsePanel>
+      <CollapsePanel title="Using the Program" defaultOpen>
+        <P>The Structure tab holds the datasheets for nodes, members, sections, materials and node masses. The Loads tab holds load cases, combinations,
+          node loads, distributed and point member loads, support settlements and temperature loads. The Analysis and Results tab solves the model and
+          controls what is drawn. The load case or combination shown is chosen in the graphics window, which also shows its gravity load under the selector
+          when Loads is on.</P>
+        <P>In the graphics window, drag with the left button to rotate, click twice to draw a selection box, use the wheel to zoom, and drag with the right
+          button to pan. Dragging with the middle button scales the deflected shape up and down while one is shown, and otherwise zooms. Right-clicking a
+          node, a member or empty space gives the actions that apply, such as loads, restraints, releases, section, angle, subdivide, move and copy. The
+          buttons at the right of the graphics window switch on the node and member numbers, section names, local axes, the origin, restraints, releases,
+          loads and notes. The origin is a snap point while it is switched on.</P>
+        <P>Nodes and members are drawn with the Node and Member tools on the XY plane at Z = 0. The pointer snaps to nodes, to member midpoints and to the
+          origin, and a member being drawn is held to a global axis when it is within 8 degrees of one (the Z axis only in a view where it can be seen) or when X, Y or Z is typed. A length can be typed for
+          the member. The section and material of new members are chosen in the panel that appears when the Member tool is selected.</P>
+        <P>On the Analysis and Results tab, Deflections can show the global displacements at the nodes (X, Y, Z or XYZ, in mm) and the deflected shape
+          with its nodes. Diagrams draws the member actions, and hovering over a member or its diagram gives the values at that point, joined to the
+          diagram by a line. Reactions and Stresses are switched on in their own panels, and the stress scale is at the top left of the graphics window.
+          Buckling and Vibration give the number of modes to calculate; clicking a mode in the list shows its shape, and vibration modes are animated.</P>
       </CollapsePanel>
       <CollapsePanel title="Analysis Method">
         <P>Each member is a prismatic Euler-Bernoulli beam-column element with twelve degrees of freedom: axial, torsion and bending about both
@@ -72,6 +92,9 @@ export function About({ onClose }: { onClose: () => void }) {
         <P>Actions along each member are found by statics from the end actions and the loads on the member. Deflections along the member are found by
           integrating the curvature <i>M</i>/<i>EI</i> between the end displacements. A rotational degree of freedom with no stiffness, such as at a
           node joining only pin-ended members, is restrained automatically. A member with torsion released at both ends has no torsional stiffness.</P>
+        <P>A spring on a node is added to the stiffness of that degree of freedom. A spring at a member end acts in series with the member: the end
+          degree of freedom is condensed together with the spring, so the spring carries the whole end action. Results are reported at 21 stations along each
+          member, plus the ends of each load.</P>
         <P>Sign convention for results: axial force is positive in tension; <i>M</i><sub>z</sub> is positive when it causes tension on the negative
           y face (sagging for a beam with y upward); shear is the sum of the forces on the member to the left of the section. Bending moment diagrams
           are drawn on the tension side.</P>
@@ -85,7 +108,7 @@ export function About({ onClose }: { onClose: () => void }) {
           analysis repeats until the set of active members is stable. A removed member keeps its bending stiffness, so its own transverse loads
           still reach its ends.</P>
       </CollapsePanel>
-      <CollapsePanel title="Buckling and Natural Frequencies">
+      <CollapsePanel title="Buckling and Vibration">
         <P>Elastic critical buckling solves the eigenvalue problem below for each case, with the geometric stiffness from that case's axial forces.
           The result is the factor by which the whole case would be multiplied to cause elastic buckling. Members need to be subdivided for the
           higher modes and for members that buckle between their nodes.</P>
