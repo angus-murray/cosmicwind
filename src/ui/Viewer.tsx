@@ -682,10 +682,10 @@ export const Viewer = React.forwardRef<ViewerHandle, {
           const bx = Math.max(x + 9, Math.min(a[0], x + w - 9)), ey = a[1] < y + h / 2 ? y : y + h; // the tail leaves the nearer edge
           return <g key={`note${n.id}`} data-note={n.id} style={{ cursor: 'move' }} onDoubleClick={e => { const [lx, ly] = local(e); onNoteEdit?.(n.id, lx, ly); }}>
             <title>Drag to move, double-click to edit, right-click for options</title>
-            <path d={`M${bx - 6} ${ey}L${a[0]} ${a[1]}L${bx + 6} ${ey}Z`} fill="#fef9c3" stroke="#ca8a04" strokeWidth={1} strokeLinejoin="round" />
-            <rect x={x} y={y} width={w} height={h} rx={5} fill="#fef9c3" stroke="#ca8a04" strokeWidth={1} />
-            <circle cx={a[0]} cy={a[1]} r={2.5} fill="#ca8a04" />
-            {lines.map((l, i) => <text key={i} x={x + 7} y={y + 15 + i * 14} fontSize={11} fill="#422006" style={{ userSelect: 'none' }}>{l}</text>)}
+            <line x1={bx} y1={ey} x2={a[0]} y2={a[1]} stroke="#000" strokeWidth={1} />
+            <rect x={x} y={y} width={w} height={h} fill="#fef08a" stroke="#000" strokeWidth={1} />
+            <circle cx={a[0]} cy={a[1]} r={2.5} fill="#000" />
+            {lines.map((l, i) => <text key={i} x={x + 7} y={y + 15 + i * 14} fontSize={11} fill="#000" style={{ userSelect: 'none' }}>{l}</text>)}
           </g>;
         })}
         {marq && <rect x={Math.min(marq.x0, marq.x1)} y={Math.min(marq.y0, marq.y1)} width={Math.abs(marq.x1 - marq.x0)} height={Math.abs(marq.y1 - marq.y0)} fill={BLUE} fillOpacity={0.08} stroke={BLUE} strokeWidth={1}
