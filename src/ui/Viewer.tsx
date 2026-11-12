@@ -471,7 +471,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
           const u = [(p1[0] - p0[0]) / len, (p1[1] - p0[1]) / len], nx = -u[1], ny = u[0], pt = (k: number): [number, number] => [p0[0] + u[0] * k, p0[1] + u[1] * k];
           const bend = rel[4] === 'R' || rel[5] === 'R', tors = rel[3] === 'R', slide = rel.slice(0, 3).includes('R'), m = pt(8), f = pt(bend || tors ? 18 : 9);
           const names = ['Fx', 'Fy', 'Fz', 'Mx', 'My', 'Mz'].filter((_, i) => rel[i] === 'R').join(', ');
-          return <g key={`rel${g.m.id}${end}`} stroke="#334155" strokeWidth={1.5} fill="#fff"><title>{`Member ${g.m.id}, node ${end === 'A' ? g.m.a : g.m.b}: released ${names}`}</title>
+          return <g key={`rel${g.m.id}${end}`} stroke="#334155" strokeWidth={1.5} fill="#fff"><title>{`Member ${g.m.id}, end ${end === 'A' ? 1 : 2}: released ${names}`}</title>
             {bend && <circle cx={m[0]} cy={m[1]} r={4.5} />}
             {!bend && tors && <path d={`M${m[0]} ${m[1] - 4.5}l4.5 4.5l-4.5 4.5l-4.5 -4.5z`} />}
             {slide && <path fill="none" d={`M${f[0] - u[0] * 2 + nx * 5} ${f[1] - u[1] * 2 + ny * 5}L${f[0] - u[0] * 2 - nx * 5} ${f[1] - u[1] * 2 - ny * 5}M${f[0] + u[0] * 2 + nx * 5} ${f[1] + u[1] * 2 + ny * 5}L${f[0] + u[0] * 2 - nx * 5} ${f[1] + u[1] * 2 - ny * 5}`} />}

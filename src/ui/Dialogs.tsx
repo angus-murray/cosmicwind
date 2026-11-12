@@ -26,7 +26,7 @@ export function TemplateDialog({ onClose, onCreate }: { onClose: () => void; onC
 }
 
 const sci = (v: number) => (v >= 1e6 ? `${(v / 1e6).toPrecision(4)} × 10⁶` : v.toPrecision(4));
-export function SectionDialog({ onClose, onAdd, assign }: { onClose: () => void; onAdd: (name: string, p: Props, outline: Outline) => void; assign: number }) {
+export function SectionDialog({ onClose, onAdd, assign, replace }: { onClose: () => void; onAdd: (name: string, p: Props, outline: Outline) => void; assign: number; /** Section number whose type is being changed. */ replace?: number }) {
   const [mode, setMode] = useState<'lib' | 'shape'>('lib');
   const [group, setGroup] = useState(LIB_GROUPS[0]);
   const [shape, setShape] = useState<Shape>('rect');
@@ -34,7 +34,7 @@ export function SectionDialog({ onClose, onAdd, assign }: { onClose: () => void;
   const sh = SHAPES.find(s => s.value === shape)!, d = dims.slice(0, sh.dims.length), props = shapeProps(shape, d);
   const valid = Object.values(props).every(v => isFinite(v) && v > 0);
   return (
-    <Modal title="Add Section" onClose={onClose} variant="dialog">
+    <Modal title={replace ? `Change Type of Section ${replace}` : 'Add Section'} onClose={onClose} variant="dialog">
       <div className="space-y-3">
         <Segmented value={mode} onChange={setMode} options={[{ value: 'lib', label: 'Library' }, { value: 'shape', label: 'Shape' }]} />
         {mode === 'lib' ? <>
@@ -53,7 +53,7 @@ export function SectionDialog({ onClose, onAdd, assign }: { onClose: () => void;
               <div key={l} className="readout"><span>{l.length === 2 || l === 'J' ? <><i>{l[0]}</i><sub>{l.slice(1)}</sub></> : l} ({u})</span><span className="readout-value">{sci(v)}</span></div>)
               : <p className="text-[11px] text-rose-700">The dimensions do not make a valid section.</p>}
           </div>
-          <div className="flex justify-end"><button className="btn-primary" disabled={!valid} onClick={() => onAdd(shapeName(shape, d), props, { shape, dims: d })}>Add Section</button></div>
+          <div className="flex justify-end"><button className="btn-primary" disabled={!valid} onClick={() => onAdd(shapeName(shape, d), props, { shape, dims: d })}>{replace ? 'Change Type' : 'Add Section'}</button></div>
         </>}
         {assign > 0 && <p className="text-[11px] text-slate-500">The section will be assigned to the {assign} selected member{assign > 1 ? 's' : ''}.</p>}
       </div>
@@ -70,7 +70,7 @@ export function About({ onClose }: { onClose: () => void }) {
         is kept in the browser's storage and can be saved to and opened from a file.</P></div>
       <CollapsePanel title="Units and Axes" defaultOpen>
         <P>Coordinates are in metres, forces in kN, moments in kNm, section properties in mm units, moduli in MPa and density in kg/m³. Global Y is
-          vertical. A member's local x axis runs from node A to node B. For a member that is not vertical, the local y axis lies in the vertical plane
+          vertical. A member's local x axis runs from end 1 to end 2. For a member that is not vertical, the local y axis lies in the vertical plane
           through the member and points upward, and the local z axis is horizontal. For a vertical member the local z axis is parallel to global Z. The
           Angle column rotates the y and z axes about the member. <i>I</i><sub>z</sub> is the second moment about the local z axis, the major axis of a
           beam in its usual orientation.</P>

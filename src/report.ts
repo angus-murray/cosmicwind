@@ -48,10 +48,10 @@ export async function makeReport(model: Model, an: Analysis, info: ReportInfo, s
   heading('Nodes');
   table(['Node', 'X (m)', 'Y (m)', 'Z (m)', 'Restraint'], model.nodes.map(v => [v.id, n(v.x, 3), n(v.y, 3), n(v.z, 3), v.r]));
   heading('Members');
-  const sn = new Map(model.sections.map(s => [s.id, s.name])), mn = new Map(model.materials.map(s => [s.id, s.name]));
-  table(['Member', 'Node A', 'Node B', 'Section', 'Material', 'Angle (deg)', 'Type', 'Release A', 'Release B'], model.members.map(m => [m.id, m.a, m.b, sn.get(m.sec) ?? m.sec, mn.get(m.mat) ?? m.mat, m.angle, { N: 'Normal', T: 'Tension only', C: 'Compression only' }[m.type], m.relA, m.relB]));
+  const mn = new Map(model.materials.map(s => [s.id, s.name]));
+  table(['Member', 'End 1', 'End 2', 'Section No.', 'Material', 'Angle (deg)', 'Type', 'Release 1', 'Release 2'], model.members.map(m => [m.id, m.a, m.b, m.sec, mn.get(m.mat) ?? m.mat, m.angle, { N: 'Normal', T: 'Tension only', C: 'Compression only' }[m.type], m.relA, m.relB]));
   heading('Sections and Materials');
-  table(['Section', 'Name', 'A (mm2)', 'Iy (mm4)', 'Iz (mm4)', 'J (mm4)'], model.sections.map(s => [s.id, s.name, n(s.A, 0), s.Iy.toExponential(3), s.Iz.toExponential(3), s.J.toExponential(3)]));
+  table(['Section No.', 'Section Type', 'A (mm2)', 'Iy (mm4)', 'Iz (mm4)', 'J (mm4)'], model.sections.map(s => [s.id, s.name, n(s.A, 0), s.Iy.toExponential(3), s.Iz.toExponential(3), s.J.toExponential(3)]));
   table(['Material', 'Name', 'E (MPa)', 'G (MPa)', 'Density (kg/m3)'], model.materials.map(s => [s.id, s.name, s.E, s.G, s.rho]));
   heading('Load Cases and Combinations');
   table(['Case', 'Name', 'Definition'], [

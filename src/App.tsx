@@ -39,6 +39,10 @@ export default function App() {
   const [caseId, setCaseId] = useState(1);
   const [modeIx, setModeIx] = useState<{ kind: 'buckling' | 'modal'; i: number } | null>(null);
   const [dialog, setDialog] = useState<'about' | 'report' | 'new' | 'section' | 'load' | null>(null);
+  const [assignOnAdd, setAssignOnAdd] = useState(false);
+  /** Section number whose type is being changed in the section dialog, or null when adding a section. */
+  const [replaceSec, setReplaceSec] = useState<number | null>(null);
+  const [secSel, setSecSel] = useState<number | null>(null);
   const [loadKind, setLoadKind] = useState<'node' | 'member'>('node');
   const [info, setInfo] = useState<ReportInfo>({ project: '', number: '', structure: '', designer: '', date: today() });
   const [copy, setCopy] = useState({ dx: 0, dy: 0, dz: 6, n: 1 });
@@ -195,15 +199,15 @@ export default function App() {
       title = word(mems.length, 'Member', mems[0]);
       const mem0 = model.members.find(m => m.id === ctx.member), sec0 = mem0?.sec;
       const selMembers = model.members.filter(m => sel.members.has(m.id));
-      // A release at one end applies to the end of each selected member that is at that node
-      const atNode = (nid: number, code: string) => setModel(m => ({ ...m, members: m.members.map(x => (!sel.members.has(x.id) ? x : { ...x, relA: x.a === nid ? code : x.relA, relB: x.b === nid ? code : x.relB })) }));
+      // Releases are set by end number: end 1 is the first node of a member and end 2 the second
       const relMenu = (label: string, isOn: (m: Member, c: string) => boolean, apply: (c: string) => void): MenuItem => ({ label, sub: RELEASES.map(([c, l]) => ({ label: `${l} (${c})`, checked: selMembers.length > 0 && selMembers.every(m => isOn(m, c)), onClick: run(() => apply(c)) })) });
-      const nodeRel = (nid: number) => relMenu(`Release at Node ${nid}`, (m, c) => (m.a === nid ? m.relA : m.b === nid ? m.relB : c) === c, c => atNode(nid, c));
+      const endRel = (k: 1 | 2) => relMenu(`Release at End ${k}`, (m, c) => (k === 1 ? m.relA : m.relB) === c, c => patchMembers(k === 1 ? { relA: c } : { relB: c }));
       const bothRel = relMenu('Release at Both Ends', (m, c) => m.relA === c && m.relB === c, c => patchMembers({ relA: c, relB: c }));
-      const endItems: MenuItem[] = ctx.endNode !== null ? [nodeRel(ctx.endNode), bothRel] : mem0 ? [bothRel, nodeRel(mem0.a), nodeRel(mem0.b)] : [bothRel];
+      const clickedEnd: 1 | 2 | null = mem0 && ctx.endNode !== null ? (ctx.endNode === mem0.a ? 1 : 2) : null;
+      const endItems: MenuItem[] = clickedEnd ? [endRel(clickedEnd), bothRel, endRel(clickedEnd === 1 ? 2 : 1)] : [bothRel, endRel(1), endRel(2)];
       if (edit) items.push(
         { label: 'Apply Load…', onClick: run(() => { setLoadKind('member'); setDialog('load'); }) },
-        { label: 'Section', sub: [...model.sections.map(x => ({ label: x.name, checked: mems.every(id => model.members.find(m => m.id === id)?.sec === x.id), onClick: run(() => patchMembers({ sec: x.id })) })), 'sep' as const, { label: 'Add Section…', onClick: run(() => setDialog('section')) }] },
+        { label: 'Section', sub: [...model.sections.map(x => ({ label: x.name, checked: mems.every(id => model.members.find(m => m.id === id)?.sec === x.id), onClick: run(() => patchMembers({ sec: x.id })) })), 'sep' as const, { label: 'Add Section…', onClick: run(() => { setAssignOnAdd(true); setReplaceSec(null); setDialog('section'); }) }] },
         ...endItems,
         { label: 'Member Type', sub: ([['N', 'Normal'], ['T', 'Tension Only'], ['C', 'Compression Only']] as const).map(([c, l]) => ({ label: l, onClick: run(() => patchMembers({ type: c })) })) },
         { label: 'Subdivide', sub: [2, 3, 4, 5, 6, 8, 10].map(k => ({ label: `Into ${k} Parts`, onClick: run(() => subdivide(k)) })) }, 'sep', ...moveCopy, 'sep');
@@ -228,15 +232,15 @@ export default function App() {
   };
 
   // ---- Datasheet columns
-  const secOpt = opt(model.sections), matOpt = opt(model.materials), lcOpt = opt(model.loadCases);
+  const secOpt = opt(model.sections), secNo = model.sections.map(r => ({ value: String(r.id), label: String(r.id) })), matOpt = opt(model.materials), lcOpt = opt(model.loadCases);
   const idSel = (key: string, label: string, options: { value: string; label: string }[], w = 90): Col<any> => ({ key, label, type: 'select', options, w, set: (r: object, v: string | number) => ({ ...r, [key]: Number(v) }) }); // eslint-disable-line @typescript-eslint/no-explicit-any
   const nodeCols: Col<Node>[] = [{ key: 'x', label: 'X (m)' }, { key: 'y', label: 'Y (m)' }, { key: 'z', label: 'Z (m)' },
     { key: 'r', label: 'Restraint', type: 'text', w: 84, list: RESTRAINTS.map(r => r[0]), title: 'F fixed or R released, for DX DY DZ RX RY RZ', set: (r, v) => ({ ...r, r: code(v, r.r) }) }];
-  const memCols: Col<Member>[] = [{ key: 'a', label: 'Node A', w: 48 }, { key: 'b', label: 'Node B', w: 48 }, idSel('sec', 'Section', secOpt, 120), idSel('mat', 'Material', matOpt, 90),
+  const memCols: Col<Member>[] = [{ key: 'a', label: 'End 1', title: 'Node at end 1 of the member', w: 48 }, { key: 'b', label: 'End 2', title: 'Node at end 2 of the member', w: 48 }, idSel('sec', 'Section No.', secNo, 70), idSel('mat', 'Material', matOpt, 90),
     { key: 'angle', label: 'Angle (°)', w: 50 }, { key: 'type', label: 'Type', type: 'select', w: 96, options: [{ value: 'N', label: 'Normal' }, { value: 'T', label: 'Tension Only' }, { value: 'C', label: 'Compr. Only' }] },
-    { key: 'relA', label: 'Release A', type: 'text', w: 70, list: RELEASES.map(r => r[0]), title: 'F fixed or R released, for the local x y z forces and moments', set: (r, v) => ({ ...r, relA: code(v, r.relA) }) },
-    { key: 'relB', label: 'Release B', type: 'text', w: 70, list: RELEASES.map(r => r[0]), set: (r, v) => ({ ...r, relB: code(v, r.relB) }) }];
-  const secCols: Col<Section>[] = [{ key: 'name', label: 'Name', type: 'text', w: 120 }, { key: 'A', label: <><i>A</i> (mm²)</>, w: 60 }, { key: 'Iz', label: <><i>I</i><sub>z</sub> (mm⁴)</>, w: 76 }, { key: 'Iy', label: <><i>I</i><sub>y</sub> (mm⁴)</>, w: 76 }, { key: 'J', label: <><i>J</i> (mm⁴)</>, w: 70 }];
+    { key: 'relA', label: 'Release 1', type: 'text', w: 70, list: RELEASES.map(r => r[0]), title: 'F fixed or R released, for the local x y z forces and moments', set: (r, v) => ({ ...r, relA: code(v, r.relA) }) },
+    { key: 'relB', label: 'Release 2', type: 'text', w: 70, list: RELEASES.map(r => r[0]), set: (r, v) => ({ ...r, relB: code(v, r.relB) }) }];
+  const secCols: Col<Section>[] = [{ key: 'name', label: 'Section Type', type: 'text', w: 150 }, { key: 'A', label: <><i>A</i> (mm²)</>, w: 60 }, { key: 'Iz', label: <><i>I</i><sub>z</sub> (mm⁴)</>, w: 76 }, { key: 'Iy', label: <><i>I</i><sub>y</sub> (mm⁴)</>, w: 76 }, { key: 'J', label: <><i>J</i> (mm⁴)</>, w: 70 }];
   const matCols: Col<Material>[] = [{ key: 'name', label: 'Name', type: 'text', w: 110 }, { key: 'E', label: <><i>E</i> (MPa)</>, w: 60 }, { key: 'G', label: <><i>G</i> (MPa)</>, w: 60 }, { key: 'rho', label: 'Density (kg/m³)', w: 70 }, { key: 'alpha', label: <><i>α</i> (/°C)</>, w: 70 }];
   const kCol = (i: number, label: string): Col<Spring> => ({ key: `k${i}`, label, w: 62, get: r => r.k[i] ?? 0, set: (r, v) => ({ ...r, k: r.k.map((x, j) => (j === i ? Math.max(0, Number(v)) : x)) }) });
   const springCols: Col<Spring>[] = [{ key: 'node', label: 'Node', w: 44 }, ...['KX', 'KY', 'KZ'].map((l, i) => kCol(i, `${l} (kN/m)`)), ...['KRX', 'KRY', 'KRZ'].map((l, i) => kCol(i + 3, `${l} (kNm/rad)`))];
@@ -403,9 +407,10 @@ export default function App() {
                   newRow={() => { const l = model.members[model.members.length - 1]; return { id: nextId(model.members), a: l?.b ?? model.nodes[0]?.id ?? 1, b: model.nodes[model.nodes.length - 1]?.id ?? 2, sec: l?.sec ?? model.sections[0]?.id ?? 1, mat: l?.mat ?? model.materials[0]?.id ?? 1, angle: 0, type: 'N' as const, relA: 'FFFFFF', relB: 'FFFFFF' }; }}
                   onDelete={r => setModel(m => deleteMembers(m, new Set([r.id])))} />}
                 {st === 'sections' && <>
-                  <Sheet rows={model.sections} cols={secCols} onChange={set('sections')} rowLabel={idLabel} newRow={() => ({ id: nextId(model.sections), name: `Section ${nextId(model.sections)}`, A: 5000, Iy: 1e7, Iz: 5e7, J: 1e5 })}
+                  <Sheet rows={model.sections} cols={secCols} onChange={set('sections')} rowLabel={idLabel} selected={r => r.id === secSel} onSelect={r => setSecSel(r.id)} newRow={() => ({ id: nextId(model.sections), name: `Section ${nextId(model.sections)}`, A: 5000, Iy: 1e7, Iz: 5e7, J: 1e5 })}
                     onDelete={r => (used('sec', r.id) ? alert(`Section ${r.id} is used by members.`) : set('sections')(model.sections.filter(s => s.id !== r.id)))} />
-                  <button className="btn-primary" onClick={() => setDialog('section')}><Shapes className="w-3.5 h-3.5" /> Add From Library or Shape</button>
+                  <button className="btn-primary" onClick={() => { setAssignOnAdd(false); setReplaceSec(null); setDialog('section'); }}><Shapes className="w-3.5 h-3.5" /> Add From Library or Shape</button>
+                  <button className="btn" disabled={secSel === null || !model.sections.some(x => x.id === secSel)} title="Select a section row, then choose a new type for its number; members keep the number" onClick={() => { setAssignOnAdd(false); setReplaceSec(secSel); setDialog('section'); }}><Shapes className="w-3.5 h-3.5" /> {secSel !== null && model.sections.some(x => x.id === secSel) ? `Change Type of Section ${secSel}` : 'Change Type of Selected Section'}</button>
                 </>}
                 {st === 'materials' && <>
                   <Sheet rows={model.materials} cols={matCols} onChange={set('materials')} rowLabel={idLabel}
@@ -460,11 +465,15 @@ export default function App() {
       {dialog === 'about' && <About onClose={() => setDialog(null)} />}
       {dialog === 'new' && <TemplateDialog onClose={() => setDialog(null)} onCreate={m => { setModel(() => m); setFitRev(r => r + 1); setSel(noSel()); setCaseId(1); setModeIx(null); setDialog(null); setTab('structure'); }} />}
       {dialog === 'load' && <LoadDialog kind={loadKind} count={loadKind === 'node' ? sel.nodes.size : sel.members.size} cases={model.loadCases} lc0={lcOnly} onClose={() => setDialog(null)} onApply={applyLoad} />}
-      {dialog === 'section' && <SectionDialog assign={mSel} onClose={() => setDialog(null)} onAdd={(name, p, outline) => {
+      {dialog === 'section' && <SectionDialog replace={replaceSec ?? undefined} assign={assignOnAdd ? mSel : 0} onClose={() => setDialog(null)} onAdd={(name, p, outline) => {
+        if (replaceSec !== null) { // the section keeps its number; only its type and properties change
+          setModel(m => ({ ...m, sections: m.sections.map(x => (x.id === replaceSec ? { id: x.id, name, A: Math.round(p.A), Iy: Math.round(p.Iy), Iz: Math.round(p.Iz), J: Math.round(p.J), outline } : x)) }));
+          setReplaceSec(null); setDialog(null); return;
+        }
         setModel(m => {
           const ex = m.sections.find(s => s.name === name), id = ex?.id ?? nextId(m.sections);
           const sections = ex ? m.sections : [...m.sections, { id, name, A: Math.round(p.A), Iy: Math.round(p.Iy), Iz: Math.round(p.Iz), J: Math.round(p.J), outline }];
-          return { ...m, sections, members: m.members.map(x => (sel.members.has(x.id) ? { ...x, sec: id } : x)) };
+          return { ...m, sections, members: assignOnAdd ? m.members.map(x => (sel.members.has(x.id) ? { ...x, sec: id } : x)) : m.members };
         });
         setDialog(null);
       }} />}
