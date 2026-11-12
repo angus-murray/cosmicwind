@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "moonrock",
+      "name": "moondust",
       "dependencies": {
         "engineering-ui": "github:angus-murray/engineering-ui#1851865",
         "jspdf": "^4.2.1",

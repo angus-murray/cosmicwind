@@ -1,4 +1,4 @@
-# MoonRock
+# MoonDust
 
 Three-dimensional frame and truss analysis in the browser. The model is built in datasheets or drawn in the graphics
 window and is solved on the user's computer; nothing is sent to a server.

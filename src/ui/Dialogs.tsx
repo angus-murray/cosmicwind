@@ -64,8 +64,8 @@ export function SectionDialog({ onClose, onAdd, assign }: { onClose: () => void;
 export function About({ onClose }: { onClose: () => void }) {
   const P = ({ children }: { children: React.ReactNode }) => <p className="text-xs text-slate-700 leading-relaxed">{children}</p>;
   return (
-    <Modal title="About MoonRock" onClose={onClose} variant="page">
-      <div className="panel"><P>MoonRock analyses three-dimensional frames and trusses in the browser. The model is built in datasheets or drawn in the
+    <Modal title="About MoonDust" onClose={onClose} variant="page">
+      <div className="panel"><P>MoonDust analyses three-dimensional frames and trusses in the browser. The model is built in datasheets or drawn in the
         graphics window, and is solved by the direct stiffness method for load cases and combinations. Everything runs on the user's computer; the model
         is kept in the browser's storage and can be saved to and opened from a file.</P></div>
       <CollapsePanel title="Units and Axes" defaultOpen>
@@ -115,7 +115,7 @@ export function About({ onClose }: { onClose: () => void }) {
           design should be confirmed against the manufacturer's tables. Any section can be edited in the Sections datasheet.</P>
       </CollapsePanel>
       <CollapsePanel title="Limitations">
-        <P>MoonRock does not include plate or shell elements, cable elements, member offsets, master-slave constraints, moving loads, response spectrum
+        <P>MoonDust does not include plate or shell elements, cable elements, member offsets, master-slave constraints, moving loads, response spectrum
           or time-history analysis, or member design checks to a standard. Large-displacement effects beyond P-Δ are not modelled. The results
           should be checked independently before they are used for design.</P>
       </CollapsePanel>

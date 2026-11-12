@@ -1,4 +1,4 @@
-# MoonRock
+# MoonDust
 
 Structural analysis app; follows the `engineering-ui` house style (`node_modules/engineering-ui/STYLE.md`).
 
