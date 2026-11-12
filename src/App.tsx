@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AppHeader, Banner, Check, NumberField, ReportDialog, ResultsHeader, SelectField, StatusChip, today } from 'engineering-ui';
-import { Axis3d, Box, Ruler, FilePlus, FolderOpen, Hash, Maximize, MousePointer2, Redo2, Save, Scissors, Spline, Trash2, Type, Undo2, Weight, Copy, Dot, LineChart, Shapes, Cuboid, Waypoints } from 'lucide-react';
+import { AppHeader, Banner, useElementSize, Check, NumberField, ReportDialog, ResultsHeader, SelectField, StatusChip, today } from 'engineering-ui';
+import { Axis3d, Box, Eye, Ruler, FilePlus, FolderOpen, Hash, Maximize, MousePointer2, Redo2, Save, Scissors, Spline, Trash2, Type, Undo2, Weight, Copy, Dot, LineChart, Shapes, Cuboid, Waypoints } from 'lucide-react';
 import {
   deleteMembers, deleteNodes, FREE, MATERIAL_PRESETS, nextId, normalise, RELEASES, RESTRAINTS,
   type Combo, type DistLoad, type LoadCase, type Material, type Member, type Model, type Node, type NodeLoad, type NodeMass, type PointLoad, type Section, type Settlement, type Spring, type ThermalLoad,
@@ -10,8 +10,8 @@ import { analyse } from './solver/frame';
 import { Sheet, type Col } from './ui/Sheet';
 import { fmt, Viewer, type Diagram, type Sel, type Tool, type ViewerHandle, type ViewOpts } from './ui/Viewer';
 import { ResultTables } from './ui/Results';
-import { ContextMenu, type MenuItem } from './ui/ContextMenu';
-import { About, SectionDialog, TemplateDialog } from './ui/Dialogs';
+import { ContextMenu, PromptBox, ToolFlyout, type MenuItem, type MenuState, type PromptState } from './ui/CanvasMenu';
+import { About, LoadDialog, SectionDialog, TemplateDialog, type LoadSpec } from './ui/Dialogs';
 import type { ReportInfo } from './report';
 
 type Tab = 'structure' | 'loads' | 'results';
@@ -38,13 +38,17 @@ export default function App() {
   const o = <K extends keyof ViewOpts>(k: K) => (v: ViewOpts[K]) => setOpts(p => ({ ...p, [k]: v }));
   const [caseId, setCaseId] = useState(1);
   const [modeIx, setModeIx] = useState<{ kind: 'buckling' | 'modal'; i: number } | null>(null);
-  const [dialog, setDialog] = useState<'about' | 'report' | 'new' | 'section' | null>(null);
+  const [dialog, setDialog] = useState<'about' | 'report' | 'new' | 'section' | 'load' | null>(null);
+  const [loadKind, setLoadKind] = useState<'node' | 'member'>('node');
   const [info, setInfo] = useState<ReportInfo>({ project: '', number: '', structure: '', designer: '', date: today() });
   const [copy, setCopy] = useState({ dx: 0, dy: 0, dz: 6, n: 1 });
   const [parts, setParts] = useState(4);
   const viewer = useRef<ViewerHandle>(null);
   const [fitRev, setFitRev] = useState(0);
-  const [ctx, setCtx] = useState<{ x: number; y: number; node: number | null; member: number | null } | null>(null);
+  const [prompt, setPrompt] = useState<PromptState | null>(null);
+  const [pickMove, setPickMove] = useState<{ base: [number, number, number]; nodes: number[]; repeat: boolean; apply: (d: [number, number, number]) => void } | null>(null);
+  const [cvRef, cvSize] = useElementSize<HTMLDivElement>();
+  const [ctx, setCtx] = useState<{ x: number; y: number; node: number | null; member: number | null; endNode: number | null } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const cases = useMemo(() => [...model.loadCases.map(c => ({ id: c.id, name: c.name, combo: false })), ...model.combos.map(c => ({ id: c.id, name: c.name, combo: true }))], [model.loadCases, model.combos]);
@@ -96,15 +100,15 @@ export default function App() {
     const keep = <T extends { member: number }>(a: T[]) => a.filter(x => !sel.members.has(x.member));
     return { ...out, nodes, members, distLoads: [...keep(m.distLoads), ...dist], pointLoads: [...keep(m.pointLoads), ...point], thermal: [...keep(m.thermal), ...thermal] };
   });
-  const copySel = () => setModel(m => {
+  const copyWith = (tf: (n: Node, k: number) => [number, number, number], count = 1) => setModel(m => {
     const mem = m.members.filter(x => sel.members.has(x.id) || (sel.nodes.has(x.a) && sel.nodes.has(x.b)));
     const ids = new Set([...sel.nodes, ...mem.flatMap(x => [x.a, x.b])]), nodes = m.nodes.slice(), members = m.members.slice();
     const dist = m.distLoads.slice(), point = m.pointLoads.slice(), nl = m.nodeLoads.slice();
     let nid = nextId(nodes), mid = nextId(members);
-    for (let c = 1; c <= Math.max(1, Math.round(copy.n)); c++) {
+    for (let c = 1; c <= Math.max(1, Math.min(200, Math.round(count))); c++) {
       const map = new Map<number, number>();
       for (const n of m.nodes.filter(x => ids.has(x.id))) {
-        const p = [n.x + copy.dx * c, n.y + copy.dy * c, n.z + copy.dz * c].map(v => +v.toFixed(6));
+        const p = tf(n, c).map(v => +v.toFixed(6));
         const hit = nodes.find(x => Math.hypot(x.x - p[0], x.y - p[1], x.z - p[2]) < 1e-6);
         if (hit) map.set(n.id, hit.id); else { nodes.push({ ...n, id: nid, x: p[0], y: p[1], z: p[2] }); map.set(n.id, nid); nl.push(...m.nodeLoads.filter(l => l.node === n.id).map(l => ({ ...l, node: nid }))); nid++; }
       }
@@ -116,6 +120,12 @@ export default function App() {
     }
     return { ...m, nodes, members, distLoads: dist, pointLoads: point, nodeLoads: nl };
   });
+  const copySel = () => copyWith((n, k) => [n.x + copy.dx * k, n.y + copy.dy * k, n.z + copy.dz * k], copy.n);
+  /** Moves the selected nodes and the end nodes of the selected members. */
+  const moveWith = (tf: (n: Node) => [number, number, number]) => setModel(m => {
+    const ids = new Set([...sel.nodes, ...m.members.filter(x => sel.members.has(x.id)).flatMap(x => [x.a, x.b])]);
+    return { ...m, nodes: m.nodes.map(n => { if (!ids.has(n.id)) return n; const [x, y, z] = tf(n).map(v => +v.toFixed(6)); return { ...n, x, y, z }; }) };
+  });
 
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
@@ -123,38 +133,88 @@ export default function App() {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !typing) { e.preventDefault(); if (e.shiftKey) redo(); else undo(); }
       else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y' && !typing) { e.preventDefault(); redo(); }
       else if ((e.key === 'Delete' || e.key === 'Backspace') && !typing && tab !== 'results' && (sel.nodes.size || sel.members.size)) { e.preventDefault(); delSel(); }
-      else if (e.key === 'Escape' && !typing) { setTool('select'); setSel(noSel()); }
+      else if (e.key === 'Escape' && !typing) { setTool('select'); setSel(noSel()); setPickMove(null); setCtx(null); setPrompt(null); }
     };
     window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key);
   }, [undo, redo, delSel, sel, tab]);
   useEffect(() => { if (tab === 'results') setTool('select'); }, [tab]);
 
-  const menuItems = (): MenuItem[] => {
-    if (!ctx) return [];
-    const edit = tab !== 'results', nodes = [...sel.nodes], mems = [...sel.members];
-    const plural = (n: number, w: string) => (n === 1 ? `${w} ${n === 1 ? (w === 'Node' ? nodes[0] : mems[0]) : ''}` : `${n} ${w}s`);
+  const applyLoad = (lc: number, sp: LoadSpec) => {
+    setModel(m => {
+      if (sp.type === 'node') return { ...m, nodeLoads: [...m.nodeLoads, ...[...sel.nodes].map(node => ({ lc, node, fx: sp.f[0], fy: sp.f[1], fz: sp.f[2], mx: sp.f[3], my: sp.f[4], mz: sp.f[5] }))] };
+      if (sp.type === 'dist') return { ...m, distLoads: [...m.distLoads, ...[...sel.members].map(member => ({ lc, member, axes: sp.axes, dir: sp.dir, w1: sp.w1, w2: sp.w2, s: sp.s, e: sp.e }))] };
+      return { ...m, pointLoads: [...m.pointLoads, ...[...sel.members].map(member => ({ lc, member, axes: sp.axes, dir: sp.dir, p: sp.p, pos: sp.pos }))] };
+    });
+    setCaseId(lc); setDialog(null);
+  };
+  useEffect(() => {
+    if (!ctx && !prompt) return;
+    const away = (e: PointerEvent) => { if (!(e.target as Element).closest?.('[data-ui]')) { setCtx(null); setPrompt(null); } };
+    const gone = () => { setCtx(null); };
+    window.addEventListener('pointerdown', away, true); window.addEventListener('wheel', gone, { passive: true });
+    return () => { window.removeEventListener('pointerdown', away, true); window.removeEventListener('wheel', gone); };
+  }, [ctx, prompt]);
+  const menuOf = (): MenuState | null => {
+    if (!ctx) return null;
+    const edit = tab !== 'results', nodes = [...sel.nodes], mems = [...sel.members], at = { x: ctx.x, y: ctx.y };
+    const run = (fn: () => void) => () => { setCtx(null); fn(); };
+    const ask = (title: string, fields: PromptState['fields'], onSubmit: (v: number[]) => void) => { setCtx(null); setPrompt({ ...at, title, fields, onSubmit }); };
     const pick = (nn: Iterable<number>, mm: Iterable<number>) => setSel({ nodes: new Set(nn), members: new Set(mm) });
-    const items: MenuItem[] = [];
+    const moved = new Set([...nodes, ...model.members.filter(x => sel.members.has(x.id)).flatMap(x => [x.a, x.b])]);
+    const nodeMap2 = new Map(model.nodes.map(n => [n.id, n]));
+    const baseNode = nodeMap2.get(ctx.node ?? model.members.find(x => x.id === ctx.member)?.a ?? -1);
+    const startPick = (repeat: boolean) => {
+      if (!baseNode) return;
+      setCtx(null);
+      setPickMove({ base: [baseNode.x, baseNode.y, baseNode.z], nodes: [...moved], repeat, apply: d => (repeat ? copyWith(n => [n.x + d[0], n.y + d[1], n.z + d[2]]) : moveWith(n => [n.x + d[0], n.y + d[1], n.z + d[2]])) });
+    };
+    const inc = (copyMode: boolean) => () => ask(copyMode ? 'Copy By Increment' : 'Move By Increment',
+      [{ label: <>Δ<i>x</i> (m)</>, value: 0 }, { label: <>Δ<i>y</i> (m)</>, value: 0 }, { label: <>Δ<i>z</i> (m)</>, value: 0 }, ...(copyMode ? [{ label: 'Number of copies', value: 1 }] : [])],
+      ([dx, dy, dz, n]) => (copyMode ? copyWith((q, k) => [q.x + dx * k, q.y + dy * k, q.z + dz * k], n) : moveWith(q => [q.x + dx, q.y + dy, q.z + dz])));
+    const mirror = (copyMode: boolean): MenuItem[] => (['x', 'y', 'z'] as const).map((ax, i) => ({
+      label: `Mirror About ${ax.toUpperCase()} Plane…`,
+      onClick: () => ask(`Mirror About ${ax.toUpperCase()} =`, [{ label: <>{ax.toUpperCase()} (m)</>, value: 0 }], ([c]) => {
+        const tf = (q: Node): [number, number, number] => [i === 0 ? 2 * c - q.x : q.x, i === 1 ? 2 * c - q.y : q.y, i === 2 ? 2 * c - q.z : q.z];
+        if (copyMode) copyWith(q => tf(q)); else moveWith(tf);
+      }),
+    }));
+    const moveCopy: MenuItem[] = [
+      { label: 'Move', sub: [{ label: 'To a Point', onClick: () => startPick(false) }, { label: 'By Increment…', onClick: inc(false) }, ...mirror(false)] },
+      { label: 'Copy', sub: [{ label: 'To a Point', onClick: () => startPick(true) }, { label: 'By Increment…', onClick: inc(true) }, ...mirror(true)] },
+    ];
+    const items: MenuItem[] = []; let title = 'View';
+    const word = (n: number, w: string, only: number | undefined) => (n === 1 ? `${w} ${only}` : `${n} ${w}s`);
     if (ctx.node !== null && nodes.length) {
-      items.push({ title: true, label: plural(nodes.length, 'Node') });
-      if (edit) items.push({ label: 'Restraint', children: RESTRAINTS.map(([c, l]) => ({ label: `${l} (${c})`, onClick: () => patchNodes({ r: c }) })) });
-      items.push({ label: 'Select Connected Members', onClick: () => pick(sel.nodes, [...sel.members, ...model.members.filter(m => sel.nodes.has(m.a) || sel.nodes.has(m.b)).map(m => m.id)]) });
-      if (edit) items.push({ sep: true }, { label: nodes.length > 1 ? 'Delete Nodes' : 'Delete Node', danger: true, onClick: delSel });
-    } else if (ctx.member !== null && mems.length) {
-      items.push({ title: true, label: plural(mems.length, 'Member') });
+      title = word(nodes.length, 'Node', nodes[0]);
       if (edit) items.push(
-        { label: 'Section', children: [...model.sections.map(x => ({ label: x.name, onClick: () => patchMembers({ sec: x.id }) })), { sep: true }, { label: 'Add Section…', onClick: () => setDialog('section') }] },
-        { label: 'End Releases', children: RELEASES.map(([c, l]) => ({ label: `${l} (${c})`, onClick: () => patchMembers({ relA: c, relB: c }) })) },
-        { label: 'Member Type', children: ([['N', 'Normal'], ['T', 'Tension Only'], ['C', 'Compression Only']] as const).map(([c, l]) => ({ label: l, onClick: () => patchMembers({ type: c }) })) },
-        { label: 'Subdivide', children: [2, 3, 4, 5, 6, 8, 10].map(k => ({ label: `Into ${k} Parts`, onClick: () => subdivide(k) })) },
-      );
-      items.push({ label: 'Select Connected Nodes', onClick: () => pick([...sel.nodes, ...model.members.filter(m => sel.members.has(m.id)).flatMap(m => [m.a, m.b])], sel.members) });
-      if (edit) items.push({ sep: true }, { label: mems.length > 1 ? 'Delete Members' : 'Delete Member', danger: true, onClick: delSel });
+        { label: 'Apply Load…', onClick: run(() => { setLoadKind('node'); setDialog('load'); }) },
+        { label: 'Restraint', sub: RESTRAINTS.map(([c, l]) => ({ label: `${l} (${c})`, onClick: run(() => patchNodes({ r: c })) })) }, 'sep', ...moveCopy, 'sep');
+      items.push({ label: 'Select Connected Members', onClick: run(() => pick(sel.nodes, [...sel.members, ...model.members.filter(m => sel.nodes.has(m.a) || sel.nodes.has(m.b)).map(m => m.id)])) });
+      if (edit) items.push('sep', { label: nodes.length > 1 ? 'Delete Nodes' : 'Delete Node', danger: true, onClick: run(delSel) });
+    } else if (ctx.member !== null && mems.length) {
+      title = word(mems.length, 'Member', mems[0]);
+      const mem0 = model.members.find(m => m.id === ctx.member), sec0 = mem0?.sec;
+      const selMembers = model.members.filter(m => sel.members.has(m.id));
+      // A release at one end applies to the end of each selected member that is at that node
+      const atNode = (nid: number, code: string) => setModel(m => ({ ...m, members: m.members.map(x => (!sel.members.has(x.id) ? x : { ...x, relA: x.a === nid ? code : x.relA, relB: x.b === nid ? code : x.relB })) }));
+      const relMenu = (label: string, isOn: (m: Member, c: string) => boolean, apply: (c: string) => void): MenuItem => ({ label, sub: RELEASES.map(([c, l]) => ({ label: `${l} (${c})`, checked: selMembers.length > 0 && selMembers.every(m => isOn(m, c)), onClick: run(() => apply(c)) })) });
+      const nodeRel = (nid: number) => relMenu(`Release at Node ${nid}`, (m, c) => (m.a === nid ? m.relA : m.b === nid ? m.relB : c) === c, c => atNode(nid, c));
+      const bothRel = relMenu('Release at Both Ends', (m, c) => m.relA === c && m.relB === c, c => patchMembers({ relA: c, relB: c }));
+      const endItems: MenuItem[] = ctx.endNode !== null ? [nodeRel(ctx.endNode), bothRel] : mem0 ? [bothRel, nodeRel(mem0.a), nodeRel(mem0.b)] : [bothRel];
+      if (edit) items.push(
+        { label: 'Apply Load…', onClick: run(() => { setLoadKind('member'); setDialog('load'); }) },
+        { label: 'Section', sub: [...model.sections.map(x => ({ label: x.name, checked: mems.every(id => model.members.find(m => m.id === id)?.sec === x.id), onClick: run(() => patchMembers({ sec: x.id })) })), 'sep' as const, { label: 'Add Section…', onClick: run(() => setDialog('section')) }] },
+        ...endItems,
+        { label: 'Member Type', sub: ([['N', 'Normal'], ['T', 'Tension Only'], ['C', 'Compression Only']] as const).map(([c, l]) => ({ label: l, onClick: run(() => patchMembers({ type: c })) })) },
+        { label: 'Subdivide', sub: [2, 3, 4, 5, 6, 8, 10].map(k => ({ label: `Into ${k} Parts`, onClick: run(() => subdivide(k)) })) }, 'sep', ...moveCopy, 'sep');
+      items.push({ label: 'Select Same Section', onClick: run(() => pick(sel.nodes, model.members.filter(m => m.sec === sec0).map(m => m.id))) },
+        { label: 'Select Connected Nodes', onClick: run(() => pick([...sel.nodes, ...model.members.filter(m => sel.members.has(m.id)).flatMap(m => [m.a, m.b])], sel.members)) });
+      if (edit) items.push('sep', { label: mems.length > 1 ? 'Delete Members' : 'Delete Member', danger: true, onClick: run(delSel) });
     } else {
-      items.push({ label: 'Select All', onClick: () => pick(model.nodes.map(n => n.id), model.members.map(m => m.id)) },
-        { label: 'Clear Selection', disabled: !nodes.length && !mems.length, onClick: () => setSel(noSel()) }, { sep: true }, { label: 'Fit View', onClick: () => viewer.current?.fit() });
+      items.push({ label: 'Select All', onClick: run(() => pick(model.nodes.map(n => n.id), model.members.map(m => m.id))) },
+        { label: 'Clear Selection', disabled: !nodes.length && !mems.length, onClick: run(() => setSel(noSel())) }, 'sep', { label: 'Zoom to Fit', onClick: run(() => viewer.current?.fit()) });
     }
-    return items;
+    return { x: ctx.x, y: ctx.y, title, items };
   };
 
   const save = () => {
@@ -216,7 +276,7 @@ export default function App() {
   }, [okRes]);
 
   return (
-    <div className="fill-window min-h-screen bg-slate-100 lg:h-screen lg:overflow-hidden flex flex-col">
+    <div className="fill-window app-wide min-h-screen bg-slate-100 lg:h-screen lg:overflow-hidden flex flex-col">
       <AppHeader name="CosmicWind" logoSrc="/favicon.svg" onAbout={() => setDialog('about')} onReport={() => setDialog('report')}
         tabs={[{ key: 'structure', label: 'Structure', icon: <Box className="w-3.5 h-3.5" /> }, { key: 'loads', label: 'Loads', icon: <Weight className="w-3.5 h-3.5" /> }, { key: 'results', label: 'Analysis and Results', icon: <LineChart className="w-3.5 h-3.5" /> }]}
         activeTab={tab} onTab={setTab}
@@ -228,8 +288,8 @@ export default function App() {
           <button className="btn" title="Save the model to a file" onClick={save}><Save className="w-3.5 h-3.5" /><span className="hidden md:inline">Save</span></button>
           <input ref={fileRef} type="file" accept=".json,application/json" className="hidden" onChange={e => { open(e.target.files?.[0]); e.target.value = ''; }} />
         </div>} />
-      <main className="flex-1 flex flex-col lg:min-h-0 p-3 max-w-[1600px] w-full mx-auto">
-        <div className="tab-grid lg:!grid-cols-[minmax(320px,1fr)_minmax(0,3fr)_minmax(320px,1fr)]">
+      <main className="flex-1 flex flex-col lg:min-h-0 p-3 w-full">
+        <div className="tab-grid lg:!grid-cols-[minmax(320px,1fr)_minmax(0,900px)_minmax(320px,1fr)]">
           <div className="input-column scroll-thin">
             {tab !== 'results' && <>
               <div className="panel">
@@ -297,10 +357,11 @@ export default function App() {
           </div>
 
           <div className="results-column">
-            <div className="relative bg-slate-50 rounded-lg border border-slate-200 shadow-2xs overflow-hidden h-[520px] lg:h-auto lg:flex-1 lg:min-h-[240px]">
-              <Viewer ref={viewer} fitRev={fitRev} model={model} opts={opts} tool={tool} sel={sel} onSelect={setSel} loadCases={drawLoads} result={tab === 'results' ? okRes : null} mode={tab === 'results' ? modeShape : null} onAddNode={addNode} onAddMember={addMember}
+            <div ref={cvRef} className="relative bg-slate-50 rounded-lg border border-slate-200 shadow-2xs overflow-hidden h-[520px] lg:h-auto lg:flex-1 lg:min-h-[240px]">
+              <Viewer ref={viewer} fitRev={fitRev} pick={pickMove} onPickEnd={() => setPickMove(null)} model={model} opts={opts} tool={tool} sel={sel} onSelect={setSel} loadCases={drawLoads} result={tab === 'results' ? okRes : null} mode={tab === 'results' ? modeShape : null} onAddNode={addNode} onAddMember={addMember}
                 onContext={c => { setCtx(c); if (c.node !== null && !sel.nodes.has(c.node)) setSel({ nodes: new Set([c.node]), members: new Set() }); else if (c.node === null && c.member !== null && !sel.members.has(c.member)) setSel({ nodes: new Set(), members: new Set([c.member]) }); }} />
-              {ctx && <ContextMenu x={ctx.x} y={ctx.y} items={menuItems()} onClose={() => setCtx(null)} />}
+              {ctx && menuOf() && <ContextMenu menu={menuOf()!} W={cvSize.width} H={cvSize.height} onClose={() => setCtx(null)} />}
+              {prompt && <PromptBox prompt={prompt} W={cvSize.width} H={cvSize.height} onClose={() => setPrompt(null)} />}
               {tab !== 'results' && <div className="absolute top-2 left-2 toolbar w-[104px]">
                   <button className={`tool-btn ${tool === 'select' ? 'tool-btn-active' : ''}`} onClick={() => setTool('select')}><MousePointer2 className="w-3.5 h-3.5" />Select</button>
                   <button className={`tool-btn ${tool === 'node' ? 'tool-btn-active' : ''}`} title="Click on the working plane to add nodes" onClick={() => setTool('node')}><Dot className="w-3.5 h-3.5" />Node</button>
@@ -310,8 +371,10 @@ export default function App() {
               </div>}
               <div className="absolute top-2 right-2">
                 <div className="toolbar w-[112px]">
-                <button className="tool-btn" onClick={() => viewer.current?.fit()}><Maximize className="w-3.5 h-3.5" />Fit</button>
-                {(['iso', 'front', 'top', 'side'] as const).map(v => <button key={v} className="tool-btn" onClick={() => viewer.current?.view(v)}><Box className="w-3.5 h-3.5" />{{ iso: '3D', front: 'Front', top: 'Top', side: 'Side' }[v]}</button>)}
+                <ToolFlyout icon={<Eye className="w-3.5 h-3.5" />} label="View">
+                  <button className="tool-btn" onClick={() => viewer.current?.fit()}><Maximize className="w-3.5 h-3.5" />Fit</button>
+                  {(['iso', 'front', 'top', 'side'] as const).map(v => <button key={v} className="tool-btn" onClick={() => viewer.current?.view(v)}><Box className="w-3.5 h-3.5" />{{ iso: '3D', front: 'Front', top: 'Top', side: 'Side' }[v]}</button>)}
+                </ToolFlyout>
                 <div className="tool-sep" />
                 <button className={`tool-btn ${!opts.solid ? 'tool-btn-active' : ''}`} title="Wireframe view" onClick={() => o('solid')(false)}><Waypoints className="w-3.5 h-3.5" />Wireframe</button>
                 <button className={`tool-btn ${opts.solid ? 'tool-btn-active' : ''}`} title="Rendered 3D view of the member cross sections" onClick={() => o('solid')(true)}><Cuboid className="w-3.5 h-3.5" />Rendered</button>
@@ -324,7 +387,7 @@ export default function App() {
                 </div>
               </div>
               <div className="absolute bottom-2 right-3 max-w-[70%] text-right text-[11px] text-slate-500 pointer-events-none">
-                {tool === 'select' ? 'Drag to rotate · click twice on empty space to box-select · middle-drag or scroll to zoom · right-drag to pan · right-click for options' : tool === 'node' ? 'Click on the working plane to place nodes' : tool === 'measure' ? 'Click two points to measure (nodes snap, others lie on the working plane); right-click or Esc clears' : 'Click a node or the working plane to start and continue members; Escape to finish'}
+                {pickMove ? `Click the point to ${pickMove.repeat ? 'copy' : 'move'} to (nodes snap); right-click or Esc to finish` : tool === 'select' ? 'Drag to rotate · click twice on empty space to box-select · middle-drag or scroll to zoom · right-drag to pan · right-click for options' : tool === 'node' ? 'Click on the working plane to place nodes' : tool === 'measure' ? 'Click two points to measure (nodes snap, others lie on the working plane); right-click or Esc clears' : 'Click a node or the working plane to start and continue members; Escape to finish'}
               </div>
             </div>
           </div>
@@ -396,6 +459,7 @@ export default function App() {
       </main>
       {dialog === 'about' && <About onClose={() => setDialog(null)} />}
       {dialog === 'new' && <TemplateDialog onClose={() => setDialog(null)} onCreate={m => { setModel(() => m); setFitRev(r => r + 1); setSel(noSel()); setCaseId(1); setModeIx(null); setDialog(null); setTab('structure'); }} />}
+      {dialog === 'load' && <LoadDialog kind={loadKind} count={loadKind === 'node' ? sel.nodes.size : sel.members.size} cases={model.loadCases} lc0={lcOnly} onClose={() => setDialog(null)} onApply={applyLoad} />}
       {dialog === 'section' && <SectionDialog assign={mSel} onClose={() => setDialog(null)} onAdd={(name, p, outline) => {
         setModel(m => {
           const ex = m.sections.find(s => s.name === name), id = ex?.id ?? nextId(m.sections);

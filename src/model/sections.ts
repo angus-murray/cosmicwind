@@ -110,9 +110,9 @@ const EA: [number, number[]][] = [
 ];
 
 export const LIBRARY: LibSection[] = [
-  ...UB.map(([name, ...d]) => ({ name, group: 'Universal Beams', outline: { shape: 'i' as const, dims: d.slice(0, 4) }, ...iSection(...(d as [number, number, number, number, number])) })),
-  ...UC.map(([name, ...d]) => ({ name, group: 'Universal Columns', outline: { shape: 'i' as const, dims: d.slice(0, 4) }, ...iSection(...(d as [number, number, number, number, number])) })),
-  ...PFC.map(([name, ...d]) => ({ name, group: 'Parallel Flange Channels', outline: { shape: 'channel' as const, dims: d.slice(0, 4) }, ...channel(...(d as [number, number, number, number, number])) })),
+  ...UB.map(([name, ...d]) => ({ name, group: 'Universal Beams', outline: { shape: 'i' as const, dims: d }, ...iSection(...(d as [number, number, number, number, number])) })),
+  ...UC.map(([name, ...d]) => ({ name, group: 'Universal Columns', outline: { shape: 'i' as const, dims: d }, ...iSection(...(d as [number, number, number, number, number])) })),
+  ...PFC.map(([name, ...d]) => ({ name, group: 'Parallel Flange Channels', outline: { shape: 'channel' as const, dims: d }, ...channel(...(d as [number, number, number, number, number])) })),
   ...SHS.flatMap(([b, ts]) => ts.map(t => ({ name: `${b}×${b}×${t.toFixed(1)} SHS`, group: 'Square Hollow Sections', outline: { shape: 'rhs' as const, dims: [b, b, t] }, ...rhs(b, b, t) }))),
   ...RHS.flatMap(([d, b, ts]) => ts.map(t => ({ name: `${d}×${b}×${t.toFixed(1)} RHS`, group: 'Rectangular Hollow Sections', outline: { shape: 'rhs' as const, dims: [d, b, t] }, ...rhs(d, b, t) }))),
   ...CHS.flatMap(([d, ts]) => ts.map(t => ({ name: `${d.toFixed(1)}×${t.toFixed(1)} CHS`, group: 'Circular Hollow Sections', outline: { shape: 'chs' as const, dims: [d, t] }, ...chs(d, t) }))),
@@ -148,26 +148,43 @@ export const shapeName = (shape: Shape, d: number[]) =>
 type Pt = [number, number];
 const ring = (n: number, r: number): Pt[] => Array.from({ length: n }, (_, i) => [r * Math.cos(2 * Math.PI * i / n), r * Math.sin(2 * Math.PI * i / n)]);
 const box = (d: number, b: number): Pt[] => [[-d / 2, -b / 2], [-d / 2, b / 2], [d / 2, b / 2], [d / 2, -b / 2]];
-/** Rectangle with rounded corners of radius r, counter-clockwise. */
-const rbox = (d: number, b: number, r: number, n = 4): Pt[] => ([[1, 1, 0], [-1, 1, 90], [-1, -1, 180], [1, -1, 270]] as const).flatMap(([sy, sz, a0]) =>
-  Array.from({ length: n + 1 }, (_, i): Pt => { const a = (a0 + 90 * i / n) * Math.PI / 180; return [sy * (d / 2 - r) + r * Math.cos(a), sz * (b / 2 - r) + r * Math.sin(a)]; }));
+/** Rounds the corners of a closed polygon: radii[i] is the radius at vertex i (0 or missing leaves it sharp). */
+function fillet(l: Pt[], radii: number[], n = 6): Pt[] {
+  const out: Pt[] = [];
+  l.forEach((v, i) => {
+    const r = radii[i] ?? 0, a = l[(i + l.length - 1) % l.length], b = l[(i + 1) % l.length];
+    if (!(r > 0)) { out.push(v); return; }
+    const la = Math.hypot(a[0] - v[0], a[1] - v[1]), lb = Math.hypot(b[0] - v[0], b[1] - v[1]);
+    const u1: Pt = [(a[0] - v[0]) / la, (a[1] - v[1]) / la], u2: Pt = [(b[0] - v[0]) / lb, (b[1] - v[1]) / lb];
+    const th = Math.acos(Math.max(-1, Math.min(1, u1[0] * u2[0] + u1[1] * u2[1])));
+    const t = Math.min(r / Math.tan(th / 2), la / 2, lb / 2), rr = t * Math.tan(th / 2); // tangent length, kept inside the adjoining edges
+    const bx = u1[0] + u2[0], by = u1[1] + u2[1], bl = Math.hypot(bx, by), cd = rr / Math.sin(th / 2);
+    const c: Pt = [v[0] + bx / bl * cd, v[1] + by / bl * cd];
+    const a1 = Math.atan2(v[1] + u1[1] * t - c[1], v[0] + u1[0] * t - c[0]), a2 = Math.atan2(v[1] + u2[1] * t - c[1], v[0] + u2[0] * t - c[0]);
+    let d = a2 - a1; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI;
+    for (let k = 0; k <= n; k++) out.push([c[0] + rr * Math.cos(a1 + d * k / n), c[1] + rr * Math.sin(a1 + d * k / n)]);
+  });
+  return out;
+}
+const rbox = (d: number, b: number, r: number): Pt[] => fillet(box(d, b), [r, r, r, r]);
 const area = (l: Pt[]) => l.reduce((s, p, i) => { const q = l[(i + 1) % l.length]; return s + (p[0] * q[1] - q[0] * p[1]) / 2; }, 0);
 
 /**
  * Cross section drawn in the rendered view: closed loops of [y, z] points (mm) about the area centroid, the outer loop
- * first and counter-clockwise, any holes after it and clockwise. Corner radii of hollow sections are drawn; root fillets are not.
+ * first and counter-clockwise, any holes after it and clockwise. Corner radii of hollow sections (outer 2.5 t, or 2 t up to 3 mm) and the root fillets of I-sections and channels are drawn.
  */
 export function outlineLoops({ shape, dims: d }: Outline): Pt[][] {
   let loops: Pt[][];
   switch (shape) {
     case 'rect': loops = [box(d[0], d[1])]; break;
     case 'circle': loops = [ring(24, d[0] / 2)]; break;
-    case 'i': { const [D, b, tf, tw] = d, h = D / 2, w = b / 2, v = tw / 2;
-      loops = [[[-h, -w], [-h, w], [-h + tf, w], [-h + tf, v], [h - tf, v], [h - tf, w], [h, w], [h, -w], [h - tf, -w], [h - tf, -v], [-h + tf, -v], [-h + tf, -w]]]; break; }
-    case 'channel': { const [D, b, tf, tw] = d, h = D / 2;
-      loops = [[[-h, 0], [-h, b], [-h + tf, b], [-h + tf, tw], [h - tf, tw], [h - tf, b], [h, b], [h, 0]]]; break; }
+    case 'i': { const [D, b, tf, tw, r = 0] = d, h = D / 2, w = b / 2, v = tw / 2;
+      loops = [fillet([[-h, -w], [-h, w], [-h + tf, w], [-h + tf, v], [h - tf, v], [h - tf, w], [h, w], [h, -w], [h - tf, -w], [h - tf, -v], [-h + tf, -v], [-h + tf, -w]],
+        [0, 0, 0, r, r, 0, 0, 0, 0, r, r, 0])]; break; }
+    case 'channel': { const [D, b, tf, tw, r = 0] = d, h = D / 2;
+      loops = [fillet([[-h, 0], [-h, b], [-h + tf, b], [-h + tf, tw], [h - tf, tw], [h - tf, b], [h, b], [h, 0]], [0, 0, 0, r, r, 0, 0, 0])]; break; }
     case 'angle': { const [D, b, t] = d; loops = [[[0, 0], [0, b], [t, b], [t, t], [D, t], [D, 0]]]; break; }
-    case 'rhs': { const ro = Math.min((d[2] <= 3 ? 2 : 2.5) * d[2], d[0] / 2, d[1] / 2); loops = [rbox(d[0], d[1], ro), rbox(d[0] - 2 * d[2], d[1] - 2 * d[2], Math.max(ro - d[2], 0.01))]; break; }
+    case 'rhs': { const ro = Math.min((d[2] <= 3 ? 2 : 2.5) * d[2], d[0] / 2, d[1] / 2); loops = [rbox(d[0], d[1], ro), rbox(d[0] - 2 * d[2], d[1] - 2 * d[2], ro - d[2])]; break; }
     case 'chs': loops = [ring(24, d[0] / 2), ring(24, d[0] / 2 - d[1])]; break;
   }
   // centroid of the area enclosed by the outer loop less the holes
@@ -185,3 +202,6 @@ export function equivalentOutline(p: Props): Outline {
   const k = Math.sqrt(Math.max(p.Iz, 1e-9) / Math.max(p.Iy, 1e-9)), b = Math.sqrt(p.A / k);
   return { shape: 'rect', dims: [Math.min(p.A / b, 5000), Math.min(b, 5000)] };
 }
+
+/** Outline of a stored section: its own, else the library section of the same name (models saved before outlines were kept), else an equivalent rectangle. */
+export const outlineOf = (s: { name: string; outline?: Outline } & Props): Outline => s.outline ?? LIBRARY.find(l => l.name === s.name)?.outline ?? equivalentOutline(s);

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { CollapsePanel, Formula, Modal, NumberField, Segmented, SelectField } from 'engineering-ui';
 import { LIB_GROUPS, LIBRARY, SHAPES, shapeName, shapeProps, type Outline, type Props, type Shape } from '../model/sections';
 import { TEMPLATES } from '../model/templates';
-import type { Model } from '../model/types';
+import type { Axes, Dir, Model, PointDir } from '../model/types';
 
 export function TemplateDialog({ onClose, onCreate }: { onClose: () => void; onCreate: (m: Model) => void }) {
   const [key, setKey] = useState(TEMPLATES[0].key);
@@ -123,6 +123,52 @@ export function About({ onClose }: { onClose: () => void }) {
         <P>McGuire, W., Gallagher, R. H. and Ziemian, R. D., <i>Matrix Structural Analysis</i>, 2nd edition, 2000.</P>
         <P>Bathe, K. J., <i>Finite Element Procedures</i>, 2nd edition, 2014 (skyline solution and subspace iteration).</P>
       </CollapsePanel>
+    </Modal>
+  );
+}
+
+export type LoadSpec =
+  | { type: 'node'; f: number[] }
+  | { type: 'dist'; axes: Axes; dir: Dir; w1: number; w2: number; s: number; e: number }
+  | { type: 'point'; axes: Axes; dir: PointDir; p: number; pos: number };
+
+/** Applies a load to the selected nodes or members, in the chosen load case. */
+export function LoadDialog({ kind, count, cases, lc0, onClose, onApply }: {
+  kind: 'node' | 'member'; count: number; cases: { id: number; name: string }[]; lc0: number; onClose: () => void; onApply: (lc: number, spec: LoadSpec) => void;
+}) {
+  const [lc, setLc] = useState(lc0);
+  const [mode, setMode] = useState<'dist' | 'point'>('dist');
+  const [axes, setAxes] = useState<Axes>('G');
+  const [dir, setDir] = useState<PointDir>('Y');
+  const [w1, setW1] = useState(-5), [w2, setW2] = useState(-5), [s0, setS0] = useState(0), [e0, setE0] = useState(100);
+  const [p, setP] = useState(-10), [pos, setPos] = useState(50);
+  const [f, setF] = useState([0, -10, 0, 0, 0, 0]);
+  const dirOpts = (moments: boolean) => [...(['X', 'Y', 'Z'] as const).map(d => ({ value: d, label: moments ? `Force ${d}` : d })), ...(moments ? (['MX', 'MY', 'MZ'] as const).map(d => ({ value: d, label: `Moment ${d.slice(1)}` })) : [])];
+  const ok = kind === 'node' ? f.some(v => v !== 0) : mode === 'dist' ? e0 > s0 && s0 >= 0 && e0 <= 100 && (w1 !== 0 || w2 !== 0) : p !== 0 && pos >= 0 && pos <= 100;
+  const apply = () => onApply(lc, kind === 'node' ? { type: 'node', f }
+    : mode === 'dist' ? { type: 'dist', axes, dir: (['X', 'Y', 'Z'].includes(dir) ? dir : 'Y') as Dir, w1, w2, s: s0, e: e0 } : { type: 'point', axes, dir, p, pos });
+  return (
+    <Modal title={kind === 'node' ? 'Apply Node Load' : 'Apply Member Load'} onClose={onClose} variant="dialog">
+      <div className="space-y-3">
+        <SelectField label="Load Case" value={String(lc)} onChange={v => setLc(Number(v))} options={cases.map(c => ({ value: String(c.id), label: `${c.id}: ${c.name}` }))} />
+        {kind === 'node' ? <div className="grid grid-cols-3 gap-2">
+          {['Fx (kN)', 'Fy (kN)', 'Fz (kN)', 'Mx (kNm)', 'My (kNm)', 'Mz (kNm)'].map((l, i) => <NumberField key={l} label={l} value={f[i]} step={1} onChange={v => setF(f.map((x, k) => (k === i ? v : x)))} />)}
+        </div> : <>
+          <Segmented value={mode} onChange={v => { setMode(v); if (v === 'dist' && ['MX', 'MY', 'MZ'].includes(dir)) setDir('Y'); }} options={[{ value: 'dist', label: 'Distributed' }, { value: 'point', label: 'Point' }]} />
+          <div className="grid grid-cols-2 gap-2">
+            <SelectField label="Axes" value={axes} onChange={v => setAxes(v as Axes)} options={[{ value: 'G', label: 'Global' }, { value: 'L', label: 'Local' }]} />
+            <SelectField label="Direction" value={dir} onChange={v => setDir(v as PointDir)} options={dirOpts(mode === 'point')} />
+            {mode === 'dist' ? <>
+              <NumberField label="Start Load (kN/m)" value={w1} step={1} onChange={setW1} /><NumberField label="End Load (kN/m)" value={w2} step={1} onChange={setW2} />
+              <NumberField label="Start (%)" value={s0} min={0} max={100} step={10} onChange={setS0} /><NumberField label="End (%)" value={e0} min={0} max={100} step={10} onChange={setE0} />
+            </> : <>
+              <NumberField label={dir.length === 2 ? 'Moment (kNm)' : 'Force (kN)'} value={p} step={1} onChange={setP} /><NumberField label="Position (%)" value={pos} min={0} max={100} step={10} onChange={setPos} />
+            </>}
+          </div>
+        </>}
+        <p className="text-[11px] text-slate-500">Applies to the {count} selected {kind}{count > 1 ? 's' : ''}. Negative Y is downward.</p>
+        <div className="flex justify-end gap-2"><button className="btn" onClick={onClose}>Cancel</button><button className="btn-primary" disabled={!ok} onClick={apply}>Apply Load</button></div>
+      </div>
     </Modal>
   );
 }

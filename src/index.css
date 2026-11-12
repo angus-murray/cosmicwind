@@ -14,3 +14,6 @@
   .subtab-active { @apply bg-blue-600 text-white hover:bg-blue-600; }
 }
 svg text { user-select: none; }
+
+/* The app spans the whole window: the shared header and tabs lose their 1600 px limit, the graphics column keeps a fixed width and the two outer columns take the rest */
+.app-wide .max-w-\[1600px\] { max-width: none; }

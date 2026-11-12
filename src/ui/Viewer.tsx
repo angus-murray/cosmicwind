@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { useElementSize } from 'engineering-ui';
 import type { Model } from '../model/types';
-import { equivalentOutline, outlineLoops } from '../model/sections';
+import { outlineLoops, outlineOf } from '../model/sections';
 import { memberAxes, type CaseResult, type Vec6 } from '../solver/frame';
 
 export type Diagram = 'none' | 'N' | 'Vy' | 'Vz' | 'T' | 'My' | 'Mz';
@@ -19,6 +19,12 @@ export interface ViewerHandle { fit: () => void; view: (v: 'iso' | 'front' | 'to
 type V3 = [number, number, number];
 const RED = '#dc2626', GREEN = '#059669', BLUE = '#2563eb', PINK = '#c026d3', AMBER = '#d97706';
 export const fmt = (v: number) => { const a = Math.abs(v); return (a >= 100 ? v.toFixed(0) : a >= 10 ? v.toFixed(1) : a >= 0.01 || a === 0 ? v.toFixed(2) : v.toExponential(1)).replace('-', '−'); };
+/** Member colour by section number: bright, well separated, and clear of the red, green and blue used for loads, reactions and selection. */
+const SECTION_COLOURS = ['#7c3aed', '#0d9488', '#ea580c', '#db2777', '#0284c7', '#ca8a04', '#4f46e5', '#0891b2', '#c026d3', '#64748b'];
+export const sectionColour = (id: number) => SECTION_COLOURS[(Math.max(1, Math.round(id)) - 1) % SECTION_COLOURS.length];
+const rgb = (h: string) => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+const mixRgb = (a: number[], b: number[], t: number) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
+const toHex = (c: number[]) => `rgb(${c.join()})`;
 const halo: React.CSSProperties = { paintOrder: 'stroke', stroke: 'var(--color-slate-50)', strokeWidth: 3, strokeLinejoin: 'round' };
 const DIAGRAM_COLOUR: Record<Diagram, string> = { none: BLUE, N: AMBER, Vy: GREEN, Vz: GREEN, T: PINK, My: BLUE, Mz: BLUE };
 
@@ -31,8 +37,10 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   /** Right click (without dragging) in the select tool: where, and the node or member under the pointer. */
   /** Changes when a different model is loaded, which refits the view. */
   fitRev?: number;
-  onContext?: (c: { x: number; y: number; node: number | null; member: number | null }) => void;
-}>(function Viewer({ model, opts, tool, sel, onSelect, loadCases, result, mode, onAddNode, onAddMember, onContext, fitRev = 0 }, handle) {
+  /** Move or copy to a point: the point to pick the offset from, the nodes that travel, and what to do with the offset. */
+  pick?: { base: V3; nodes: number[]; repeat: boolean; apply: (d: V3) => void } | null; onPickEnd?: () => void;
+  onContext?: (c: { x: number; y: number; node: number | null; member: number | null; /** Node at the end of the member that was clicked near, if any. */ endNode: number | null }) => void;
+}>(function Viewer({ model, opts, tool, sel, onSelect, loadCases, result, mode, onAddNode, onAddMember, onContext, fitRev = 0, pick, onPickEnd }, handle) {
   const [box, size] = useElementSize<HTMLDivElement>();
   const svgRef = useRef<SVGSVGElement>(null);
   // c is the orbit pivot (the model centre at the last fit); px, py are the screen offset of the pivot from the view centre.
@@ -103,6 +111,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   /** Measure tool: the two points, and the point under the pointer while the second is pending. */
   const [measure, setMeasure] = useState<{ a: V3 | null; b: V3 | null }>({ a: null, b: null });
   const [mLive, setMLive] = useState<V3 | null>(null);
+  const [pickLive, setPickLive] = useState<V3 | null>(null);
   /** Where the drawing cursor lands (screen pixels) when a node or the snap grid captures it. */
   const [snapAt, setSnapAt] = useState<[number, number] | null>(null);
   /** Node or member under the pointer, highlighted so the click target is clear. */
@@ -129,13 +138,14 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   const move = (e: React.PointerEvent) => {
     const [lx, ly] = local(e), dragging = !!drag.current?.moved;
     if (!dragging) {
-      const h = hitAt(lx, ly), hn = h.hitN, hm = tool === 'select' ? h.hitM : null; // draw tools snap to nodes only
+      const h = hitAt(lx, ly), hn = h.hitN, hm = tool === 'select' && !pick ? h.hitM : null; // draw tools snap to nodes only
       setHover(v => (v.n === hn && v.m === hm ? v : { n: hn, m: hm }));
-      if (tool !== 'select') {
+      if (tool !== 'select' || pick) {
         const nn = hn !== null ? nodeMap.get(hn) : null, pt: V3 | null = nn ? [nn.x, nn.y, nn.z] : opts.snap > 0 ? onPlane(lx, ly) : null, at = pt ? P(pt) : null;
         setSnapAt(at);
         if (tool === 'member' && chain !== null) setCursor(at ?? [lx, ly]);
         if (tool === 'measure' && measure.a && !measure.b) setMLive(pt ?? onPlane(lx, ly));
+        if (pick) setPickLive(pt ?? onPlane(lx, ly));
       }
     } else {
       setHover(v => (v.n === null && v.m === null ? v : { n: null, m: null })); setSnapAt(null);
@@ -155,6 +165,10 @@ export const Viewer = React.forwardRef<ViewerHandle, {
     let hitN: number | null = null, best = 9;
     for (const n of model.nodes) { const q = P([n.x, n.y, n.z]), dist = Math.hypot(q[0] - sx, q[1] - sy); if (dist < best) { best = dist; hitN = n.id; } }
     let hitM: number | null = null;
+    if (hitN === null && opts.solid) { // rendered view: any point on a visible face of a member picks it (nearest face first)
+      const inside = (polys: [number, number][][]) => { let c = false; for (const l of polys) for (let i = 0, j = l.length - 1; i < l.length; j = i++) if ((l[i][1] > sy) !== (l[j][1] > sy) && sx < (l[j][0] - l[i][0]) * (sy - l[i][1]) / (l[j][1] - l[i][1]) + l[i][0]) c = !c; return c; };
+      for (let k = solids.length - 1; k >= 0; k--) { const f = solids[k]; if (sx >= f.x0 && sx <= f.x1 && sy >= f.y0 && sy <= f.y1 && inside(f.polys)) return { hitN: null, hitM: f.id }; }
+    }
     if (hitN === null) {
       best = 6;
       for (const m of model.members) {
@@ -193,13 +207,24 @@ export const Viewer = React.forwardRef<ViewerHandle, {
     const [sx, sy] = local(e);
     if (d.moved) return;
     if (e.button === 2) {
+      if (pick) { onPickEnd?.(); return; }
       if (anchor.current) { anchor.current = null; setMarq(null); return; }
-      if (tool === 'select') { const h = hitAt(sx, sy); onContext?.({ x: sx, y: sy, node: h.hitN, member: h.hitM }); } else { setChain(null); setMeasure({ a: null, b: null }); }
+      if (tool === 'select') {
+        const h = hitAt(sx, sy), g = h.hitM !== null ? geo.find(x => x.m.id === h.hitM) : null;
+        let endNode: number | null = null;
+        if (g) { const pa = P(g.A), pb = P(g.B), da = Math.hypot(sx - pa[0], sy - pa[1]), db = Math.hypot(sx - pb[0], sy - pb[1]), len = Math.hypot(pb[0] - pa[0], pb[1] - pa[1]); if (Math.min(da, db) < Math.max(14, 0.3 * len)) endNode = da < db ? g.m.a : g.m.b; }
+        onContext?.({ x: sx, y: sy, node: h.hitN, member: h.hitM, endNode });
+      } else { setChain(null); setMeasure({ a: null, b: null }); }
       return;
     }
     if (e.button !== 0) return;
     const { hitN, hitM } = hitAt(sx, sy);
     const add = e.shiftKey || e.ctrlKey || e.metaKey;
+    if (pick) { // move or copy to the point clicked: a node, or a point on the working plane
+      const nn = hitN !== null ? nodeMap.get(hitN) : null, pt: V3 | null = nn ? [nn.x, nn.y, nn.z] : onPlane(sx, sy); if (!pt) return;
+      pick.apply([pt[0] - pick.base[0], pt[1] - pick.base[1], pt[2] - pick.base[2]]); if (!pick.repeat) onPickEnd?.();
+      return;
+    }
     if (tool === 'measure') { // first click, second click, then a new measurement
       const nn = hitN !== null ? nodeMap.get(hitN) : null, pt: V3 | null = nn ? [nn.x, nn.y, nn.z] : onPlane(sx, sy); if (!pt) return;
       setMeasure(m => (m.a && !m.b ? { ...m, b: pt } : { a: pt, b: null })); setMLive(null);
@@ -265,7 +290,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
     const loopCache = new Map<number, [number, number][][]>();
     const loopsOf = (id: number) => {
       let l = loopCache.get(id);
-      if (!l) { const sc = secs.get(id); l = sc ? outlineLoops(sc.outline ?? equivalentOutline(sc)) : outlineLoops({ shape: 'rect', dims: [200, 100] }); loopCache.set(id, l); }
+      if (!l) { const sc = secs.get(id); l = sc ? outlineLoops(outlineOf(sc)) : outlineLoops({ shape: 'rect', dims: [200, 100] }); loopCache.set(id, l); }
       return l;
     };
     type Face = { id: number; pts: V3[]; n: V3; caps?: V3[][] };
@@ -287,11 +312,12 @@ export const Viewer = React.forwardRef<ViewerHandle, {
     const rz: V3 = [basis.rx[1] * basis.ry[2] - basis.rx[2] * basis.ry[1], basis.rx[2] * basis.ry[0] - basis.rx[0] * basis.ry[2], basis.rx[0] * basis.ry[1] - basis.rx[1] * basis.ry[0]]; // towards the viewer
     const light: V3 = [0, 1, 2].map(i => 0.55 * rz[i] - 0.35 * basis.rx[i] + 0.6 * basis.ry[i]) as V3, ll = Math.hypot(...light);
     const dot = (a: V3, b: V3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-    const out: { id: number; d: string; depth: number; shade: number }[] = [];
+    const out: { id: number; d: string; depth: number; shade: number; polys: [number, number][][]; x0: number; x1: number; y0: number; y1: number }[] = [];
     for (const f of mesh) {
       if (dot(f.n, rz) <= 1e-6) continue;
       const ring = f.caps ?? [f.pts], c = ring[0].reduce((m, p) => [m[0] + p[0] / ring[0].length, m[1] + p[1] / ring[0].length, m[2] + p[2] / ring[0].length], [0, 0, 0]) as V3;
-      out.push({ id: f.id, depth: dot(c, rz), shade: 0.3 + 0.7 * Math.max(0, dot(f.n, light) / ll), d: ring.map(l => `${path(l.map(P))}Z`).join('') });
+      const polys = ring.map(l => l.map(P)), xs = polys[0].map(q => q[0]), ys = polys[0].map(q => q[1]);
+      out.push({ id: f.id, depth: dot(c, rz), shade: 0.3 + 0.7 * Math.max(0, dot(f.n, light) / ll), d: polys.map(l => `${path(l)}Z`).join(''), polys, x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) });
     }
     return out.sort((a, b) => a.depth - b.depth);
   }, [mesh, basis, P, opts.solid]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -411,27 +437,46 @@ export const Viewer = React.forwardRef<ViewerHandle, {
     for (let b = b0; b <= b1 + 1e-9; b += step) { const p = pt(a0, b), q = pt(a1, b); grid.push(<line key={`gb${b}`} x1={p[0]} y1={p[1]} x2={q[0]} y2={q[1]} stroke="#e2e8f0" strokeWidth={1} />); }
   }
 
+  const memSec = new Map(model.members.map(m => [m.id, m.sec]));
+  const legend = [...new Set(model.members.map(m => m.sec))].sort((a, b) => a - b);
   const springNodes = new Set(model.springs.filter(s => s.k.some(v => v > 0)).map(s => s.node));
   const secName = new Map(model.sections.map(s => [s.id, s.name]));
   const chainNode = chain !== null ? nodeMap.get(chain) : null;
   const faded = !!(result || mode) && (opts.diagram !== 'none' || opts.deflected || !!mode);
   return (
     <div ref={box} className="absolute inset-0 overflow-hidden">
-      <svg ref={svgRef} width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="block touch-none select-none" style={{ cursor: tool === 'select' ? 'default' : snapAt ? 'none' : 'crosshair' }}
+      <svg ref={svgRef} width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="block touch-none select-none" style={{ cursor: tool === 'select' && !pick ? 'default' : snapAt ? 'none' : 'crosshair' }}
         onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerLeave={() => { setHover({ n: null, m: null }); setSnapAt(null); }} onMouseDown={e => { if (e.button === 1) e.preventDefault(); }} onContextMenu={e => e.preventDefault()}>
         <rect width={W} height={H} fill="#f8fafc" />
         {grid}
         {geo.map(g => {
           const p = P(g.A), q = P(g.B), on = sel.members.has(g.m.id), off = result?.members.get(g.m.id)?.active === false;
-          return <line key={g.m.id} x1={p[0]} y1={p[1]} x2={q[0]} y2={q[1]} stroke={on ? BLUE : faded ? '#94a3b8' : '#334155'} strokeWidth={opts.solid ? 1.25 : on ? 3.5 : faded ? 1.5 : 2.25} strokeLinecap="round"
-            strokeDasharray={!opts.solid && (off || g.m.type !== 'N') ? '6 4' : undefined} opacity={off ? 0.5 : 1} />;
+          const base = rgb(sectionColour(g.m.sec)), col = toHex(faded ? mixRgb(base, [148, 163, 184], 0.55) : base);
+          return <g key={g.m.id}>
+            {on && <line x1={p[0]} y1={p[1]} x2={q[0]} y2={q[1]} stroke={BLUE} strokeWidth={opts.solid ? 7 : 8} strokeOpacity={0.35} strokeLinecap="round" />}
+            <line x1={p[0]} y1={p[1]} x2={q[0]} y2={q[1]} stroke={col} strokeWidth={opts.solid ? 1.25 : faded ? 1.75 : 2.75} strokeLinecap="round"
+              strokeDasharray={!opts.solid && (off || g.m.type !== 'N') ? '6 4' : undefined} opacity={off ? 0.5 : 1} />
+          </g>;
         })}
         {opts.solid && <g strokeLinejoin="round" strokeWidth={0.75} pointerEvents="none">{solids.map((f, i) => {
-          const on = sel.members.has(f.id), off = result?.members.get(f.id)?.active === false, lo = on ? [147, 197, 253] : faded ? [203, 213, 225] : [100, 116, 139], hi = on ? [29, 78, 216] : faded ? [226, 232, 240] : [226, 232, 240];
-          const col = `rgb(${lo.map((v, k) => Math.round(v + (hi[k] - v) * f.shade)).join()})`;
+          const on = sel.members.has(f.id), off = result?.members.get(f.id)?.active === false;
+          let base = rgb(sectionColour(memSec.get(f.id) ?? 1)); if (faded) base = mixRgb(base, [226, 232, 240], 0.55); if (on) base = mixRgb(base, rgb(BLUE), 0.4);
+          const col = toHex(mixRgb(mixRgb(base, [15, 23, 42], 0.5), mixRgb(base, [255, 255, 255], 0.5), f.shade));
           return <path key={i} d={f.d} fill={col} stroke={col} fillRule="evenodd" opacity={off ? 0.5 : 1} />;
         })}</g>}
         {hover.m !== null && (() => { const g = geo.find(x => x.m.id === hover.m); if (!g) return null; const p = P(g.A), q = P(g.B); return <line x1={p[0]} y1={p[1]} x2={q[0]} y2={q[1]} stroke={AMBER} strokeWidth={9} strokeOpacity={0.4} strokeLinecap="round" pointerEvents="none" />; })()}
+        {geo.flatMap(g => ([['A', g.m.relA, g.A, g.B], ['B', g.m.relB, g.B, g.A]] as const).map(([end, relRaw, at, from]) => {
+          const rel = (relRaw || 'FFFFFF').toUpperCase().padEnd(6, 'F'); if (!rel.includes('R')) return null;
+          const p0 = P(at), p1 = P(from), len = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]); if (len < 28) return null;
+          const u = [(p1[0] - p0[0]) / len, (p1[1] - p0[1]) / len], nx = -u[1], ny = u[0], pt = (k: number): [number, number] => [p0[0] + u[0] * k, p0[1] + u[1] * k];
+          const bend = rel[4] === 'R' || rel[5] === 'R', tors = rel[3] === 'R', slide = rel.slice(0, 3).includes('R'), m = pt(8), f = pt(bend || tors ? 18 : 9);
+          const names = ['Fx', 'Fy', 'Fz', 'Mx', 'My', 'Mz'].filter((_, i) => rel[i] === 'R').join(', ');
+          return <g key={`rel${g.m.id}${end}`} stroke="#334155" strokeWidth={1.5} fill="#fff"><title>{`Member ${g.m.id}, node ${end === 'A' ? g.m.a : g.m.b}: released ${names}`}</title>
+            {bend && <circle cx={m[0]} cy={m[1]} r={4.5} />}
+            {!bend && tors && <path d={`M${m[0]} ${m[1] - 4.5}l4.5 4.5l-4.5 4.5l-4.5 -4.5z`} />}
+            {slide && <path fill="none" d={`M${f[0] - u[0] * 2 + nx * 5} ${f[1] - u[1] * 2 + ny * 5}L${f[0] - u[0] * 2 - nx * 5} ${f[1] - u[1] * 2 - ny * 5}M${f[0] + u[0] * 2 + nx * 5} ${f[1] + u[1] * 2 + ny * 5}L${f[0] + u[0] * 2 - nx * 5} ${f[1] + u[1] * 2 - ny * 5}`} />}
+          </g>;
+        }))}
         {opts.localAxes && geo.map(g => { const c = along(g, g.L / 2), p = P(c); return <g key={`ax${g.m.id}`}>{[RED, GREEN, BLUE].map((col, i) => { const d = dirS(g.R[i] as V3); return d && <line key={i} x1={p[0]} y1={p[1]} x2={p[0] + d[0] * 16} y2={p[1] + d[1] * 16} stroke={col} strokeWidth={1.5} />; })}</g>; })}
         {diag}{defl}{loads}
         {model.nodes.map(n => {
@@ -455,6 +500,17 @@ export const Viewer = React.forwardRef<ViewerHandle, {
         {reacts}
         {marq && <rect x={Math.min(marq.x0, marq.x1)} y={Math.min(marq.y0, marq.y1)} width={Math.abs(marq.x1 - marq.x0)} height={Math.abs(marq.y1 - marq.y0)} fill={BLUE} fillOpacity={0.08} stroke={BLUE} strokeWidth={1}
           strokeDasharray={marq.x1 < marq.x0 ? '5 3' : undefined} pointerEvents="none" />}
+        {pick && pickLive && (() => {
+          const d: V3 = [pickLive[0] - pick.base[0], pickLive[1] - pick.base[1], pickLive[2] - pick.base[2]], set = new Set(pick.nodes);
+          const at = (id: number): [number, number] | null => { const n = nodeMap.get(id); return n ? P(set.has(id) ? [n.x + d[0], n.y + d[1], n.z + d[2]] : [n.x, n.y, n.z]) : null; };
+          const pb = P(pick.base), pt = P(pickLive), fm = (v: number) => v.toFixed(3).replace('-', '−');
+          return <g pointerEvents="none" stroke={AMBER} strokeWidth={1.75} strokeDasharray="5 3" fill="none">
+            {model.members.filter(m => set.has(m.a) || set.has(m.b)).map(m => { const p = at(m.a), q = at(m.b); return p && q ? <line key={m.id} x1={p[0]} y1={p[1]} x2={q[0]} y2={q[1]} /> : null; })}
+            {pick.nodes.map(id => { const q = at(id); return q ? <rect key={id} x={q[0] - 3} y={q[1] - 3} width={6} height={6} fill={AMBER} stroke="none" /> : null; })}
+            <line x1={pb[0]} y1={pb[1]} x2={pt[0]} y2={pt[1]} strokeWidth={1} />
+            {text([(pb[0] + pt[0]) / 2, (pb[1] + pt[1]) / 2 - 8], `ΔX ${fm(d[0])}  ΔY ${fm(d[1])}  ΔZ ${fm(d[2])}`, 'pklbl', '#b45309', 'middle', true)}
+          </g>;
+        })()}
         {measure.a && (() => {
           const a = measure.a, b = measure.b ?? mLive, pa = P(a); if (!b) return <circle cx={pa[0]} cy={pa[1]} r={4} fill={AMBER} pointerEvents="none" />;
           const pb = P(b), d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], mid: [number, number] = [(pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2], sg = (v: number) => v.toFixed(3).replace('-', '−');
@@ -463,7 +519,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
             {text([mid[0], mid[1] - 9], `${Math.hypot(d[0], d[1], d[2]).toFixed(3)} m`, 'mlen', '#b45309', 'middle', true)}
             {text([mid[0], mid[1] + 14], `ΔX ${sg(d[0])}   ΔY ${sg(d[1])}   ΔZ ${sg(d[2])}`, 'mdel', '#475569')}</g>;
         })()}
-        {snapAt && tool !== 'select' && <g pointerEvents="none" stroke={hover.n !== null ? AMBER : BLUE} strokeWidth={1.5} fill="none"><path d={`M${snapAt[0] - 8} ${snapAt[1]}h16M${snapAt[0]} ${snapAt[1] - 8}v16`} /><rect x={snapAt[0] - 4} y={snapAt[1] - 4} width={8} height={8} /></g>}
+        {snapAt && (tool !== 'select' || !!pick) && <g pointerEvents="none" stroke={hover.n !== null ? AMBER : BLUE} strokeWidth={1.5} fill="none"><path d={`M${snapAt[0] - 8} ${snapAt[1]}h16M${snapAt[0]} ${snapAt[1] - 8}v16`} /><rect x={snapAt[0] - 4} y={snapAt[1] - 4} width={8} height={8} /></g>}
         {chainNode && cursor && (() => { const p = P([chainNode.x, chainNode.y, chainNode.z]); return <line x1={p[0]} y1={p[1]} x2={cursor[0]} y2={cursor[1]} stroke={BLUE} strokeWidth={1.5} strokeDasharray="5 4" pointerEvents="none" />; })()}
         <g transform={`translate(34 ${H - 34})`}>
           {([[1, 0, 0], [0, 1, 0], [0, 0, 1]] as V3[]).map((a, i) => {
@@ -472,6 +528,10 @@ export const Viewer = React.forwardRef<ViewerHandle, {
           })}
         </g>
       </svg>
+      {legend.length > 0 && <div className="absolute bottom-2 left-20 max-w-[45%] bg-white/85 border border-slate-200 rounded-md px-2 py-1 text-[11px] text-slate-700 space-y-0.5 pointer-events-none">
+        {legend.slice(0, 8).map(id => <div key={id} className="flex items-center gap-1.5 whitespace-nowrap"><span className="inline-block w-3 h-1.5 rounded-sm shrink-0" style={{ background: sectionColour(id) }} />{id}: {secName.get(id) ?? '—'}</div>)}
+        {legend.length > 8 && <div>+{legend.length - 8} more</div>}
+      </div>}
     </div>
   );
 });
