@@ -55,7 +55,7 @@ export type Tool = 'select' | 'node' | 'member' | 'measure';
 /** Points clicked in empty space lie on the global XY plane (Z = 0), to the nearest millimetre. */
 export interface ViewOpts {
   notes: boolean; nodeNo: boolean; memberNo: boolean; secNames: boolean; loads: boolean; localAxes: boolean;
-  diagrams: Record<DiagramKey, boolean>; stress: StressKey; deflected: boolean; reactions: boolean; /** Numbers beside the loads. */ loadValues: boolean; scale: number; defScale: number;
+  diagrams: Record<DiagramKey, boolean>; stress: StressKey; deflected: boolean; reactions: boolean; scale: number; defScale: number;
   /** Rendered 3D view of the member cross sections instead of the wireframe. */
   solid: boolean;
 }
@@ -520,7 +520,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
       }
       loads.push(<path key={`de${i}`} d={path(tails)} fill="none" stroke={RED} strokeWidth={1} />);
       const lab = Math.abs(l.w1 - l.w2) < 1e-9 ? fmt(l.w1 * f) : `${fmt(l.w1 * f)} to ${fmt(l.w2 * f)}`, mid = tails[Math.floor(n / 2)];
-      if (opts.loadValues) loads.push(text([mid[0] - Math.sign(l.w1 + l.w2 || 1) * d[0] * 8, mid[1] - Math.sign(l.w1 + l.w2 || 1) * d[1] * 8 + 4], `${lab} kN/m`, `dt${i}`, RED));
+      loads.push(text([mid[0] - Math.sign(l.w1 + l.w2 || 1) * d[0] * 8, mid[1] - Math.sign(l.w1 + l.w2 || 1) * d[1] * 8 + 4], `${lab} kN/m`, `dt${i}`, RED));
     });
     const force = (at: V3, d3: V3, v: number, key: string, unit: string, moment = false) => {
       if (Math.abs(v) < 1e-12) return;
@@ -528,7 +528,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
       const h = moment ? 30 : 16 + 30 * Math.abs(v) / fMax, sg = Math.sign(v), tail: [number, number] = [p[0] - sg * d[0] * h, p[1] - sg * d[1] * h];
       loads.push(arrow(tail, p, RED, key, 1.75));
       if (moment) loads.push(arrow(tail, [p[0] - sg * d[0] * 8, p[1] - sg * d[1] * 8], RED, key + 'm', 1.75)); // double head: moment vector
-      if (opts.loadValues) loads.push(text([tail[0] - sg * d[0] * 8, tail[1] - sg * d[1] * 8 + 4], `${fmt(Math.abs(v))} ${unit}`, key + 't', RED));
+      loads.push(text([tail[0] - sg * d[0] * 8, tail[1] - sg * d[1] * 8 + 4], `${fmt(Math.abs(v))} ${unit}`, key + 't', RED));
     };
     pl.forEach((l, i) => { const g = gById.get(l.member)!, mom = l.dir.length === 2; force(along(g, l.pos / 100 * g.L), wDir(g, l.axes, l.dir), l.p * fac.get(l.lc)!, `p${i}`, mom ? 'kNm' : 'kN', mom); });
     nls.forEach((l, i) => {
