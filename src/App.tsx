@@ -254,6 +254,7 @@ export default function App() {
         { label: 'Apply Load…', onClick: run(() => { setLoadKind('member'); setDialog('load'); }) },
         { label: 'Section', sub: [...model.sections.map(x => ({ label: x.name, checked: mems.every(id => model.members.find(m => m.id === id)?.sec === x.id), onClick: run(() => patchMembers({ sec: x.id })) })), 'sep' as const, { label: 'Add Section…', onClick: run(() => { setAssignOnAdd(true); setReplaceSec(null); setDialog('section'); }) }] },
         ...endItems,
+        { label: 'Angle…', onClick: () => ask('Member Angle', [{ label: 'Angle (°)', value: model.members.find(m => m.id === mems[0])?.angle ?? 0 }], ([ang]) => patchMembers({ angle: ang })) },
         { label: 'Member Type', sub: ([['N', 'Normal'], ['T', 'Tension Only'], ['C', 'Compression Only']] as const).map(([c, l]) => ({ label: l, onClick: run(() => patchMembers({ type: c })) })) },
         { label: 'Subdivide', sub: [2, 3, 4, 5, 6, 8, 10].map(k => ({ label: `Into ${k} Parts`, onClick: run(() => subdivide(k)) })) }, 'sep', ...moveCopy, 'sep');
       items.push({ label: 'Select Same Section', onClick: run(() => pick(sel.nodes, model.members.filter(m => m.sec === sec0).map(m => m.id))) },
@@ -293,10 +294,10 @@ export default function App() {
   const relCode = (v: string | number, old: string) => { const c = code(v, old); return c !== old && (c[1] === 'S' || c[2] === 'S') ? old : c; };
   const nodeCols: Col<Node>[] = [{ key: 'x', label: 'X (m)' }, { key: 'y', label: 'Y (m)' }, { key: 'z', label: 'Z (m)' },
     { key: 'r', label: 'Restraint', type: 'dof', dof: nodeSpec, w: 96, title: 'F fixed, R released or S spring, for DX DY DZ RX RY RZ', set: (r, v) => ({ ...r, r: code(v, r.r) }) }];
-  const memCols: Col<Member>[] = [{ key: 'a', label: 'End 1', title: 'Node at end 1 of the member', w: 48 }, { key: 'b', label: 'End 2', title: 'Node at end 2 of the member', w: 48 }, idSel('sec', 'Section No.', secNo, 70), idSel('mat', 'Material', matOpt, 90),
-    { key: 'angle', label: 'Angle (°)', w: 50 }, { key: 'type', label: 'Type', type: 'select', w: 96, options: [{ value: 'N', label: 'Normal' }, { value: 'T', label: 'Tension Only' }, { value: 'C', label: 'Compr. Only' }] },
-    { key: 'relA', label: 'Release 1', type: 'dof', dof: memSpec('A'), w: 96, title: 'F fixed, R released or S spring (not for the shears), for the local x y z forces and moments', set: (r, v) => ({ ...r, relA: relCode(v, r.relA) }) },
-    { key: 'relB', label: 'Release 2', type: 'dof', dof: memSpec('B'), w: 96, title: 'F fixed, R released or S spring (not for the shears), for the local x y z forces and moments', set: (r, v) => ({ ...r, relB: relCode(v, r.relB) }) }];
+  const memCols: Col<Member>[] = [{ key: 'a', label: 'End 1', title: 'Node at end 1 of the member', w: 40 }, { key: 'b', label: 'End 2', title: 'Node at end 2 of the member', w: 40 }, idSel('sec', 'Section No.', secNo, 58), idSel('mat', 'Material', matOpt, 72),
+    { key: 'angle', label: 'Angle (°)', w: 44 }, { key: 'type', label: 'Type', type: 'select', w: 84, options: [{ value: 'N', label: 'Normal' }, { value: 'T', label: 'Tension Only' }, { value: 'C', label: 'Compr. Only' }] },
+    { key: 'relA', label: 'Release 1', type: 'dof', dof: memSpec('A'), w: 84, title: 'F fixed, R released or S spring (not for the shears), for the local x y z forces and moments', set: (r, v) => ({ ...r, relA: relCode(v, r.relA) }) },
+    { key: 'relB', label: 'Release 2', type: 'dof', dof: memSpec('B'), w: 84, title: 'F fixed, R released or S spring (not for the shears), for the local x y z forces and moments', set: (r, v) => ({ ...r, relB: relCode(v, r.relB) }) }];
   const secCols: Col<Section>[] = [{ key: 'colour', label: '', type: 'colour', w: 28, get: r => (r.colour && /^#[0-9a-f]{6}$/i.test(r.colour) ? r.colour : sectionColour(r.id)), autoColour: r => !r.colour, set: (r, v) => (typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? { ...r, colour: v.toLowerCase() } : { ...r, colour: undefined }) },
     { key: 'name', label: 'Section Type', type: 'text', w: 150 }, { key: 'A', label: <><i>A</i> (mm²)</>, w: 60 }, { key: 'Iz', label: <><i>I</i><sub>z</sub> (mm⁴)</>, w: 76 }, { key: 'Iy', label: <><i>I</i><sub>y</sub> (mm⁴)</>, w: 76 }, { key: 'J', label: <><i>J</i> (mm⁴)</>, w: 70 }];
   const matCols: Col<Material>[] = [{ key: 'name', label: 'Name', type: 'text', w: 110 }, { key: 'E', label: <><i>E</i> (MPa)</>, w: 60 }, { key: 'G', label: <><i>G</i> (MPa)</>, w: 60 }, { key: 'rho', label: 'Density (kg/m³)', w: 70 }, { key: 'alpha', label: <><i>α</i> (/°C)</>, w: 70 }];
