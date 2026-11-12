@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AppHeader, Banner, useElementSize, Check, NumberField, ReportDialog, ResultsHeader, SelectField, StatusChip, today } from 'engineering-ui';
+import { AppHeader, Banner, useElementSize, Check, NumberField, ReportDialog, SelectField, StatusChip, today } from 'engineering-ui';
 import { Axis3d, Box, Eye, Ruler, FilePlus, FolderOpen, Hash, Maximize, MousePointer2, Redo2, Save, Scissors, Spline, Trash2, Type, Undo2, Weight, Copy, Dot, LineChart, Shapes, Cuboid, Waypoints, StickyNote } from 'lucide-react';
 import {
   deleteMembersAndFreeNodes, deleteNodes, DASH, FREE, MATERIAL_PRESETS, nextId, normalise, RELEASES, RESTRAINTS,
@@ -8,8 +8,7 @@ import {
 import { defaultModel } from './model/templates';
 import { analyse } from './solver/frame';
 import { Sheet, type Col } from './ui/Sheet';
-import { DIAGRAMS, STRESSES, fmt, Viewer, type DiagramKey, type StressKey, type Sel, type Tool, type ViewerHandle, type ViewOpts } from './ui/Viewer';
-import { ResultTables } from './ui/Results';
+import { DIAGRAMS, STRESSES, Viewer, type DiagramKey, type StressKey, type Sel, type Tool, type ViewerHandle, type ViewOpts } from './ui/Viewer';
 import { ContextMenu, PromptBox, TextPromptBox, ToolFlyout, type MenuItem, type MenuState, type PromptState, type TextPromptState } from './ui/CanvasMenu';
 import { About, LoadDialog, SectionDialog, TemplateDialog, type LoadSpec } from './ui/Dialogs';
 import type { ReportInfo } from './report';
@@ -310,14 +309,16 @@ export default function App() {
   const st = sub.structure, ld = sub.loads;
   const nSel = sel.nodes.size, mSel = sel.members.size;
 
-  const summary = useMemo(() => {
-    if (!okRes) return null;
-    let d = 0, dn = 0, mz = 0, mm = 0, nmax = 0, nmin = 0, fy = 0;
-    okRes.disp.forEach((v, id) => { const t = Math.hypot(v[0], v[1], v[2]); if (t > d) { d = t; dn = id; } });
-    okRes.members.forEach((r, id) => { for (const v of r.Mz) if (Math.abs(v) > Math.abs(mz)) { mz = v; mm = id; } nmax = Math.max(nmax, ...r.N); nmin = Math.min(nmin, ...r.N); });
-    okRes.reactions.forEach(r => { fy += r[1]; });
-    return { d, dn, mz, mm, nmax, nmin, fy };
-  }, [okRes]);
+  /** The calculated buckling or vibration modes, one row each; a click shows or hides the mode shape on the canvas. */
+  const modeTable = (kind: 'buckling' | 'modal', values: number[] | undefined, head: string) => {
+    if (!values?.length) return (kind === 'buckling' ? model.settings.bucklingModes : model.settings.modalModes) > 0
+      ? <div className="readout"><span>Result</span><span className="readout-value">None Found</span></div> : null;
+    return <table className="rtable">
+      <thead><tr><th>Mode</th><th>{head}</th>{kind === 'modal' && <th>Period (s)</th>}<th>Shape</th></tr></thead>
+      <tbody>{values.map((v, i) => { const on = modeIx?.kind === kind && modeIx.i === i; return <tr key={i} className={`cursor-pointer ${on ? '!bg-blue-50' : ''}`} onClick={() => setModeIx(on ? null : { kind, i })}>
+        <td>{i + 1}</td><td>{v.toFixed(3)}</td>{kind === 'modal' && <td>{(1 / v).toFixed(4)}</td>}<td>{on ? 'Shown' : 'Show'}</td></tr>; })}</tbody>
+    </table>;
+  };
 
   return (
     <div className="fill-window app-wide min-h-screen bg-slate-100 lg:h-screen lg:overflow-hidden flex flex-col">
@@ -333,14 +334,8 @@ export default function App() {
           <input ref={fileRef} type="file" accept=".json,application/json" className="hidden" onChange={e => { open(e.target.files?.[0]); e.target.value = ''; }} />
         </div>} />
       <main className="flex-1 flex flex-col lg:min-h-0 p-3 w-full">
-        <div className="tab-grid lg:!grid-cols-[minmax(320px,1fr)_minmax(0,900px)_minmax(320px,1fr)]">
+        <div className="tab-grid lg:!grid-cols-[minmax(600px,1fr)_minmax(0,2fr)]">
           <div className="input-column scroll-thin">
-            {tab !== 'results' && <>
-              <div className="panel">
-                <h2 className="panel-title">Load Case</h2>
-                <SelectField label="Case Shown" value={String(cur?.id ?? '')} onChange={v => setCaseId(Number(v))} options={cases.map(c => ({ value: String(c.id), label: `${c.id}: ${c.name}` }))} />
-              </div>
-            </>}
             {tab === 'structure' && tool === 'member' && (() => {
               const lastM = model.members[model.members.length - 1];
               const secV = model.sections.some(s => s.id === drawSec) ? drawSec : lastM?.sec ?? model.sections[0]?.id, matV = model.materials.some(s => s.id === drawMat) ? drawMat : lastM?.mat ?? model.materials[0]?.id;
@@ -380,86 +375,6 @@ export default function App() {
                 </div>
               </div>
             </div>}
-            {tab === 'results' && <>
-              <div className="panel">
-                <h2 className="panel-title">Analysis</h2>
-                <Check checked={model.settings.nonlinear} onChange={v => setModel(m => ({ ...m, settings: { ...m.settings, nonlinear: v } }))} title="Iterates with the geometric stiffness from the member axial forces">Second-Order (P-Δ) Analysis</Check>
-                <div className="grid grid-cols-2 gap-2">
-                  <NumberField label="Buckling Modes" value={model.settings.bucklingModes} min={0} max={20} onChange={v => setModel(m => ({ ...m, settings: { ...m.settings, bucklingModes: Math.round(v) } }))} />
-                  <NumberField label="Vibration Modes" value={model.settings.modalModes} min={0} max={30} onChange={v => setModel(m => ({ ...m, settings: { ...m.settings, modalModes: Math.round(v) } }))} />
-                </div>
-              </div>
-              <div className="panel">
-                <h2 className="panel-title">Display</h2>
-                <div className="grid grid-cols-2 gap-2">
-                  <SelectField label="Case" value={String(cur?.id ?? '')} onChange={v => { setCaseId(Number(v)); setModeIx(m => (m?.kind === 'buckling' ? null : m)); }} options={cases.map(c => ({ value: String(c.id), label: `${c.id}: ${c.name}` }))} />
-                  <NumberField label="Deflection Scale" value={opts.defScale} min={0.1} max={20} step={0.25} onChange={o('defScale')} />
-                </div>
-                <Check checked={opts.deflected} onChange={o('deflected')}>Deflected Shape</Check>
-              </div>
-              <div className="panel">
-                <h2 className="panel-title">Diagrams</h2>
-                <div className="grid grid-cols-2 gap-2">
-                  <NumberField label="Diagram Scale" value={opts.scale} min={0.1} max={20} step={0.25} onChange={o('scale')} />
-                </div>
-                <div className="section !space-y-2.5">
-                  {[[0], [1], [2], [3]].map(row => <div key={row.join()} className={row.length > 1 ? 'grid grid-cols-2 gap-x-4' : ''}>
-                    {row.map(n => { const g = DIAGRAM_GROUPS[n]; return <div key={g.title}>
-                      <h3 className="label">{g.title}</h3>
-                      <div className="flex items-center gap-x-4 gap-y-1.5 flex-wrap">
-                        {g.items.map(([key, text]) => { const d = DIAGRAMS.find(x => x.key === key)!; return <Check key={key} checked={opts.diagrams[key]} onChange={v => o('diagrams')({ ...opts.diagrams, [key]: v })} title={d.label}><span className="inline-block w-2 h-2 rounded-sm mr-1.5 align-middle" style={{ background: d.colour }} />{symbol(text)}</Check>; })}
-                      </div>
-                    </div>; })}
-                  </div>)}
-                </div>
-              </div>
-              <div className="panel">
-                <h2 className="panel-title">Reactions</h2>
-                <Check checked={opts.reactions} onChange={o('reactions')}>Show Reactions</Check>
-              </div>
-              <div className="panel">
-                <h2 className="panel-title">Stresses</h2>
-                <SelectField hint="Colours the rendered members; switches to the rendered view" label="Normal Stress" value={opts.stress} onChange={v => setOpts(q => ({ ...q, stress: v as StressKey, solid: v !== 'none' ? true : q.solid }))} options={STRESSES.map(t => ({ value: t.key, label: t.label }))} />
-              </div>
-            </>}
-          </div>
-
-          <div className="results-column">
-            <div ref={cvRef} className="relative bg-slate-50 rounded-lg border border-slate-200 shadow-2xs overflow-hidden h-[520px] lg:h-auto lg:flex-1 lg:min-h-[240px]">
-              <Viewer ref={viewer} notes={model.notes} onNoteMove={(id, dx, dy) => setModel(m => ({ ...m, notes: m.notes.map(n => (n.id === id ? { ...n, dx, dy } : n)) }))} onNoteEdit={(id, x, y) => { const nt = model.notes.find(n => n.id === id); if (nt) setTextPrompt({ x, y, title: 'Edit Note', text: nt.text, onSubmit: t => setNote(nt.kind, nt.ref, nt.id, t) }); }} fitRev={fitRev} onSplitMember={splitMember} pick={pickMove} onPickEnd={() => setPickMove(null)} model={model} opts={opts} tool={tool} sel={sel} onSelect={setSel} loadCases={drawLoads} result={tab === 'results' ? okRes : null} mode={tab === 'results' ? modeShape : null} animateMode={modeIx?.kind === 'modal'} onAddNode={addNode} onAddMember={addMember}
-                onContext={c => { setCtx(c); if (c.node !== null && !sel.nodes.has(c.node)) setSel({ nodes: new Set([c.node]), members: new Set() }); else if (c.node === null && c.member !== null && !sel.members.has(c.member)) setSel({ nodes: new Set(), members: new Set([c.member]) }); }} />
-              {ctx && menuOf() && <ContextMenu menu={menuOf()!} W={cvSize.width} H={cvSize.height} onClose={() => setCtx(null)} />}
-              {textPrompt && <TextPromptBox prompt={textPrompt} W={cvSize.width} H={cvSize.height} onClose={() => setTextPrompt(null)} />}
-              {prompt && <PromptBox prompt={prompt} W={cvSize.width} H={cvSize.height} onClose={() => setPrompt(null)} />}
-              {tab !== 'results' && <div className="absolute top-2 left-2 toolbar w-[104px]">
-                  <button className={`tool-btn ${tool === 'select' ? 'tool-btn-active' : ''}`} onClick={() => setTool('select')}><MousePointer2 className="w-3.5 h-3.5" />Select</button>
-                  <button className={`tool-btn ${tool === 'node' ? 'tool-btn-active' : ''}`} title="Click to add nodes on the XY plane (Z = 0); nodes and member midpoints snap" onClick={() => setTool('node')}><Dot className="w-3.5 h-3.5" />Node</button>
-                  <button className={`tool-btn ${tool === 'member' ? 'tool-btn-active' : ''}`} title="Click node to node to add members; Escape ends the chain" onClick={() => setTool('member')}><Spline className="w-3.5 h-3.5" />Member</button>
-                  <button className={`tool-btn ${tool === 'measure' ? 'tool-btn-active' : ''}`} title="Click two points to measure the distance; nodes snap, Esc clears" onClick={() => setTool('measure')}><Ruler className="w-3.5 h-3.5" />Measure</button>
-                  <button className="tool-btn" disabled={!nSel && !mSel} onClick={delSel}><Trash2 className="w-3.5 h-3.5" />Delete</button>
-              </div>}
-              <div className="absolute top-2 right-2">
-                <div className="toolbar w-[112px]">
-                <ToolFlyout icon={<Eye className="w-3.5 h-3.5" />} label="View">
-                  <button className="tool-btn" onClick={() => viewer.current?.fit()}><Maximize className="w-3.5 h-3.5" />Fit</button>
-                  {(['iso', 'front', 'top', 'side'] as const).map(v => <button key={v} className="tool-btn" onClick={() => viewer.current?.view(v)}><Box className="w-3.5 h-3.5" />{{ iso: '3D', front: 'Front', top: 'Top', side: 'Side' }[v]}</button>)}
-                </ToolFlyout>
-                <div className="tool-sep" />
-                <button className={`tool-btn ${!opts.solid ? 'tool-btn-active' : ''}`} title="Wireframe view" onClick={() => o('solid')(false)}><Waypoints className="w-3.5 h-3.5" />Wireframe</button>
-                <button className={`tool-btn ${opts.solid ? 'tool-btn-active' : ''}`} title="Rendered 3D view of the member cross sections" onClick={() => o('solid')(true)}><Cuboid className="w-3.5 h-3.5" />Rendered</button>
-                <div className="tool-sep" />
-                <button className={`tool-btn ${opts.nodeNo ? '!text-blue-700' : ''}`} title="Node numbers" onClick={() => o('nodeNo')(!opts.nodeNo)}><Hash className="w-3.5 h-3.5" />Nodes</button>
-                <button className={`tool-btn ${opts.memberNo ? '!text-blue-700' : ''}`} title="Member numbers" onClick={() => o('memberNo')(!opts.memberNo)}><Hash className="w-3.5 h-3.5" />Members</button>
-                <button className={`tool-btn ${opts.secNames ? '!text-blue-700' : ''}`} title="Section names" onClick={() => o('secNames')(!opts.secNames)}><Type className="w-3.5 h-3.5" />Sections</button>
-                <button className={`tool-btn ${opts.localAxes ? '!text-blue-700' : ''}`} title="Member local axes: x red, y green, z blue" onClick={() => o('localAxes')(!opts.localAxes)}><Axis3d className="w-3.5 h-3.5" />Axes</button>
-                <button className={`tool-btn ${opts.loads ? '!text-blue-700' : ''}`} title="Loads of the case shown" onClick={() => o('loads')(!opts.loads)}><Weight className="w-3.5 h-3.5" />Loads</button>
-                <button className={`tool-btn ${opts.notes ? '!text-blue-700' : ''}`} title="Notes on nodes and members" onClick={() => o('notes')(!opts.notes)}><StickyNote className="w-3.5 h-3.5" />Notes</button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="input-column scroll-thin">
             {tab !== 'results' && <div className="panel">
               <div className="flex gap-1 flex-wrap">{SUBS[tab].map(([k, l]) => <button key={k} className={`subtab ${sub[tab] === k ? 'subtab-active' : ''}`} onClick={() => setSub({ ...sub, [tab]: k })}>{l}</button>)}</div>
               {tab === 'structure' && <>
@@ -499,29 +414,101 @@ export default function App() {
                 {ld === 'thermal' && <Sheet rows={model.thermal} cols={thCols} onChange={set('thermal')} newRow={() => ({ lc: lcOnly, member: firstMem, dT: 20 })} empty="No temperature loads" />}
               </>}
             </div>}
-            {tab === 'results' && <>
-              {summary && okRes && <div className="panel">
-                <h2 className="panel-title">Summary: Case {okRes.id}</h2>
-                <div className="readout"><span>Maximum Displacement</span><span className="readout-value">{fmt(summary.d * 1000)} mm at node {summary.dn}</span></div>
-                <div className="readout"><span>Maximum Moment <i>M</i><sub>z</sub></span><span className="readout-value">{fmt(summary.mz)} kNm in member {summary.mm}</span></div>
-                <div className="readout"><span>Maximum Tension</span><span className="readout-value">{fmt(summary.nmax)} kN</span></div>
-                <div className="readout"><span>Maximum Compression</span><span className="readout-value">{fmt(-summary.nmin)} kN</span></div>
-                <div className="readout"><span>Total Vertical Reaction</span><span className="readout-value">{fmt(summary.fy)} kN</span></div>
-                {okRes.buckling?.values.length ? <div className="readout"><span>Buckling Load Factor</span><span className="readout-value">{fmt(okRes.buckling.values[0])}</span></div> : null}
-                {analysis?.modal?.values.length ? <div className="readout"><span>Fundamental Frequency</span><span className="readout-value">{fmt(analysis.modal.values[0])} Hz</span></div> : null}
-                {okRes.iterations > 1 && <div className="readout"><span>Iterations</span><span className="readout-value">{okRes.iterations}</span></div>}
-              </div>}
-            </>}
-            {tab === 'results' && analysis && <div className="panel flex flex-col !space-y-2">
-              <ResultsHeader title={cur ? `Results: Case ${cur.id}, ${cur.name}` : 'Results'}>
-                {analysis.errors.length ? <StatusChip kind="fail">Not Solved</StatusChip> : res?.error ? <StatusChip kind="fail">Case Not Solved</StatusChip>
-                  : <StatusChip kind="pass">{model.settings.nonlinear ? 'Second-Order' : 'Linear'} Analysis Solved in {analysis.ms < 10 ? analysis.ms.toFixed(1) : analysis.ms.toFixed(0)} ms</StatusChip>}
-                {modeShape && <StatusChip kind="neutral">{modeIx!.kind === 'modal' ? 'Vibration' : 'Buckling'} Mode {modeIx!.i + 1} Shown</StatusChip>}
-              </ResultsHeader>
+            {tab === 'results' && analysis && (analysis.errors.length > 0 || analysis.warnings.length > 0 || !!res?.error) && <div className="panel">
               {analysis.errors.length > 0 && <Banner kind="error" title="The model could not be analysed" items={analysis.errors} />}
+              {res?.error && <Banner kind="error" title="This case could not be solved" items={[res.error]} />}
               {analysis.warnings.length > 0 && <Banner kind="warning" title="Warnings" items={analysis.warnings} />}
-              {okRes && <ResultTables model={model} analysis={analysis} res={okRes} sel={sel} onSelect={setSel} modeIx={modeIx} setModeIx={setModeIx} />}
             </div>}
+            {tab === 'results' && <>
+              <div className="panel">
+                <h2 className="panel-title">Analysis</h2>
+                <Check checked={model.settings.nonlinear} onChange={v => setModel(m => ({ ...m, settings: { ...m.settings, nonlinear: v } }))} title="Iterates with the geometric stiffness from the member axial forces">Second-Order (P-Δ) Analysis</Check>
+                {analysis && (analysis.errors.length ? <StatusChip kind="fail">Not Solved</StatusChip> : res?.error ? <StatusChip kind="fail">Case Not Solved</StatusChip>
+                  : <StatusChip kind="pass">{model.settings.nonlinear ? 'Second-Order' : 'Linear'} Analysis Solved in {analysis.ms < 10 ? analysis.ms.toFixed(1) : analysis.ms.toFixed(0)} ms</StatusChip>)}
+              </div>
+              <div className="panel">
+                <h2 className="panel-title">Deflections</h2>
+                <div className="grid grid-cols-2 gap-2 items-end">
+                  <Check checked={opts.deflected} onChange={o('deflected')}>Deflected Shape</Check>
+                  <NumberField label="Deflection Scale" value={opts.defScale} min={0.1} max={20} step={0.25} onChange={o('defScale')} />
+                </div>
+              </div>
+              <div className="panel">
+                <h2 className="panel-title">Diagrams</h2>
+                <div className="grid grid-cols-2 gap-2">
+                  <NumberField label="Diagram Scale" value={opts.scale} min={0.1} max={20} step={0.25} onChange={o('scale')} />
+                </div>
+                <div className="section !space-y-2.5">
+                  {[[0], [1], [2], [3]].map(row => <div key={row.join()} className={row.length > 1 ? 'grid grid-cols-2 gap-x-4' : ''}>
+                    {row.map(n => { const g = DIAGRAM_GROUPS[n]; return <div key={g.title}>
+                      <h3 className="label">{g.title}</h3>
+                      <div className="flex items-center gap-x-4 gap-y-1.5 flex-wrap">
+                        {g.items.map(([key, text]) => { const d = DIAGRAMS.find(x => x.key === key)!; return <Check key={key} checked={opts.diagrams[key]} onChange={v => o('diagrams')({ ...opts.diagrams, [key]: v })} title={d.label}><span className="inline-block w-2 h-2 rounded-sm mr-1.5 align-middle" style={{ background: d.colour }} />{symbol(text)}</Check>; })}
+                      </div>
+                    </div>; })}
+                  </div>)}
+                </div>
+              </div>
+              <div className="panel">
+                <h2 className="panel-title">Reactions</h2>
+                <Check checked={opts.reactions} onChange={o('reactions')}>Show Reactions</Check>
+              </div>
+              <div className="panel">
+                <h2 className="panel-title">Stresses</h2>
+                <SelectField hint="Colours the rendered members; switches to the rendered view" label="Normal Stress" value={opts.stress} onChange={v => setOpts(q => ({ ...q, stress: v as StressKey, solid: v !== 'none' ? true : q.solid }))} options={STRESSES.map(t => ({ value: t.key, label: t.label }))} />
+              </div>
+              <div className="panel">
+                <h2 className="panel-title">Buckling</h2>
+                <NumberField label="Modes" value={model.settings.bucklingModes} min={0} max={20} onChange={v => setModel(m => ({ ...m, settings: { ...m.settings, bucklingModes: Math.round(v) } }))} />
+                {modeTable('buckling', okRes?.buckling?.values, 'Load Factor')}
+              </div>
+              <div className="panel">
+                <h2 className="panel-title">Vibration</h2>
+                <NumberField label="Modes" value={model.settings.modalModes} min={0} max={30} onChange={v => setModel(m => ({ ...m, settings: { ...m.settings, modalModes: Math.round(v) } }))} />
+                {modeTable('modal', analysis?.modal?.values, 'Frequency (Hz)')}
+              </div>
+            </>}
+          </div>
+
+          <div className="results-column">
+            <div ref={cvRef} className="relative bg-slate-50 rounded-lg border border-slate-200 shadow-2xs overflow-hidden h-[520px] lg:h-auto lg:flex-1 lg:min-h-[240px]">
+              <Viewer ref={viewer} notes={model.notes} onNoteMove={(id, dx, dy) => setModel(m => ({ ...m, notes: m.notes.map(n => (n.id === id ? { ...n, dx, dy } : n)) }))} onNoteEdit={(id, x, y) => { const nt = model.notes.find(n => n.id === id); if (nt) setTextPrompt({ x, y, title: 'Edit Note', text: nt.text, onSubmit: t => setNote(nt.kind, nt.ref, nt.id, t) }); }} fitRev={fitRev} onSplitMember={splitMember} pick={pickMove} onPickEnd={() => setPickMove(null)} model={model} opts={opts} tool={tool} sel={sel} onSelect={setSel} loadCases={drawLoads} result={tab === 'results' ? okRes : null} mode={tab === 'results' ? modeShape : null} animateMode={modeIx?.kind === 'modal'} onAddNode={addNode} onAddMember={addMember}
+                onContext={c => { setCtx(c); if (c.node !== null && !sel.nodes.has(c.node)) setSel({ nodes: new Set([c.node]), members: new Set() }); else if (c.node === null && c.member !== null && !sel.members.has(c.member)) setSel({ nodes: new Set(), members: new Set([c.member]) }); }} />
+              {ctx && menuOf() && <ContextMenu menu={menuOf()!} W={cvSize.width} H={cvSize.height} onClose={() => setCtx(null)} />}
+              {textPrompt && <TextPromptBox prompt={textPrompt} W={cvSize.width} H={cvSize.height} onClose={() => setTextPrompt(null)} />}
+              {prompt && <PromptBox prompt={prompt} W={cvSize.width} H={cvSize.height} onClose={() => setPrompt(null)} />}
+              {tab !== 'results' && <div className="absolute top-2 left-2 toolbar w-[104px]">
+                  <button className={`tool-btn ${tool === 'select' ? 'tool-btn-active' : ''}`} onClick={() => setTool('select')}><MousePointer2 className="w-3.5 h-3.5" />Select</button>
+                  <button className={`tool-btn ${tool === 'node' ? 'tool-btn-active' : ''}`} title="Click to add nodes on the XY plane (Z = 0); nodes and member midpoints snap" onClick={() => setTool('node')}><Dot className="w-3.5 h-3.5" />Node</button>
+                  <button className={`tool-btn ${tool === 'member' ? 'tool-btn-active' : ''}`} title="Click node to node to add members; Escape ends the chain" onClick={() => setTool('member')}><Spline className="w-3.5 h-3.5" />Member</button>
+                  <button className={`tool-btn ${tool === 'measure' ? 'tool-btn-active' : ''}`} title="Click two points to measure the distance; nodes snap, Esc clears" onClick={() => setTool('measure')}><Ruler className="w-3.5 h-3.5" />Measure</button>
+                  <button className="tool-btn" disabled={!nSel && !mSel} onClick={delSel}><Trash2 className="w-3.5 h-3.5" />Delete</button>
+              </div>}
+              <label className="absolute top-2 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 bg-white/95 border border-slate-200 rounded-md shadow-2xs pl-2.5 pr-1 py-1">
+                <span className="text-[11px] font-medium text-slate-600 whitespace-nowrap">Load Case</span>
+                <select className="control !w-auto !h-7 !py-0" value={String(cur?.id ?? '')} onChange={e => { setCaseId(Number(e.target.value)); setModeIx(m => (m?.kind === 'buckling' ? null : m)); }}>
+                  {cases.map(c => <option key={c.id} value={c.id}>{`${c.id}: ${c.name}`}</option>)}
+                </select>
+              </label>
+              <div className="absolute top-2 right-2">
+                <div className="toolbar w-[112px]">
+                <ToolFlyout icon={<Eye className="w-3.5 h-3.5" />} label="View">
+                  <button className="tool-btn" onClick={() => viewer.current?.fit()}><Maximize className="w-3.5 h-3.5" />Fit</button>
+                  {(['iso', 'front', 'top', 'side'] as const).map(v => <button key={v} className="tool-btn" onClick={() => viewer.current?.view(v)}><Box className="w-3.5 h-3.5" />{{ iso: '3D', front: 'Front', top: 'Top', side: 'Side' }[v]}</button>)}
+                </ToolFlyout>
+                <div className="tool-sep" />
+                <button className={`tool-btn ${!opts.solid ? 'tool-btn-active' : ''}`} title="Wireframe view" onClick={() => o('solid')(false)}><Waypoints className="w-3.5 h-3.5" />Wireframe</button>
+                <button className={`tool-btn ${opts.solid ? 'tool-btn-active' : ''}`} title="Rendered 3D view of the member cross sections" onClick={() => o('solid')(true)}><Cuboid className="w-3.5 h-3.5" />Rendered</button>
+                <div className="tool-sep" />
+                <button className={`tool-btn ${opts.nodeNo ? '!text-blue-700' : ''}`} title="Node numbers" onClick={() => o('nodeNo')(!opts.nodeNo)}><Hash className="w-3.5 h-3.5" />Nodes</button>
+                <button className={`tool-btn ${opts.memberNo ? '!text-blue-700' : ''}`} title="Member numbers" onClick={() => o('memberNo')(!opts.memberNo)}><Hash className="w-3.5 h-3.5" />Members</button>
+                <button className={`tool-btn ${opts.secNames ? '!text-blue-700' : ''}`} title="Section names" onClick={() => o('secNames')(!opts.secNames)}><Type className="w-3.5 h-3.5" />Sections</button>
+                <button className={`tool-btn ${opts.localAxes ? '!text-blue-700' : ''}`} title="Member local axes: x red, y green, z blue" onClick={() => o('localAxes')(!opts.localAxes)}><Axis3d className="w-3.5 h-3.5" />Axes</button>
+                <button className={`tool-btn ${opts.loads ? '!text-blue-700' : ''}`} title="Loads of the case shown" onClick={() => o('loads')(!opts.loads)}><Weight className="w-3.5 h-3.5" />Loads</button>
+                <button className={`tool-btn ${opts.notes ? '!text-blue-700' : ''}`} title="Notes on nodes and members" onClick={() => o('notes')(!opts.notes)}><StickyNote className="w-3.5 h-3.5" />Notes</button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </main>
