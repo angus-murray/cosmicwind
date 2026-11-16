@@ -1,14 +1,15 @@
 import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { sym } from './Sym';
+import { toShown, fromShown, unitLabel, useUnits, type Quantity } from '../model/units';
 
 /** What a restraint or release editor needs to know about the six degrees of freedom it edits. */
 export interface DofSpec<T> {
   /** Heading of the popover for a row. */
   title: (row: T) => string;
   names: string[];
-  /** Unit of the spring stiffness of each degree of freedom. */
-  units: string[];
+  /** Quantity of the spring stiffness of each degree of freedom. */
+  units: Quantity[];
   /** Which degrees of freedom may be springs. */
   spring: boolean[];
   /** Fixed-and-free presets as [code, label]; an en-dash stands for the default. */
@@ -28,6 +29,7 @@ const DEFAULT_K = 1000;
 
 /** Popover to set each degree of freedom to F (fixed), R (released) or S (spring) and to give the spring stiffnesses. */
 export function DofEditor<T>({ spec, row, at, onChange, onClose }: { spec: DofSpec<T>; row: T; at: { x: number; y: number }; onChange: (r: T) => void; onClose: () => void }) {
+  const { u } = useUnits();
   const raw = spec.code(row), six = (raw === '–' || !raw ? spec.dflt : raw).toUpperCase().padEnd(6, spec.dflt[0]).slice(0, 6).split('');
   const k = Array.from({ length: 6 }, (_, i) => spec.stiffness(row)[i] ?? 0);
   const set = (code: string[], kk: number[]) => onChange(spec.apply(row, code.join(''), kk));
@@ -41,7 +43,7 @@ export function DofEditor<T>({ spec, row, at, onChange, onClose }: { spec: DofSp
   useEffect(() => { const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); }; window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h); }, [onClose]);
   const commitK = (i: number) => {
     const t = draft[i]; if (t === undefined) return;
-    const v = Number(t.replace('−', '-').replace(/,/g, '')); setDraft(({ [i]: _, ...rest }) => rest);
+    const v = fromShown(spec.units[i], u, Number(t.replace('−', '-').replace(/,/g, ''))); setDraft(({ [i]: _, ...rest }) => rest);
     if (t.trim() !== '' && isFinite(v) && v >= 0 && v !== k[i]) set(six, k.map((x, j) => (j === i ? v : x)));
   };
   return (
@@ -60,9 +62,9 @@ export function DofEditor<T>({ spec, row, at, onChange, onClose }: { spec: DofSp
               <span className="w-8 text-[11px] font-medium text-slate-600">{sym(spec.names[i])}</span>
               <button className={`w-8 h-6 rounded border text-xs font-semibold ${TINT[c] ?? TINT.R}`} title="Click to change: F fixed, R released, S spring" onClick={() => cycle(i)}>{c}</button>
               {c === 'S'
-                ? <><input className="control-sm w-24 tabular-nums" inputMode="decimal" autoComplete="off" value={draft[i] ?? String(k[i])} onChange={e => setDraft({ ...draft, [i]: e.target.value })}
+                ? <><input className="control-sm w-24 tabular-nums" inputMode="decimal" autoComplete="off" value={draft[i] ?? String(toShown(spec.units[i], u, k[i]))} onChange={e => setDraft({ ...draft, [i]: e.target.value })}
                     onFocus={e => e.target.select()} onBlur={() => commitK(i)} onKeyDown={e => { if (e.key === 'Enter') { commitK(i); (e.target as HTMLElement).blur(); } }} />
-                  <span className="text-[11px] text-slate-500">{spec.units[i]}</span></>
+                  <span className="text-[11px] text-slate-500">{unitLabel(spec.units[i], u)}</span></>
                 : <span className="text-[11px] text-slate-400">{c === 'F' ? 'Fixed' : 'Released'}{!spec.spring[i] ? '' : ''}</span>}
             </div>
           ))}

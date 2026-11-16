@@ -4,9 +4,11 @@ import { CollapsePanel, Formula, Modal, NumberField, Segmented, SelectField } fr
 import { LIB_GROUPS, LIBRARY, SHAPES, shapeName, shapeProps, type Outline, type Props, type Shape } from '../model/sections';
 import { sym } from './Sym';
 import type { Axes, Dir, PointDir } from '../model/types';
+import { useUnits } from '../model/units';
 
 const sci = (v: number) => (v >= 1e6 ? `${(v / 1e6).toPrecision(4)} × 10⁶` : v.toPrecision(4));
 export function SectionDialog({ onClose, onAdd, assign, replace }: { onClose: () => void; onAdd: (name: string, p: Props, outline: Outline) => void; assign: number; /** Section number whose type is being changed. */ replace?: number }) {
+  const { show, read, label } = useUnits();
   const [mode, setMode] = useState<'lib' | 'shape'>('lib');
   const [group, setGroup] = useState(LIB_GROUPS[0]);
   const [shape, setShape] = useState<Shape>('rect');
@@ -21,16 +23,16 @@ export function SectionDialog({ onClose, onAdd, assign, replace }: { onClose: ()
           <SelectField label="Group" value={group} onChange={setGroup} options={LIB_GROUPS.map(g => ({ value: g, label: g }))} />
           <div className="max-h-72 overflow-auto scroll-thin border border-slate-200 rounded">
             <table className="rtable">
-              <thead className="sticky top-0"><tr><th>Section</th><th><i>A</i> (mm²)</th><th><i>I</i><sub>z</sub> (mm⁴)</th><th><i>I</i><sub>y</sub> (mm⁴)</th></tr></thead>
-              <tbody>{LIBRARY.filter(s => s.group === group).map(s => <tr key={s.name} className="cursor-pointer" onClick={() => onAdd(s.name, s, s.outline)}><td className="font-medium">{s.name}</td><td>{s.A.toFixed(0)}</td><td>{sci(s.Iz)}</td><td>{sci(s.Iy)}</td></tr>)}</tbody>
+              <thead className="sticky top-0"><tr><th>Section</th><th><i>A</i> ({label('area')})</th><th><i>I</i><sub>z</sub> ({label('inertia')})</th><th><i>I</i><sub>y</sub> ({label('inertia')})</th></tr></thead>
+              <tbody>{LIBRARY.filter(s => s.group === group).map(s => <tr key={s.name} className="cursor-pointer" onClick={() => onAdd(s.name, s, s.outline)}><td className="font-medium">{s.name}</td><td>{sci(show('area', s.A))}</td><td>{sci(show('inertia', s.Iz))}</td><td>{sci(show('inertia', s.Iy))}</td></tr>)}</tbody>
             </table>
           </div>
         </> : <>
           <SelectField label="Shape" value={shape} onChange={v => setShape(v as Shape)} options={SHAPES.map(s => ({ value: s.value, label: s.label }))} />
-          <div className="grid grid-cols-2 gap-2">{sh.dims.map((l, i) => <NumberField key={l} label={`${l} (mm)`} value={dims[i]} min={0.1} step={10} onChange={v => setDims(dims.map((x, k) => (k === i ? v : x)))} />)}</div>
+          <div className="grid grid-cols-2 gap-2">{sh.dims.map((l, i) => <NumberField key={l} label={`${l} (${label('lengthMm')})`} value={show('lengthMm', dims[i])} min={show('lengthMm', 0.1)} step={show('lengthMm', 10)} onChange={v => setDims(dims.map((x, k) => (k === i ? read('lengthMm', v) : x)))} />)}</div>
           <div className="section space-y-1">
-            {valid ? ([['Area', props.A, 'mm²'], ['Iz', props.Iz, 'mm⁴'], ['Iy', props.Iy, 'mm⁴'], ['J', props.J, 'mm⁴']] as const).map(([l, v, u]) =>
-              <div key={l} className="readout"><span>{l.length === 2 || l === 'J' ? <><i>{l[0]}</i><sub>{l.slice(1)}</sub></> : l} ({u})</span><span className="readout-value">{sci(v)}</span></div>)
+            {valid ? ([['Area', props.A, 'area'], ['Iz', props.Iz, 'inertia'], ['Iy', props.Iy, 'inertia'], ['J', props.J, 'inertia']] as const).map(([l, v, u]) =>
+              <div key={l} className="readout"><span>{l.length === 2 || l === 'J' ? <><i>{l[0]}</i><sub>{l.slice(1)}</sub></> : l} ({label(u)})</span><span className="readout-value">{sci(show(u, v))}</span></div>)
               : <p className="text-[11px] text-rose-700">The dimensions do not make a valid section.</p>}
           </div>
           <div className="flex justify-end"><button className="btn-primary" disabled={!valid} onClick={() => onAdd(shapeName(shape, d), props, { shape, dims: d })}>{replace ? 'Change Type' : 'Add Section'}</button></div>
@@ -50,20 +52,20 @@ export function About({ onClose }: { onClose: () => void }) {
         graphics window is on the right. Everything runs on the user's computer; the model is kept in the browser's storage and can be saved to and opened
         from a file. New starts a blank model, and Undo brings the previous one back.</P></div>
       <CollapsePanel title="Units and Axes" defaultOpen>
-        <P>Coordinates are in metres, forces in kN, moments in kNm, section properties in mm units, moduli in MPa and density in kg/m³. Global Y is
+        <P>The units are chosen with the controls at the bottom of the graphics window (length in mm or m, force in N, kN or MN, stress in Pa, kPa or MPa, mass in kg or t, temperature in C or K) or with the SI, N.mm and kN.m presets. Time is always in seconds. Changing the units changes only how values are shown and typed; the model and its forces are not altered. Global Y is
           vertical. A member's local x axis runs from end 1 to end 2. For a member that is not vertical, the local y axis lies in the vertical plane
           through the member and points upward, and the local z axis is horizontal. For a vertical member the local z axis is parallel to global Z. The
           Angle column rotates the y and z axes about the member, and can also be set from the right-click menu of a member. <i>I</i><sub>z</sub> is the second
           moment about the local z axis, the major axis of a beam in its usual orientation. Global axes are always written in upper case (X, Y, Z) and local
           axes in lower case (x, y, z), including in the direction of a member load, which shows x, y, z when the load is in local axes.</P>
         <P>Restraint codes have six characters for DX, DY, DZ, RX, RY and RZ: F is fixed, R is released and S is a spring. Click the arrow in a Restraint or
-          Release cell to set each degree of freedom and the stiffness of its spring (kN/m for a displacement or axial force, kNm/rad for a rotation or
+          Release cell to set each degree of freedom and the stiffness of its spring (force per length for a displacement or axial force, force times length per radian for a rotation or
           moment). Member end releases use the same form for the three local forces and three local moments at each end, but there are no springs on the
           two shear forces. Restraints and releases can also be set from the right-click menu of a node or member. Loads are positive in the positive axis
           direction, so a downward load is negative in Y. Moments follow the right-hand rule and are drawn as double-headed arrows.</P>
         <P>The Gravity columns of a load case are multipliers of <i>g</i>, where <i>g</i> = {G0} m/s², the standard gravitational acceleration. The self-weight
           of a member is its density times its cross-sectional area times <i>g</i>, applied along its length, and node masses and member masses for vibration
-          modes are in tonnes.</P>
+          modes are in the mass unit chosen.</P>
       </CollapsePanel>
       <CollapsePanel title="Using the Program" defaultOpen>
         <P>The Structure tab holds the datasheets for nodes, members, sections, materials and node masses. The Loads tab holds load cases, combinations,
@@ -78,7 +80,7 @@ export function About({ onClose }: { onClose: () => void }) {
         <P>Nodes and members are drawn with the Node and Member tools on the XY plane at Z = 0. The pointer snaps to nodes, to member midpoints and to the
           origin, and a member being drawn is held to a global axis when it is within 8 degrees of one (the Z axis only in a view where it can be seen) or when X, Y or Z is typed. A length can be typed for
           the member. The section and material of new members are chosen in the panel that appears when the Member tool is selected.</P>
-        <P>On the Analysis and Results tab, Deflections can show the global displacements at the nodes (X, Y, Z or XYZ, in mm) and the deflected shape
+        <P>On the Analysis and Results tab, Deflections can show the global displacements at the nodes (X, Y, Z or XYZ, in the length unit) and the deflected shape
           with its nodes. Diagrams draws the member actions, and hovering over a member or its diagram gives the values at that point, joined to the
           diagram by a line. Reactions and Stresses are switched on in their own panels, and the stress scale is at the top left of the graphics window.
           Buckling and Vibration give the number of modes to calculate; clicking a mode in the list shows its shape, and vibration modes are animated.</P>
@@ -144,33 +146,34 @@ export type LoadSpec =
 export function LoadDialog({ kind, count, cases, lc0, onClose, onApply }: {
   kind: 'node' | 'member'; count: number; cases: { id: number; name: string }[]; lc0: number; onClose: () => void; onApply: (lc: number, spec: LoadSpec) => void;
 }) {
+  const { show, read, label } = useUnits();
   const [lc, setLc] = useState(lc0);
   const [mode, setMode] = useState<'dist' | 'point'>('dist');
   const [axes, setAxes] = useState<Axes>('G');
   const [dir, setDir] = useState<PointDir>('Y');
-  const [w1, setW1] = useState(-5), [w2, setW2] = useState(-5), [s0, setS0] = useState(0), [e0, setE0] = useState(100);
-  const [p, setP] = useState(-10), [pos, setPos] = useState(50);
-  const [f, setF] = useState([0, -10, 0, 0, 0, 0]);
+  const [w1, setW1] = useState(() => show('forcePerLength', -5)), [w2, setW2] = useState(() => show('forcePerLength', -5)), [s0, setS0] = useState(0), [e0, setE0] = useState(100);
+  const [p, setP] = useState(() => show('force', -10)), [pos, setPos] = useState(50);
+  const [f, setF] = useState(() => [0, show('force', -10), 0, 0, 0, 0]);
   const dirOpts = (moments: boolean) => { const c = (v: string) => (axes === 'L' ? v.toLowerCase() : v); return [...(['X', 'Y', 'Z'] as const).map(d => ({ value: d, label: moments ? `Force ${c(d)}` : c(d) })), ...(moments ? (['MX', 'MY', 'MZ'] as const).map(d => ({ value: d, label: `Moment ${c(d.slice(1))}` })) : [])]; };
   const ok = kind === 'node' ? f.some(v => v !== 0) : mode === 'dist' ? e0 > s0 && s0 >= 0 && e0 <= 100 && (w1 !== 0 || w2 !== 0) : p !== 0 && pos >= 0 && pos <= 100;
-  const apply = () => onApply(lc, kind === 'node' ? { type: 'node', f }
-    : mode === 'dist' ? { type: 'dist', axes, dir: (['X', 'Y', 'Z'].includes(dir) ? dir : 'Y') as Dir, w1, w2, s: s0, e: e0 } : { type: 'point', axes, dir, p, pos });
+  const apply = () => onApply(lc, kind === 'node' ? { type: 'node', f: f.map((v, i) => read(i < 3 ? 'force' : 'moment', v)) }
+    : mode === 'dist' ? { type: 'dist', axes, dir: (['X', 'Y', 'Z'].includes(dir) ? dir : 'Y') as Dir, w1: read('forcePerLength', w1), w2: read('forcePerLength', w2), s: s0, e: e0 } : { type: 'point', axes, dir, p: read(dir.length === 2 ? 'moment' : 'force', p), pos });
   return (
     <Modal title={kind === 'node' ? 'Apply Node Load' : 'Apply Member Load'} onClose={onClose} variant="dialog">
       <div className="space-y-3">
         <SelectField label="Load Case" value={String(lc)} onChange={v => setLc(Number(v))} options={cases.map(c => ({ value: String(c.id), label: `${c.id}: ${c.name}` }))} />
         {kind === 'node' ? <div className="grid grid-cols-3 gap-2">
-          {['FX (kN)', 'FY (kN)', 'FZ (kN)', 'MX (kNm)', 'MY (kNm)', 'MZ (kNm)'].map((l, i) => <NumberField key={l} label={sym(l)} value={f[i]} step={1} onChange={v => setF(f.map((x, k) => (k === i ? v : x)))} />)}
+          {['FX', 'FY', 'FZ', 'MX', 'MY', 'MZ'].map((n, i) => `${n} (${label(i < 3 ? 'force' : 'moment')})`).map((l, i) => <NumberField key={l} label={sym(l)} value={f[i]} step={1} onChange={v => setF(f.map((x, k) => (k === i ? v : x)))} />)}
         </div> : <>
           <Segmented value={mode} onChange={v => { setMode(v); if (v === 'dist' && ['MX', 'MY', 'MZ'].includes(dir)) setDir('Y'); }} options={[{ value: 'dist', label: 'Distributed' }, { value: 'point', label: 'Point' }]} />
           <div className="grid grid-cols-2 gap-2">
             <SelectField label="Axes" value={axes} onChange={v => setAxes(v as Axes)} options={[{ value: 'G', label: 'Global' }, { value: 'L', label: 'Local' }]} />
             <SelectField label="Direction" value={dir} onChange={v => setDir(v as PointDir)} options={dirOpts(mode === 'point')} />
             {mode === 'dist' ? <>
-              <NumberField label="Start Load (kN/m)" value={w1} step={1} onChange={setW1} /><NumberField label="End Load (kN/m)" value={w2} step={1} onChange={setW2} />
+              <NumberField label={`Start Load (${label('forcePerLength')})`} value={w1} step={1} onChange={setW1} /><NumberField label={`End Load (${label('forcePerLength')})`} value={w2} step={1} onChange={setW2} />
               <NumberField label="Start (%)" value={s0} min={0} max={100} step={10} onChange={setS0} /><NumberField label="End (%)" value={e0} min={0} max={100} step={10} onChange={setE0} />
             </> : <>
-              <NumberField label={dir.length === 2 ? 'Moment (kNm)' : 'Force (kN)'} value={p} step={1} onChange={setP} /><NumberField label="Position (%)" value={pos} min={0} max={100} step={10} onChange={setPos} />
+              <NumberField label={dir.length === 2 ? `Moment (${label('moment')})` : `Force (${label('force')})`} value={p} step={1} onChange={setP} /><NumberField label="Position (%)" value={pos} min={0} max={100} step={10} onChange={setPos} />
             </>}
           </div>
         </>}

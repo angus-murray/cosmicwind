@@ -3,9 +3,12 @@ import { ChevronDown, Plus, X } from 'lucide-react';
 import { DofEditor, type DofSpec } from './DofEditor';
 import { sym } from './Sym';
 import { ColourPicker } from './ColourPicker';
+import { fromShown, toShown, unitLabel, useUnits, type Quantity, type Units } from '../model/units';
 
 export interface Col<T> {
-  key: string; label: React.ReactNode; w?: number; title?: string;
+  key: string; /** The heading; a function gets the units in use. */ label: React.ReactNode | ((u: Units) => React.ReactNode); w?: number; title?: string;
+  /** The quantity of a number column, or of a row when it depends on the row. The stored value is converted to the units in use and the unit is added to the heading. */
+  q?: Quantity | ((row: T) => Quantity);
   type?: 'num' | 'text' | 'select' | 'ro' | 'dof' | 'colour';
   /** For a 'dof' column: the popover that sets each degree of freedom to F, R or S. */
   dof?: DofSpec<T>;
@@ -30,13 +33,20 @@ export function Sheet<T extends object>({ rows, cols, onChange, newRow, selected
   rowLabel?: (row: T, i: number) => React.ReactNode; empty?: string;
 }) {
   const ref = useRef<HTMLTableElement>(null);
+  const { u } = useUnits();
+  const qOf = (r: T, c: Col<T>) => (typeof c.q === 'function' ? c.q(r) : c.q);
   const [pop, setPop] = useState<{ i: number; j: number; x: number; y: number } | null>(null);
   const [cpop, setCpop] = useState<{ i: number; j: number; x: number; y: number } | null>(null);
-  const val = (r: T, c: Col<T>) => (c.get ? c.get(r) : (r as Record<string, unknown>)[c.key]) as string | number;
+  const stored = (r: T, c: Col<T>) => (c.get ? c.get(r) : (r as Record<string, unknown>)[c.key]) as string | number;
+  const val = (r: T, c: Col<T>) => { const v = stored(r, c), q = qOf(r, c); return q && typeof v === 'number' ? toShown(q, u, v) : v; };
+  const head = (c: Col<T>) => {
+    const l = typeof c.label === 'function' ? c.label(u) : c.label, un = typeof c.q === 'string' ? unitLabel(c.q, u) : '';
+    return typeof l === 'string' ? sym(un ? `${l} (${un})` : l) : <>{l}{un ? ` (${un})` : ''}</>;
+  };
   const apply = (r: T, c: Col<T>, raw: string): T | null => {
     let v: string | number = raw;
     if (c.type === 'ro') return null;
-    if (c.type === 'num' || c.type === undefined) { const n = parseNum(raw); if (n === null) return null; v = n; }
+    if (c.type === 'num' || c.type === undefined) { const n = parseNum(raw); if (n === null) return null; const q = qOf(r, c); v = q ? fromShown(q, u, n) : n; }
     return c.set ? c.set(r, v) : { ...r, [c.key]: v };
   };
   const commit = (i: number, c: Col<T>, raw: string) => {
@@ -60,7 +70,7 @@ export function Sheet<T extends object>({ rows, cols, onChange, newRow, selected
     <div className="space-y-1.5">
       <div className="overflow-auto max-h-[calc(100vh-250px)] scroll-thin border border-slate-200 rounded">
         <table className="sheet" ref={ref}>
-          <thead><tr><th style={{ width: 34 }}></th>{cols.map(c => <th key={c.key} title={c.title} style={{ minWidth: c.w ?? 56 }}>{typeof c.label === 'string' ? sym(c.label) : c.label}</th>)}<th style={{ width: 22 }}></th></tr></thead>
+          <thead><tr><th style={{ width: 34 }}></th>{cols.map(c => <th key={c.key} title={c.title} style={{ minWidth: c.w ?? 56 }}>{head(c)}</th>)}<th style={{ width: 22 }}></th></tr></thead>
           <tbody>
             {rows.map((r, i) => (
               <tr key={i} className={selected?.(r) ? 'sel' : ''}>

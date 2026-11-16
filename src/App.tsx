@@ -12,6 +12,8 @@ import { Sheet, type Col } from './ui/Sheet';
 import { DIAGRAMS, STRESSES, sectionColour, Viewer, type DiagramKey, type StressKey, type Sel, type Tool, type ViewerHandle, type ViewOpts } from './ui/Viewer';
 import { ContextMenu, PromptBox, TextPromptBox, ToolFlyout, type MenuItem, type MenuState, type PromptState, type TextPromptState } from './ui/CanvasMenu';
 import { About, LoadDialog, SectionDialog, type LoadSpec } from './ui/Dialogs';
+import { UnitsBar } from './ui/UnitsBar';
+import { loadUnits, saveUnits, toShown, fromShown, unitLabel, UnitsContext, type Quantity, type Units } from './model/units';
 import type { ReportInfo } from './report';
 
 type Tab = 'structure' | 'loads' | 'results';
@@ -39,6 +41,10 @@ export default function App() {
   useEffect(() => { try { localStorage.setItem(STORE, JSON.stringify(model)); } catch { /* storage unavailable */ } }, [model]);
   const set = <K extends keyof Model>(k: K) => (v: Model[K]) => setModel(m => ({ ...m, [k]: v }));
 
+  const [units, setUnits] = useState<Units>(loadUnits);
+  useEffect(() => saveUnits(units), [units]);
+  /** A stored value in the units shown, a typed value back in the stored units, and the unit text. */
+  const sh = (q: Quantity, v: number) => toShown(q, units, v), rd = (q: Quantity, v: number) => fromShown(q, units, v), ul = (q: Quantity) => unitLabel(q, units);
   const [tab, setTab] = useState<Tab>('structure');
   const [sub, setSub] = useState({ structure: 'nodes', loads: 'cases' });
   const [sel, setSel] = useState<Sel>(noSel);
@@ -213,11 +219,12 @@ export default function App() {
       setPickMove({ base: [baseNode.x, baseNode.y, baseNode.z], nodes: [...moved], repeat, apply: d => (repeat ? copyWith(n => [n.x + d[0], n.y + d[1], n.z + d[2]]) : moveWith(n => [n.x + d[0], n.y + d[1], n.z + d[2]])) });
     };
     const inc = (copyMode: boolean) => () => ask(copyMode ? 'Copy By Increment' : 'Move By Increment',
-      [{ label: <>Δ<i>X</i> (m)</>, value: 0 }, { label: <>Δ<i>Y</i> (m)</>, value: 0 }, { label: <>Δ<i>Z</i> (m)</>, value: 0 }, ...(copyMode ? [{ label: 'Number of copies', value: 1 }] : [])],
-      ([dx, dy, dz, n]) => (copyMode ? copyWith((q, k) => [q.x + dx * k, q.y + dy * k, q.z + dz * k], n) : moveWith(q => [q.x + dx, q.y + dy, q.z + dz])));
+      [{ label: <>Δ<i>X</i> ({ul('length')})</>, value: 0 }, { label: <>Δ<i>Y</i> ({ul('length')})</>, value: 0 }, { label: <>Δ<i>Z</i> ({ul('length')})</>, value: 0 }, ...(copyMode ? [{ label: 'Number of copies', value: 1 }] : [])],
+      ([sx, sy, sz, n]) => { const dx = rd('length', sx), dy = rd('length', sy), dz = rd('length', sz); if (copyMode) copyWith((q, k) => [q.x + dx * k, q.y + dy * k, q.z + dz * k], n); else moveWith(q => [q.x + dx, q.y + dy, q.z + dz]); });
     const mirror = (copyMode: boolean): MenuItem[] => (['x', 'y', 'z'] as const).map((ax, i) => ({
       label: `Mirror About ${ax.toUpperCase()} Plane…`,
-      onClick: () => ask(`Mirror About ${ax.toUpperCase()} =`, [{ label: <>{ax.toUpperCase()} (m)</>, value: 0 }], ([c]) => {
+      onClick: () => ask(`Mirror About ${ax.toUpperCase()} =`, [{ label: <>{ax.toUpperCase()} ({ul('length')})</>, value: 0 }], ([cs]) => {
+        const c = rd('length', cs);
         const tf = (q: Node): [number, number, number] => [i === 0 ? 2 * c - q.x : q.x, i === 1 ? 2 * c - q.y : q.y, i === 2 ? 2 * c - q.z : q.z];
         if (copyMode) copyWith(q => tf(q)); else moveWith(tf);
       }),
@@ -259,8 +266,8 @@ export default function App() {
         { label: 'Section', sub: [...[...model.sections].sort((p, q) => p.id - q.id).map(x => ({ label: `${x.id}. ${x.name}`, checked: mems.every(id => model.members.find(m => m.id === id)?.sec === x.id), onClick: run(() => patchMembers({ sec: x.id })) })), 'sep' as const, { label: 'Add Section…', onClick: run(() => { setAssignOnAdd(true); setReplaceSec(null); setDialog('section'); }) }] },
         releaseItem,
         { label: 'Angle…', onClick: () => ask('Member Angle', [{ label: 'Angle (°)', value: model.members.find(m => m.id === mems[0])?.angle ?? 0 }], ([ang]) => patchMembers({ angle: ang })) },
-        { label: 'Continuous Support…', onClick: () => ask('Continuous Support (kN/m/m)', [{ label: <><i>k</i><sub>y</sub> (kN/m/m), local y</>, value: mem0?.ky ?? 0 }, { label: <><i>k</i><sub>z</sub> (kN/m/m), local z</>, value: mem0?.kz ?? 0 }],
-          ([ky, kz]) => patchMembers({ ky: Math.max(0, ky) || undefined, kz: Math.max(0, kz) || undefined })) },
+        { label: 'Continuous Support…', onClick: () => ask(`Continuous Support (${ul('forcePerLength2')})`, [{ label: <><i>k</i><sub>y</sub> ({ul('forcePerLength2')}), local y</>, value: sh('forcePerLength2', mem0?.ky ?? 0) }, { label: <><i>k</i><sub>z</sub> ({ul('forcePerLength2')}), local z</>, value: sh('forcePerLength2', mem0?.kz ?? 0) }],
+          ([ky, kz]) => patchMembers({ ky: Math.max(0, rd('forcePerLength2', ky)) || undefined, kz: Math.max(0, rd('forcePerLength2', kz)) || undefined })) },
         { label: 'Member Type', sub: ([['N', 'Normal'], ['T', 'Tension Only'], ['C', 'Compression Only']] as const).map(([c, l]) => ({ label: l, onClick: run(() => patchMembers({ type: c })) })) },
         ...(mems.length > 1 ? [{ label: 'Merge', disabled: 'reason' in mergeMembers(model, sel.members), onClick: run(() => { const r = mergeMembers(model, sel.members); if ('model' in r) { setModel(() => r.model); setSel({ nodes: new Set(), members: new Set([r.kept]) }); } }) } as MenuItem] : []),
         { label: 'Subdivide', sub: [2, 3, 4, 5, 6, 8, 10].map(k => ({ label: `Into ${k} Parts`, onClick: run(() => subdivide(k)) })) }, 'sep', ...moveCopy, 'sep');
@@ -288,40 +295,40 @@ export default function App() {
   const secOpt = opt(model.sections), secNo = model.sections.map(r => ({ value: String(r.id), label: String(r.id) })), matOpt = opt(model.materials), lcOpt = opt(model.loadCases);
   const idSel = (key: string, label: string, options: { value: string; label: string }[], w = 90): Col<any> => ({ key, label, type: 'select', options, w, set: (r: object, v: string | number) => ({ ...r, [key]: Number(v) }) }); // eslint-disable-line @typescript-eslint/no-explicit-any
   const nodeSpec: DofSpec<Node> = {
-    title: n => `Node ${n.id}: Restraint`, names: ['DX', 'DY', 'DZ', 'RX', 'RY', 'RZ'], units: ['kN/m', 'kN/m', 'kN/m', 'kNm/rad', 'kNm/rad', 'kNm/rad'], spring: [true, true, true, true, true, true],
+    title: n => `Node ${n.id}: Restraint`, names: ['DX', 'DY', 'DZ', 'RX', 'RY', 'RZ'], units: ['forcePerLength', 'forcePerLength', 'forcePerLength', 'rotStiffness', 'rotStiffness', 'rotStiffness'], spring: [true, true, true, true, true, true],
     presets: RESTRAINTS, dflt: 'RRRRRR', code: n => n.r, stiffness: n => n.k ?? [],
     apply: (n, c, k) => ({ ...n, r: c === 'RRRRRR' ? DASH : c, k: c.includes('S') ? k : undefined }),
   };
   const memSpec = (end: 'A' | 'B'): DofSpec<Member> => ({
-    title: m => `Member ${m.id}: Release at End ${end === 'A' ? 1 : 2}`, names: ['Fx', 'Fy', 'Fz', 'Mx', 'My', 'Mz'], units: ['kN/m', '', '', 'kNm/rad', 'kNm/rad', 'kNm/rad'], spring: [true, false, false, true, true, true],
+    title: m => `Member ${m.id}: Release at End ${end === 'A' ? 1 : 2}`, names: ['Fx', 'Fy', 'Fz', 'Mx', 'My', 'Mz'], units: ['forcePerLength', 'forcePerLength', 'forcePerLength', 'rotStiffness', 'rotStiffness', 'rotStiffness'], spring: [true, false, false, true, true, true],
     presets: RELEASES, dflt: 'FFFFFF', code: m => (end === 'A' ? m.relA : m.relB), stiffness: m => (end === 'A' ? m.kA : m.kB) ?? [],
     apply: (m, c, k) => { const rel = c === 'FFFFFF' ? DASH : c, ks = c.includes('S') ? k : undefined; return end === 'A' ? { ...m, relA: rel, kA: ks } : { ...m, relB: rel, kB: ks }; },
   });
   /** A release code typed or pasted into a cell: springs are not allowed on the shear forces. */
   const relCode = (v: string | number, old: string) => { const c = code(v, old); return c !== old && (c[1] === 'S' || c[2] === 'S') ? old : c; };
-  const nodeCols: Col<Node>[] = [{ key: 'x', label: 'X (m)' }, { key: 'y', label: 'Y (m)' }, { key: 'z', label: 'Z (m)' },
+  const nodeCols: Col<Node>[] = [{ key: 'x', label: 'X', q: 'length' }, { key: 'y', label: 'Y', q: 'length' }, { key: 'z', label: 'Z', q: 'length' },
     { key: 'r', label: 'Restraint', type: 'dof', dof: nodeSpec, w: 96, title: 'F fixed, R released or S spring, for DX DY DZ RX RY RZ', set: (r, v) => ({ ...r, r: code(v, r.r) }) }];
   const memCols: Col<Member>[] = [{ key: 'a', label: 'End 1', title: 'Node at end 1 of the member', w: 40 }, { key: 'b', label: 'End 2', title: 'Node at end 2 of the member', w: 40 }, idSel('sec', 'Section No.', secNo, 58), idSel('mat', 'Material', matOpt, 72),
     { key: 'angle', label: 'Angle (°)', w: 44 }, { key: 'type', label: 'Type', type: 'select', w: 84, options: [{ value: 'N', label: 'Normal' }, { value: 'T', label: 'Tension Only' }, { value: 'C', label: 'Compr. Only' }] },
-    { key: 'ky', label: 'Supp. ky (kN/m/m)', w: 84, title: 'Continuous support in the local y direction, kN/m per m of member; 0 or blank for none', get: r => r.ky ?? 0, set: (r, v) => ({ ...r, ky: Math.max(0, Number(v) || 0) || undefined }) },
-    { key: 'kz', label: 'Supp. kz (kN/m/m)', w: 84, title: 'Continuous support in the local z direction, kN/m per m of member; 0 or blank for none', get: r => r.kz ?? 0, set: (r, v) => ({ ...r, kz: Math.max(0, Number(v) || 0) || undefined }) },
+    { key: 'ky', label: 'Supp. ky', q: 'forcePerLength2', w: 84, title: 'Continuous support in the local y direction, force per length per length of member; 0 or blank for none', get: r => r.ky ?? 0, set: (r, v) => ({ ...r, ky: Math.max(0, Number(v) || 0) || undefined }) },
+    { key: 'kz', label: 'Supp. kz', q: 'forcePerLength2', w: 84, title: 'Continuous support in the local z direction, force per length per length of member; 0 or blank for none', get: r => r.kz ?? 0, set: (r, v) => ({ ...r, kz: Math.max(0, Number(v) || 0) || undefined }) },
     { key: 'relA', label: 'Release 1', type: 'dof', dof: memSpec('A'), w: 84, title: 'F fixed, R released or S spring (not for the shears), for the local x y z forces and moments', set: (r, v) => ({ ...r, relA: relCode(v, r.relA) }) },
     { key: 'relB', label: 'Release 2', type: 'dof', dof: memSpec('B'), w: 84, title: 'F fixed, R released or S spring (not for the shears), for the local x y z forces and moments', set: (r, v) => ({ ...r, relB: relCode(v, r.relB) }) }];
   const secCols: Col<Section>[] = [{ key: 'colour', label: '', type: 'colour', w: 28, get: r => (r.colour && /^#[0-9a-f]{6}$/i.test(r.colour) ? r.colour : sectionColour(r.id)), autoColour: r => !r.colour, set: (r, v) => (typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? { ...r, colour: v.toLowerCase() } : { ...r, colour: undefined }) },
-    { key: 'name', label: 'Section Type', type: 'text', w: 150 }, { key: 'A', label: <><i>A</i> (mm²)</>, w: 60 }, { key: 'Iz', label: <><i>I</i><sub>z</sub> (mm⁴)</>, w: 76 }, { key: 'Iy', label: <><i>I</i><sub>y</sub> (mm⁴)</>, w: 76 }, { key: 'J', label: <><i>J</i> (mm⁴)</>, w: 70 }];
-  const matCols: Col<Material>[] = [{ key: 'name', label: 'Name', type: 'text', w: 110 }, { key: 'E', label: <><i>E</i> (MPa)</>, w: 60 }, { key: 'G', label: <><i>G</i> (MPa)</>, w: 60 }, { key: 'rho', label: 'Density (kg/m³)', w: 70 }, { key: 'alpha', label: <><i>α</i> (/°C)</>, w: 70 }];
-  const massCols: Col<NodeMass>[] = [{ key: 'node', label: 'Node' }, { key: 'm', label: 'Mass (t)' }];
+    { key: 'name', label: 'Section Type', type: 'text', w: 150 }, { key: 'A', label: <i>A</i>, q: 'area', w: 60 }, { key: 'Iz', label: <><i>I</i><sub>z</sub></>, q: 'inertia', w: 76 }, { key: 'Iy', label: <><i>I</i><sub>y</sub></>, q: 'inertia', w: 76 }, { key: 'J', label: <i>J</i>, q: 'inertia', w: 70 }];
+  const matCols: Col<Material>[] = [{ key: 'name', label: 'Name', type: 'text', w: 110 }, { key: 'E', label: <i>E</i>, q: 'stress', w: 60 }, { key: 'G', label: <i>G</i>, q: 'stress', w: 60 }, { key: 'rho', label: 'Density', q: 'density', w: 70 }, { key: 'alpha', label: <i>α</i>, q: 'perTemp', w: 70 }];
+  const massCols: Col<NodeMass>[] = [{ key: 'node', label: 'Node' }, { key: 'm', label: 'Mass', q: 'mass' }];
   const lcCols: Col<LoadCase>[] = [{ key: 'name', label: 'Name', type: 'text', w: 130 }, { key: 'gx', label: 'Gravity X', title: 'Gravity load as a multiplier of g in global X' }, { key: 'gy', label: 'Gravity Y', title: 'Gravity load as a multiplier of g in global Y (−1 is downward)' }, { key: 'gz', label: 'Gravity Z', title: 'Gravity load as a multiplier of g in global Z' }];
   const comboCols: Col<Combo>[] = [{ key: 'name', label: 'Name', type: 'text', w: 150 }, ...model.loadCases.map((c): Col<Combo> => ({ key: `f${c.id}`, label: `× Case ${c.id}`, title: c.name, w: 58, get: r => r.f[c.id] ?? 0, set: (r, v) => ({ ...r, f: { ...r.f, [c.id]: Number(v) } }) }))];
   const lcCol = idSel('lc', 'Case', lcOpt, 112);
   const axesCol = { key: 'axes', label: 'Axes', type: 'select' as const, w: 66, options: [{ value: 'G', label: 'Global' }, { value: 'L', label: 'Local' }] };
-  const nlCols: Col<NodeLoad>[] = [lcCol, { key: 'node', label: 'Node', w: 44 }, ...(['fx', 'fy', 'fz'] as const).map(k => ({ key: k, label: `${k.toUpperCase()} (kN)`, w: 54 })), ...(['mx', 'my', 'mz'] as const).map(k => ({ key: k, label: `${k.toUpperCase()} (kNm)`, w: 58 }))];
+  const nlCols: Col<NodeLoad>[] = [lcCol, { key: 'node', label: 'Node', w: 44 }, ...(['fx', 'fy', 'fz'] as const).map(k => ({ key: k, label: k.toUpperCase(), q: 'force' as const, w: 54 })), ...(['mx', 'my', 'mz'] as const).map(k => ({ key: k, label: k.toUpperCase(), q: 'moment' as const, w: 58 }))];
   const dlCols: Col<DistLoad>[] = [lcCol, { key: 'member', label: 'Member', w: 50 }, axesCol, { key: 'dir', label: 'Dir.', type: 'select', w: 44, optionsFor: r => ['X', 'Y', 'Z'].map(v => ({ value: v, label: r.axes === 'L' ? v.toLowerCase() : v })) },
-    { key: 'w1', label: <><i>w</i><sub>1</sub> (kN/m)</>, w: 60 }, { key: 'w2', label: <><i>w</i><sub>2</sub> (kN/m)</>, w: 60 }, { key: 's', label: 'Start (%)', w: 52 }, { key: 'e', label: 'End (%)', w: 52 }];
+    { key: 'w1', label: <><i>w</i><sub>1</sub></>, q: 'forcePerLength', w: 60 }, { key: 'w2', label: <><i>w</i><sub>2</sub></>, q: 'forcePerLength', w: 60 }, { key: 's', label: 'Start (%)', w: 52 }, { key: 'e', label: 'End (%)', w: 52 }];
   const plCols: Col<PointLoad>[] = [lcCol, { key: 'member', label: 'Member', w: 50 }, axesCol, { key: 'dir', label: 'Dir.', type: 'select', w: 80, optionsFor: r => { const c = (v: string) => (r.axes === 'L' ? v.toLowerCase() : v); return [...['X', 'Y', 'Z'].map(v => ({ value: v, label: `Force ${c(v)}` })), ...['MX', 'MY', 'MZ'].map(v => ({ value: v, label: `Moment ${c(v[1])}` }))]; } },
-    { key: 'p', label: 'Load (kN, kNm)', w: 80 }, { key: 'pos', label: 'Position (%)', w: 66 }];
-  const stCols: Col<Settlement>[] = [lcCol, { key: 'node', label: 'Node', w: 44 }, { key: 'dx', label: 'DX (mm)' }, { key: 'dy', label: 'DY (mm)' }, { key: 'dz', label: 'DZ (mm)' }];
-  const thCols: Col<ThermalLoad>[] = [lcCol, { key: 'member', label: 'Member' }, { key: 'dT', label: 'Temperature Change (°C)', w: 130 }];
+    { key: 'p', label: u => `Load (${unitLabel('force', u)}, ${unitLabel('moment', u)})`, q: r => (r.dir.length === 2 ? 'moment' : 'force'), w: 80 }, { key: 'pos', label: 'Position (%)', w: 66 }];
+  const stCols: Col<Settlement>[] = [lcCol, { key: 'node', label: 'Node', w: 44 }, { key: 'dx', label: 'DX', q: 'lengthMm' }, { key: 'dy', label: 'DY', q: 'lengthMm' }, { key: 'dz', label: 'DZ', q: 'lengthMm' }];
+  const thCols: Col<ThermalLoad>[] = [lcCol, { key: 'member', label: 'Member' }, { key: 'dT', label: 'Temperature Change', q: 'tempChange', w: 130 }];
 
   const firstNode = [...sel.nodes][0] ?? model.nodes[0]?.id ?? 1, firstMem = [...sel.members][0] ?? model.members[0]?.id ?? 1;
   const pickN = (r: { id: number }, add: boolean) => setSel(s => { const n = new Set(add ? s.nodes : []); if (add && s.nodes.has(r.id)) n.delete(r.id); else n.add(r.id); return { nodes: n, members: add ? s.members : new Set() }; });
@@ -348,6 +355,7 @@ export default function App() {
   };
 
   return (
+    <UnitsContext.Provider value={units}>
     <div className="fill-window app-wide min-h-screen bg-slate-100 lg:h-screen lg:overflow-hidden flex flex-col">
       <AppHeader name="CosmicWind" logoSrc="/favicon.svg" onAbout={() => setDialog('about')} onReport={() => setDialog('report')}
         tabs={[{ key: 'structure', label: 'Structure', icon: <Box className="w-3.5 h-3.5" /> }, { key: 'loads', label: 'Loads', icon: <Weight className="w-3.5 h-3.5" /> }, { key: 'results', label: 'Analysis and Results', icon: <LineChart className="w-3.5 h-3.5" /> }]}
@@ -502,6 +510,7 @@ export default function App() {
               {ctx && menuOf() && <ContextMenu menu={menuOf()!} W={cvSize.width} H={cvSize.height} onClose={() => setCtx(null)} />}
               {textPrompt && <TextPromptBox prompt={textPrompt} W={cvSize.width} H={cvSize.height} onClose={() => setTextPrompt(null)} />}
               {prompt && <PromptBox prompt={prompt} W={cvSize.width} H={cvSize.height} onClose={() => setPrompt(null)} />}
+              <UnitsBar units={units} onChange={setUnits} />
               {tab !== 'results' && <div className="absolute top-2 left-2 toolbar w-[104px]">
                   <button className={`tool-btn ${tool === 'select' ? 'tool-btn-active' : ''}`} onClick={() => setTool('select')}><MousePointer2 className="w-3.5 h-3.5" />Select</button>
                   <button className={`tool-btn ${tool === 'node' ? 'tool-btn-active' : ''}`} title="Click to add nodes on the XY plane (Z = 0); nodes and member midpoints snap" onClick={() => setTool('node')}><Dot className="w-3.5 h-3.5" />Node</button>
@@ -574,7 +583,8 @@ export default function App() {
       }} />}
       {dialog === 'report' && <ReportDialog info={info} setInfo={setInfo} onClose={() => setDialog(null)}
         fields={[['project', 'Project'], ['number', 'Project Number'], ['structure', 'Structure'], ['designer', 'Designer'], ['date', 'Date']]}
-        onGenerate={async () => { const a = analysis ?? analyse(model); if (a.errors.length) throw new Error(a.errors[0]); const { makeReport } = await import('./report'); await makeReport(model, a, info, viewer.current?.svg() ?? null); }} />}
+        onGenerate={async () => { const a = analysis ?? analyse(model); if (a.errors.length) throw new Error(a.errors[0]); const { makeReport } = await import('./report'); await makeReport(model, a, info, viewer.current?.svg() ?? null, units); }} />}
     </div>
+    </UnitsContext.Provider>
   );
 }
