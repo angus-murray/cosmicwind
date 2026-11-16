@@ -133,3 +133,73 @@ export function deleteMembersAndFreeNodes(m: Model, ids: Set<number>): Model {
   const free = new Set([...ends].filter(n => !used.has(n)));
   return free.size ? deleteNodes(rest, free) : rest;
 }
+
+/**
+ * Joins colinear members that form one chain into a single member from the first node to the last. The members must be the only ones at the nodes between them,
+ * those nodes must carry no restraint, load, mass or settlement, and the members must agree in section, material, angle, type, direction and thermal load.
+ * Loads on the members move to the new member (it keeps the lowest member number). Returns the model and the kept member, or the reason it cannot be done.
+ */
+export function mergeMembers(m: Model, ids: Set<number>): { model: Model; kept: number } | { reason: string } {
+  const sel = m.members.filter(b => ids.has(b.id));
+  if (sel.length < 2) return { reason: 'Select at least two members.' };
+  const node = new Map(m.nodes.map(n => [n.id, n]));
+  const deg = new Map<number, number>();
+  for (const b of sel) for (const n of [b.a, b.b]) deg.set(n, (deg.get(n) ?? 0) + 1);
+  const ends = [...deg].filter(([, d]) => d === 1).map(([n]) => n);
+  if (ends.length !== 2 || [...deg.values()].some(d => d > 2)) return { reason: 'The members do not form one chain.' };
+  // Walk the chain from one end; the members must all run the same way along it
+  const walk = (from: number) => {
+    const order: Member[] = [], nodes = [from], left = new Set(sel);
+    while (left.size) {
+      const cur = nodes[nodes.length - 1], b = [...left].find(x => x.a === cur);
+      if (!b) return null;
+      left.delete(b); order.push(b); nodes.push(b.b);
+    }
+    return { order, nodes };
+  };
+  const chain = walk(ends[0]) ?? walk(ends[1]);
+  if (!chain) return { reason: 'The members do not form one chain running in one direction.' };
+  const { order, nodes } = chain;
+  const p0 = node.get(nodes[0]), p1 = node.get(nodes[nodes.length - 1]);
+  if (!p0 || !p1) return { reason: 'A node is missing.' };
+  const L = Math.hypot(p1.x - p0.x, p1.y - p0.y, p1.z - p0.z);
+  if (L < 1e-9) return { reason: 'The members form a closed loop.' };
+  const u = [(p1.x - p0.x) / L, (p1.y - p0.y) / L, (p1.z - p0.z) / L];
+  let prev = 0;
+  for (const id of nodes.slice(1, -1)) {
+    const n = node.get(id); if (!n) return { reason: 'A node is missing.' };
+    const d = [n.x - p0.x, n.y - p0.y, n.z - p0.z], t = d[0] * u[0] + d[1] * u[1] + d[2] * u[2];
+    const off = Math.hypot(d[0] - t * u[0], d[1] - t * u[1], d[2] - t * u[2]);
+    if (off > 1e-6 * Math.max(1, L) || t <= prev) return { reason: 'The members are not colinear.' };
+    prev = t;
+    if (m.members.some(b => !ids.has(b.id) && (b.a === id || b.b === id))) return { reason: 'Another member is connected at a common node.' };
+    if (restraintCode(n.r) !== 'RRRRRR' || m.nodeLoads.some(l => l.node === id) || m.settlements.some(l => l.node === id) || m.masses.some(l => l.node === id))
+      return { reason: 'A common node has a restraint, load or mass.' };
+  }
+  const f = order[0], last = order[order.length - 1];
+  if (order.some(b => b.sec !== f.sec || b.mat !== f.mat || b.angle !== f.angle || b.type !== f.type)) return { reason: 'The members differ in section, material, angle or type.' };
+  const lens = order.map(b => { const a = node.get(b.a)!, c = node.get(b.b)!; return Math.hypot(c.x - a.x, c.y - a.y, c.z - a.z); });
+  const start = lens.map((_, i) => lens.slice(0, i).reduce((s, v) => s + v, 0));
+  const total = lens.reduce((s, v) => s + v, 0), idx = new Map(order.map((b, i) => [b.id, i]));
+  const kept = Math.min(...order.map(b => b.id));
+  const thermal: ThermalLoad[] = [];
+  for (const lc of new Set(m.thermal.filter(t => idx.has(t.member)).map(t => t.lc))) {
+    const ts = order.map(b => m.thermal.find(t => t.lc === lc && t.member === b.id)?.dT ?? 0);
+    if (ts.some(t => Math.abs(t - ts[0]) > 1e-12)) return { reason: 'The members have different thermal loads.' };
+    thermal.push({ lc, member: kept, dT: ts[0] });
+  }
+  const pct = (i: number, p: number) => +((start[i] + p / 100 * lens[i]) / total * 100).toFixed(6);
+  const merged: Member = { ...f, id: kept, a: nodes[0], b: nodes[nodes.length - 1], relA: f.relA, kA: f.kA, relB: last.relB, kB: last.kB };
+  const inner = new Set(nodes.slice(1, -1));
+  const rest = <T extends { member: number }>(a: T[]) => a.filter(x => !idx.has(x.member));
+  const model: Model = {
+    ...m,
+    nodes: m.nodes.filter(n => !inner.has(n.id)),
+    members: m.members.filter(b => !idx.has(b.id)).concat(merged).sort((p, q) => p.id - q.id),
+    distLoads: [...rest(m.distLoads), ...m.distLoads.filter(l => idx.has(l.member)).map(l => { const i = idx.get(l.member)!; return { ...l, member: kept, s: pct(i, l.s), e: pct(i, l.e) }; })],
+    pointLoads: [...rest(m.pointLoads), ...m.pointLoads.filter(l => idx.has(l.member)).map(l => { const i = idx.get(l.member)!; return { ...l, member: kept, pos: pct(i, l.pos) }; })],
+    thermal: [...rest(m.thermal), ...thermal],
+    notes: m.notes.filter(n => !(n.kind === 'node' && inner.has(n.ref))).map(n => (n.kind === 'member' && idx.has(n.ref) ? { ...n, ref: kept } : n)),
+  };
+  return { model, kept };
+}
