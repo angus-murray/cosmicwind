@@ -35,7 +35,6 @@ export function UnitsBar({ units, onChange }: { units: Units; onChange: (u: Unit
               </select>
             </label>
           ))}
-          <div className="text-[11px] text-slate-400">Time is always in seconds.</div>
         </div>
       )}
       <button type="button" title="Units: click to change" aria-expanded={open} onClick={() => setOpen(o => !o)}
