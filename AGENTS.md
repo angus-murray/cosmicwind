@@ -13,6 +13,7 @@ Structural analysis app; follows the `engineering-ui` house style (`node_modules
 ## Conventions
 
 - Units: m, kN, kNm; section properties in mm units; E and G in MPa. Global Y is vertical.
+- A member may carry a continuous support (`ky`, `kz`, kN/m per m, local y and z). The solver lumps it to the end nodes of each member (k L / 2 each), so subdivide members for a close match to a bed of springs.
 - The solver works in kN, m and t. Every solver change needs a test in `src/solver/frame.test.ts` against a
   closed-form or refined-model result.
 - Run `bun run check`, `bun test` and `bun run build` before committing.

@@ -20,6 +20,8 @@ export interface Member {
   relA: string; relB: string;
   /** Spring stiffnesses of the S end releases: kN/m for Fx, kNm/rad for Mx My Mz. */
   kA?: number[]; kB?: number[];
+  /** Continuous support along the member in its local y and z directions, kN/m per m of member length (kN/m/m); absent or 0 means unsupported. */
+  ky?: number; kz?: number;
 }
 export interface LoadCase { id: number; name: string; /** Gravity load as multipliers of g in global X, Y, Z (self-weight of the members). */ gx: number; gy: number; gz: number }
 export interface Combo { id: number; name: string; /** Load case id → factor. */ f: Record<number, number> }
@@ -177,7 +179,7 @@ export function mergeMembers(m: Model, ids: Set<number>): { model: Model; kept: 
       return { reason: 'A common node has a restraint, load or mass.' };
   }
   const f = order[0], last = order[order.length - 1];
-  if (order.some(b => b.sec !== f.sec || b.mat !== f.mat || b.angle !== f.angle || b.type !== f.type)) return { reason: 'The members differ in section, material, angle or type.' };
+  if (order.some(b => b.sec !== f.sec || b.mat !== f.mat || b.angle !== f.angle || b.type !== f.type || (b.ky ?? 0) !== (f.ky ?? 0) || (b.kz ?? 0) !== (f.kz ?? 0))) return { reason: 'The members differ in section, material, angle, type or continuous support.' };
   const lens = order.map(b => { const a = node.get(b.a)!, c = node.get(b.b)!; return Math.hypot(c.x - a.x, c.y - a.y, c.z - a.z); });
   const start = lens.map((_, i) => lens.slice(0, i).reduce((s, v) => s + v, 0));
   const total = lens.reduce((s, v) => s + v, 0), idx = new Map(order.map((b, i) => [b.id, i]));

@@ -271,6 +271,16 @@ export function analyse(model: Model): Analysis {
   }
   const springs = nodes.flatMap((n, i) => [...restraintCode(n.r)].map((c, d) => ({ dof: i * 6 + d, k: c === 'S' ? n.k?.[d] ?? 0 : 0 })).filter(v => v.k > 0 && eq[v.dof] >= 0));
 
+  // Continuous supports: each member contributes k L / 2 to each end node, along its local y and z axes, as a 3 × 3 block in global axes
+  const found = new Map<number, number[][]>();
+  for (const e of els) {
+    const ky = Math.max(0, e.m.ky || 0), kz = Math.max(0, e.m.kz || 0); if (!ky && !kz) continue;
+    for (const i of [e.ia, e.ib]) {
+      let f = found.get(i); if (!f) found.set(i, f = [[0, 0, 0], [0, 0, 0], [0, 0, 0]]);
+      for (let a = 0; a < 3; a++) for (let b = 0; b < 3; b++) f[a][b] += e.L / 2 * (ky * e.R[1][a] * e.R[1][b] + kz * e.R[2][a] * e.R[2][b]);
+    }
+  }
+
   // ---- Loads, grouped by load case and member
   const mIx = new Map(els.map((e, i) => [e.m.id, i]));
   const lcs = new Map(model.loadCases.map(c => [c.id, c]));
@@ -325,6 +335,7 @@ export function analyse(model: Model): Analysis {
     const auto: number[] = [];
     if (!geoOnly) {
       for (const s of springs) K.add(eq[s.dof], eq[s.dof], s.k);
+      for (const [i, f] of found) for (let a = 0; a < 3; a++) for (let b = a; b < 3; b++) if (eq[i * 6 + a] >= 0 && eq[i * 6 + b] >= 0 && f[a][b] !== 0) K.add(eq[i * 6 + a], eq[i * 6 + b], f[a][b]);
       let dmax = 0; for (let i = 0; i < neq; i++) dmax = Math.max(dmax, Math.abs(K.diag(i)));
       for (let i = 0; i < neq; i++) if (Math.abs(K.diag(i)) < 1e-12 * dmax) { K.setDiag(i, 1); auto.push(i); } // unstiffened DOF (e.g. rotation at a truss node)
     }
@@ -438,7 +449,9 @@ export function analyse(model: Model): Analysis {
     const sprung = new Set(springs.map(s => s.dof));
     nodes.forEach((n, i) => {
       const r = Array.from({ length: 6 }, (_, d) => (eq[i * 6 + d] < 0 || sprung.has(i * 6 + d) ? react[i * 6 + d] - P[i * 6 + d] : 0));
-      if (adj[i].length && Array.from({ length: 6 }, (_, d) => eq[i * 6 + d] < 0 || sprung.has(i * 6 + d)).some(Boolean)) res.reactions.set(n.id, r);
+      const f = found.get(i);
+      if (f) for (let a = 0; a < 3; a++) if (eq[i * 6 + a] >= 0) for (let b = 0; b < 3; b++) if (eq[i * 6 + b] >= 0) r[a] -= f[a][b] * full(i * 6 + b);
+      if (adj[i].length && (f || Array.from({ length: 6 }, (_, d) => eq[i * 6 + d] < 0 || sprung.has(i * 6 + d)).some(Boolean))) res.reactions.set(n.id, r);
     });
 
     // elastic critical buckling of this case

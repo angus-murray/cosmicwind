@@ -56,6 +56,10 @@ export async function makeReport(model: Model, an: Analysis, info: ReportInfo, s
   const memSprings = model.members.some(m => m.relA.includes('S') || m.relB.includes('S'));
   const endSprings = (m: Member) => [springs(m.relA, m.kA, fn, fu) && `End 1 ${springs(m.relA, m.kA, fn, fu)}`, springs(m.relB, m.kB, fn, fu) && `End 2 ${springs(m.relB, m.kB, fn, fu)}`].filter(Boolean).join('; ') || '–';
   table(['Member', 'End 1', 'End 2', 'Section No.', 'Material', 'Angle (deg)', 'Type', 'Release 1', 'Release 2', ...(memSprings ? ['Springs'] : [])], model.members.map(m => [m.id, m.a, m.b, m.sec, mn.get(m.mat) ?? m.mat, m.angle, { N: 'Normal', T: 'Tension only', C: 'Compression only' }[m.type], m.relA, m.relB, ...(memSprings ? [endSprings(m)] : [])]));
+  if (model.members.some(m => m.ky || m.kz)) {
+    heading('Continuous Supports');
+    table(['Member', 'ky (kN/m/m)', 'kz (kN/m/m)'], model.members.filter(m => m.ky || m.kz).map(m => [m.id, m.ky ?? 0, m.kz ?? 0]));
+  }
   heading('Sections and Materials');
   table(['Section No.', 'Section Type', 'A (mm2)', 'Iy (mm4)', 'Iz (mm4)', 'J (mm4)'], model.sections.map(s => [s.id, s.name, n(s.A, 0), s.Iy.toExponential(3), s.Iz.toExponential(3), s.J.toExponential(3)]));
   table(['Material', 'Name', 'E (MPa)', 'G (MPa)', 'Density (kg/m3)'], model.materials.map(s => [s.id, s.name, s.E, s.G, s.rho]));
