@@ -280,11 +280,11 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   };
   /** The lines of basic information shown when the pointer rests on a node or a member. */
   const infoLines = (nodeId: number | null, memberId: number | null): string[] | null => {
-    const u = uLabel('length'), pos = (n: { x: number; y: number; z: number }) => `${len3(n.x)}, ${len3(n.y)}, ${len3(n.z)} ${u}`;
+    const u = uLabel('length');
     const code = (c: string) => (c === FIXED ? 'Fixed' : c === PIN ? 'Pinned' : c);
     if (nodeId !== null) {
       const n = nodeMap.get(nodeId); if (!n) return null;
-      const out = [`Node ${n.id}`, `X, Y, Z: ${pos(n)}`], r = restraintCode(n.r);
+      const out = [`Node ${n.id}`, `X: ${len3(n.x)} ${u}`, `Y: ${len3(n.y)} ${u}`, `Z: ${len3(n.z)} ${u}`], r = restraintCode(n.r);
       if (r !== 'RRRRRR') out.push(`Restraint: ${code(r)}${r !== FIXED && r !== PIN ? ' (DX DY DZ RX RY RZ)' : ''}`);
       const k = model.members.filter(b => b.a === n.id || b.b === n.id).length; out.push(`Members: ${k}`);
       const loads = model.nodeLoads.filter(l => l.node === n.id).length; if (loads) out.push(`Node loads: ${loads}`);
