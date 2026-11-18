@@ -3,8 +3,8 @@
 
 @layer components {
   /* Datasheet: an editable grid in the input column. */
-  .sheet { @apply w-full border-collapse text-[12px] tabular-nums; }
-  .sheet th { @apply sticky top-0 z-10 bg-slate-50 border border-slate-200 px-1 py-1 text-[11px] font-semibold text-slate-700 whitespace-nowrap; }
+  .sheet { @apply w-full border-collapse text-[12px] tabular-nums table-fixed; }
+  .sheet th { @apply sticky top-0 z-10 bg-slate-50 border border-slate-200 px-1 py-1 text-[11px] font-semibold text-slate-700 break-words; }
   .sheet td { @apply border border-slate-200 p-0 text-slate-800; }
   .sheet td.rowhead { @apply bg-slate-50 px-1.5 text-center text-[11px] font-semibold text-slate-600 cursor-pointer select-none; }
   .sheet tr.sel td.rowhead { @apply bg-blue-600 text-white; }

@@ -9,7 +9,8 @@ Structural analysis app; follows the `engineering-ui` house style (`node_modules
   controls. Cells commit on Enter or blur and accept a block pasted from a spreadsheet.
 - The input column is a tree of panels (`src/ui/Tree.tsx`, with the `.tree-*` classes in `src/index.css`) and not tabs: Structure, Boundary Conditions, Loads, and Analysis and Results are panels, and each item in them opens as a drop-down in place. Several can be open at once. The classes use only house-style tokens and are intended to move into `engineering-ui`.
 - Boundary Conditions (Node Restraints, Member Releases, Member Supports) are stored on the nodes and members, and each datasheet lists only the nodes or members that have one, so the Nodes and Members tables stay narrow.
-- Selecting a row in the Nodes or Members datasheet selects the same element on the canvas, and selecting on the canvas opens the datasheet and scrolls to the row.
+- Selecting a row in the Nodes or Members datasheet selects the same element on the canvas, and selecting on the canvas opens the datasheet and scrolls to the row. Clicking the number of a section or material selects the members that use it.
+- Datasheets use a fixed layout: columns share the width equally (a text column takes more, or a `weight` on the column), so the same kind of column has the same width everywhere. The input column is a quarter of the width, at least 500 px.
 - There is no Solve button: the analysis runs while any item of Analysis and Results is open, and the model changes. While one is open the model is shown with its results and the drawing tools are hidden.
 - The PDF report uses the built-in Helvetica font and `jspdf-autotable`, so it avoids symbols outside Latin-1.
 

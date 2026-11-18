@@ -72,7 +72,7 @@ export default function App() {
   const [drawSec, setDrawSec] = useState<number | null>(null), [drawMat, setDrawMat] = useState<number | null>(null), [assignDraw, setAssignDraw] = useState(false);
   /** Section number whose type is being changed in the section dialog, or null when adding a section. */
   const [replaceSec, setReplaceSec] = useState<number | null>(null);
-  const [secSel, setSecSel] = useState<number | null>(null);
+  const [secSel, setSecSel] = useState<number | null>(null), [matSel, setMatSel] = useState<number | null>(null);
   const [loadKind, setLoadKind] = useState<'node' | 'member'>('node');
   const [info, setInfo] = useState<ReportInfo>({ project: '', number: '', structure: '', designer: '', date: today() });
   const viewer = useRef<ViewerHandle>(null);
@@ -302,7 +302,7 @@ export default function App() {
   };
 
   // ---- Datasheet columns
-  const secOpt = opt(model.sections), secNo = model.sections.map(r => ({ value: String(r.id), label: String(r.id) })), matOpt = opt(model.materials), lcOpt = opt(model.loadCases);
+  const secOpt = opt(model.sections), secNo = model.sections.map(r => ({ value: String(r.id), label: String(r.id) })), matOpt = opt(model.materials);
   const idSel = (key: string, label: string, options: { value: string; label: string }[], w = 90): Col<any> => ({ key, label, type: 'select', options, w, set: (r: object, v: string | number) => ({ ...r, [key]: Number(v) }) }); // eslint-disable-line @typescript-eslint/no-explicit-any
   const nodeSpec: DofSpec<Node> = {
     title: n => `Node ${n.id}: Restraint`, names: ['DX', 'DY', 'DZ', 'RX', 'RY', 'RZ'], units: ['forcePerLength', 'forcePerLength', 'forcePerLength', 'rotStiffness', 'rotStiffness', 'rotStiffness'], spring: [true, true, true, true, true, true],
@@ -318,7 +318,7 @@ export default function App() {
   const relCode = (v: string | number, old: string) => { const c = code(v, old); return c !== old && (c[1] === 'S' || c[2] === 'S') ? old : c; };
   const nodeCols: Col<Node>[] = [{ key: 'x', label: 'X', q: 'length' }, { key: 'y', label: 'Y', q: 'length' }, { key: 'z', label: 'Z', q: 'length' }];
   const memCols: Col<Member>[] = [{ key: 'a', label: 'End 1', title: 'Node at end 1 of the member', w: 40 }, { key: 'b', label: 'End 2', title: 'Node at end 2 of the member', w: 40 }, idSel('sec', 'Section No.', secNo, 58), idSel('mat', 'Material', model.materials.map(r => ({ value: String(r.id), label: r.name })), 72),
-    { key: 'angle', label: 'Angle (°)', w: 44 }, { key: 'type', label: 'Type', type: 'select', w: 84, options: [{ value: 'N', label: 'Normal' }, { value: 'T', label: 'Tension Only' }, { value: 'C', label: 'Compr. Only' }] }];
+    { key: 'angle', label: 'Angle (°)', w: 44 }, { key: 'type', label: 'Type', type: 'select', w: 84, weight: 1.5, options: [{ value: 'N', label: 'Normal' }, { value: 'T', label: 'Tension Only' }, { value: 'C', label: 'Compr. Only' }] }];
 
   // ---- Boundary conditions
   const nodeIds = model.nodes.map(n => ({ value: String(n.id), label: String(n.id) })), memIds = model.members.map(b => ({ value: String(b.id), label: String(b.id) }));
@@ -341,12 +341,12 @@ export default function App() {
     { key: 'ky', label: <><i>k</i><sub>y</sub></>, q: 'forcePerLength2', w: 90, title: 'Continuous support in the local y direction, force per length per length of member; 0 for none', set: (r, v) => ({ ...r, ky: Math.max(0, Number(v) || 0) }) },
     { key: 'kz', label: <><i>k</i><sub>z</sub></>, q: 'forcePerLength2', w: 90, title: 'Continuous support in the local z direction, force per length per length of member; 0 for none', set: (r, v) => ({ ...r, kz: Math.max(0, Number(v) || 0) }) }];
   const secCols: Col<Section>[] = [{ key: 'colour', label: '', type: 'colour', w: 28, get: r => (r.colour && /^#[0-9a-f]{6}$/i.test(r.colour) ? r.colour : sectionColour(r.id)), autoColour: r => !r.colour, set: (r, v) => (typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? { ...r, colour: v.toLowerCase() } : { ...r, colour: undefined }) },
-    { key: 'name', label: 'Section Type', type: 'text', w: 150 }, { key: 'A', label: <i>A</i>, q: 'area', w: 60 }, { key: 'Iz', label: <><i>I</i><sub>z</sub></>, q: 'inertia', w: 76 }, { key: 'Iy', label: <><i>I</i><sub>y</sub></>, q: 'inertia', w: 76 }, { key: 'J', label: <i>J</i>, q: 'inertia', w: 70 }];
+    { key: 'name', label: 'Section Type', type: 'text', w: 150, weight: 1.5 }, { key: 'A', label: <i>A</i>, q: 'area', w: 60 }, { key: 'Iz', label: <><i>I</i><sub>z</sub></>, q: 'inertia', w: 76 }, { key: 'Iy', label: <><i>I</i><sub>y</sub></>, q: 'inertia', w: 76 }, { key: 'J', label: <i>J</i>, q: 'inertia', w: 70 }];
   const matCols: Col<Material>[] = [{ key: 'name', label: 'Name', type: 'text', w: 110 }, { key: 'E', label: <i>E</i>, q: 'stress', w: 60 }, { key: 'G', label: <i>G</i>, q: 'stress', w: 60 }, { key: 'rho', label: 'Density', q: 'density', w: 70 }, { key: 'alpha', label: <i>α</i>, q: 'perTemp', w: 70 }];
   const massCols: Col<NodeMass>[] = [{ key: 'node', label: 'Node' }, { key: 'm', label: 'Mass', q: 'mass' }];
   const lcCols: Col<LoadCase>[] = [{ key: 'name', label: 'Name', type: 'text', w: 130 }, { key: 'gx', label: 'Gravity X', title: 'Gravity load as a multiplier of g in global X' }, { key: 'gy', label: 'Gravity Y', title: 'Gravity load as a multiplier of g in global Y (−1 is downward)' }, { key: 'gz', label: 'Gravity Z', title: 'Gravity load as a multiplier of g in global Z' }];
   const comboCols: Col<Combo>[] = [{ key: 'name', label: 'Name', type: 'text', w: 150 }, ...model.loadCases.map((c): Col<Combo> => ({ key: `f${c.id}`, label: `× Case ${c.id}`, title: c.name, w: 58, get: r => r.f[c.id] ?? 0, set: (r, v) => ({ ...r, f: { ...r.f, [c.id]: Number(v) } }) }))];
-  const lcCol = idSel('lc', 'Case', lcOpt, 112);
+  const lcCol = idSel('lc', 'Case', model.loadCases.map(c => ({ value: String(c.id), label: String(c.id) })), 44);
   const axesCol = { key: 'axes', label: 'Axes', type: 'select' as const, w: 66, options: [{ value: 'G', label: 'Global' }, { value: 'L', label: 'Local' }] };
   const nlCols: Col<NodeLoad>[] = [lcCol, { key: 'node', label: 'Node', w: 44 }, ...(['fx', 'fy', 'fz'] as const).map(k => ({ key: k, label: k.toUpperCase(), q: 'force' as const, w: 54 })), ...(['mx', 'my', 'mz'] as const).map(k => ({ key: k, label: k.toUpperCase(), q: 'moment' as const, w: 58 }))];
   const dlCols: Col<DistLoad>[] = [lcCol, { key: 'member', label: 'Member', w: 50 }, axesCol, { key: 'dir', label: 'Dir.', type: 'select', w: 44, optionsFor: r => ['X', 'Y', 'Z'].map(v => ({ value: v, label: r.axes === 'L' ? v.toLowerCase() : v })) },
@@ -395,7 +395,7 @@ export default function App() {
       ) },
       { key: 'sections', label: 'Sections', count: model.sections.length, render: () => (
                 <>
-                  <Sheet rows={model.sections} addLabel="Add Section" cols={secCols} onChange={set('sections')} rowLabel={idLabel} selected={r => r.id === secSel} onSelect={r => setSecSel(r.id)} newRow={() => ({ id: nextId(model.sections), name: `Section ${nextId(model.sections)}`, A: 5000, Iy: 1e7, Iz: 5e7, J: 1e5 })}
+                  <Sheet rows={model.sections} addLabel="Add Section" cols={secCols} onChange={set('sections')} rowLabel={idLabel} selected={r => r.id === secSel} onSelect={r => { setSecSel(r.id); selectFromCanvas({ nodes: new Set(), members: new Set(model.members.filter(m => m.sec === r.id).map(m => m.id)) }); }} newRow={() => ({ id: nextId(model.sections), name: `Section ${nextId(model.sections)}`, A: 5000, Iy: 1e7, Iz: 5e7, J: 1e5 })}
                     onDelete={r => (used('sec', r.id) ? alert(`Section ${r.id} is used by members.`) : set('sections')(model.sections.filter(s => s.id !== r.id)))} />
                   <button className="btn-primary" onClick={() => { setAssignOnAdd(false); setReplaceSec(null); setDialog('section'); }}><Shapes className="w-3.5 h-3.5" /> Add From Library or Shape</button>
                   <button className="btn" disabled={secSel === null || !model.sections.some(x => x.id === secSel)} title="Select a section row, then choose a new type for its number; members keep the number" onClick={() => { setAssignOnAdd(false); setReplaceSec(secSel); setDialog('section'); }}><Shapes className="w-3.5 h-3.5" /> {secSel !== null && model.sections.some(x => x.id === secSel) ? `Change Type of Section ${secSel}` : 'Change Type of Selected Section'}</button>
@@ -403,7 +403,7 @@ export default function App() {
       ) },
       { key: 'materials', label: 'Materials', count: model.materials.length, render: () => (
                 <>
-                  <Sheet rows={model.materials} cols={matCols} onChange={set('materials')} rowLabel={idLabel}
+                  <Sheet rows={model.materials} cols={matCols} onChange={set('materials')} rowLabel={idLabel} selected={r => r.id === matSel} onSelect={r => { setMatSel(r.id); selectFromCanvas({ nodes: new Set(), members: new Set(model.members.filter(m => m.mat === r.id).map(m => m.id)) }); }}
                     onDelete={r => (used('mat', r.id) ? alert(`Material ${r.id} is used by members.`) : set('materials')(model.materials.filter(s => s.id !== r.id)))} />
                   <select className="control" value="" onChange={e => { const p = MATERIAL_PRESETS[Number(e.target.value)]; if (p) set('materials')([...model.materials, { ...p, id: nextId(model.materials) }]); }}>
                     <option value="">Add Material…</option>{MATERIAL_PRESETS.map((p, i) => <option key={p.name} value={i}>{p.name}</option>)}</select>
@@ -552,7 +552,7 @@ export default function App() {
           <input ref={fileRef} type="file" accept=".json,application/json" className="hidden" onChange={e => { open(e.target.files?.[0]); e.target.value = ''; }} />
         </div>} />
       <main className="flex-1 flex flex-col lg:min-h-0 p-3 w-full">
-        <div className="tab-grid lg:!grid-cols-[minmax(600px,1fr)_minmax(0,2fr)]">
+        <div className="tab-grid lg:!grid-cols-[minmax(500px,1fr)_minmax(0,3fr)]">
           <div className="input-column scroll-thin">
             {tab !== 'results' && tool === 'member' && (() => {
               const lastM = model.members[model.members.length - 1];

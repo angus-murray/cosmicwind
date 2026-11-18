@@ -11,6 +11,8 @@ export interface Col<T> {
   q?: Quantity | ((row: T) => Quantity);
   /** Let the heading wrap onto two lines, for a narrow column. */
   wrap?: boolean;
+  /** Share of the width of the datasheet relative to the other columns (1 by default; a text column is 2). */
+  weight?: number;
   type?: 'num' | 'text' | 'select' | 'ro' | 'dof' | 'colour';
   /** For a 'dof' column: the popover that sets each degree of freedom to F, R or S. */
   dof?: DofSpec<T>;
@@ -25,7 +27,8 @@ export interface Col<T> {
   set?: (row: T, v: string | number) => T;
 }
 
-const show = (v: unknown) => (typeof v === 'number' ? String(Math.abs(v) >= 1e7 || (v !== 0 && Math.abs(v) < 1e-4) ? Number(v.toPrecision(6)) : Number(v.toPrecision(10))) : String(v ?? ''));
+/** Numbers to ten significant figures, in exponent form (to four) when very small or large so that they fit a narrow column. */
+const show = (v: unknown) => (typeof v === 'number' ? (v !== 0 && (Math.abs(v) < 1e-3 || Math.abs(v) >= 1e7) ? Number(v.toPrecision(4)).toExponential() : String(Number(v.toPrecision(10)))) : String(v ?? ''));
 const parseNum = (s: string) => { const v = Number(s.trim().replace('−', '-').replace(/,/g, '')); return s.trim() === '' || !isFinite(v) ? null : v; };
 
 /** Editable datasheet. Cells commit on Enter or blur; a block copied from a spreadsheet can be pasted in. */
@@ -35,6 +38,7 @@ export function Sheet<T extends object>({ rows, cols, onChange, newRow, selected
   rowLabel?: (row: T, i: number) => React.ReactNode; empty?: string; /** Text of the button that adds a row, for example Add Node. */ addLabel?: string;
 }) {
   const ref = useRef<HTMLTableElement>(null);
+  const weight = (c: Col<T>) => c.weight ?? (c.type === 'text' ? 2 : 1), total = cols.filter(c => c.type !== 'colour').reduce((a, c) => a + weight(c), 0) || 1;
   const { u } = useUnits();
   const qOf = (r: T, c: Col<T>) => (typeof c.q === 'function' ? c.q(r) : c.q);
   const [pop, setPop] = useState<{ i: number; j: number; x: number; y: number } | null>(null);
@@ -71,8 +75,10 @@ export function Sheet<T extends object>({ rows, cols, onChange, newRow, selected
   return (
     <div className="space-y-1.5">
       <div className="overflow-auto max-h-[calc(100vh-250px)] scroll-thin border border-slate-200 rounded">
-        <table className="sheet" ref={ref}>
-          <thead><tr><th style={{ width: 34 }}></th>{cols.map(c => <th key={c.key} title={c.title} className={c.wrap ? '!whitespace-normal' : undefined} style={{ minWidth: c.w ?? 56 }}>{head(c)}</th>)}<th style={{ width: 22 }}></th></tr></thead>
+        <table className="sheet" ref={ref} style={{ minWidth: 56 + cols.length * 48 }}>
+          {/* Fixed layout: the columns share the width equally (text columns, such as a name, take double and a colour swatch is fixed), so the same kind of column is the same width in every datasheet */}
+          <colgroup><col style={{ width: 34 }} />{cols.map(c => <col key={c.key} style={{ width: c.type === 'colour' ? 28 : `${(weight(c) / total) * 86}%` }} />)}<col style={{ width: 22 }} /></colgroup>
+          <thead><tr><th style={{ width: 34 }}></th>{cols.map(c => <th key={c.key} title={c.title}>{head(c)}</th>)}<th style={{ width: 22 }}></th></tr></thead>
           <tbody>
             {rows.map((r, i) => (
               <tr key={i} className={selected?.(r) ? 'sel' : ''}>
