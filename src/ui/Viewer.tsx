@@ -72,6 +72,23 @@ export const fmt = (v: number) => { const a = Math.abs(v); return (a >= 100 ? v.
 const SECTION_COLOURS = ['#7c3aed', '#0d9488', '#ea580c', '#db2777', '#0284c7', '#ca8a04', '#4f46e5', '#0891b2', '#c026d3', '#64748b'];
 export const sectionColour = (id: number) => SECTION_COLOURS[(Math.max(1, Math.round(id)) - 1) % SECTION_COLOURS.length];
 const rgb = (h: string) => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+/** The screen axes of a view looking at the model from a direction given by a heading (yaw) and an elevation (pitch). */
+function viewAxes(yaw: number, pitch: number): { rx: V3; ry: V3 } {
+  const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
+  return { rx: [cy, 0, sy], ry: [sy * sp, cp, -cy * sp] };
+}
+/** Free (trackball) rotation as in Strand7: a drag across the screen turns the model about the screen's vertical axis, and a drag up or down about its horizontal axis,
+ *  whatever the current orientation, so no direction is favoured and there is no limit on the elevation. Returns the new screen axes. */
+function turn(rx: V3, ry: V3, a: number, b: number): { rx: V3; ry: V3 } {
+  const rz: V3 = [rx[1] * ry[2] - rx[2] * ry[1], rx[2] * ry[0] - rx[0] * ry[2], rx[0] * ry[1] - rx[1] * ry[0]];
+  const ca = Math.cos(a), sa = Math.sin(a), cb = Math.cos(b), sb = Math.sin(b);
+  const x = [0, 1, 2].map(i => rx[i] * ca + rz[i] * sa), z = [0, 1, 2].map(i => rz[i] * ca - rx[i] * sa);
+  let y = [0, 1, 2].map(i => ry[i] * cb - z[i] * sb);
+  const nx = Math.hypot(x[0], x[1], x[2]) || 1, ux = x.map(v => v / nx) as V3; // keep the axes square against rounding
+  const d = y[0] * ux[0] + y[1] * ux[1] + y[2] * ux[2]; y = y.map((v, i) => v - d * ux[i]);
+  const ny = Math.hypot(y[0], y[1], y[2]) || 1;
+  return { rx: ux, ry: y.map(v => v / ny) as V3 };
+}
 const mixRgb = (a: number[], b: number[], t: number) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
 const toHex = (c: number[]) => `rgb(${c.join()})`;
 const halo: React.CSSProperties = { paintOrder: 'stroke', stroke: 'var(--color-slate-50)', strokeWidth: 3, strokeLinejoin: 'round' };
@@ -111,7 +128,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   const [box, size] = useElementSize<HTMLDivElement>();
   const svgRef = useRef<SVGSVGElement>(null);
   // c is the orbit pivot (the model centre at the last fit); px, py are the screen offset of the pivot from the view centre.
-  const [cam, setCam] = useState<{ yaw: number; pitch: number; zoom: number; px: number; py: number; c: V3 }>({ yaw: -0.5, pitch: 0.35, zoom: 40, px: 0, py: 0, c: [0, 0, 0] });
+  const [cam, setCam] = useState<{ rx: V3; ry: V3; zoom: number; px: number; py: number; c: V3 }>({ ...viewAxes(-0.5, 0.35), zoom: 40, px: 0, py: 0, c: [0, 0, 0] });
   const [chain, setChain] = useState<number | null>(null);
   const [cursor, setCursor] = useState<[number, number] | null>(null);
   /** Selection box being dragged, in pixels. */
@@ -127,10 +144,8 @@ export const Viewer = React.forwardRef<ViewerHandle, {
     return { lo, hi, S: Math.max(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2], 1) };
   }, [model.nodes]);
 
-  const basis = useMemo(() => {
-    const cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw), cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
-    return { rx: [cy, 0, sy] as V3, ry: [sy * sp, cp, -cy * sp] as V3 };
-  }, [cam.yaw, cam.pitch]);
+  /** The screen axes in model coordinates: rx points right and ry up. */
+  const basis = useMemo(() => ({ rx: cam.rx, ry: cam.ry }), [cam.rx, cam.ry]);
   const P = useCallback((p: V3): [number, number] => {
     const a = p[0] - cam.c[0], b = p[1] - cam.c[1], c = p[2] - cam.c[2];
     return [
@@ -149,22 +164,21 @@ export const Viewer = React.forwardRef<ViewerHandle, {
     return l < 0.08 * Math.hypot(...d) ? null : [x / l, y / l];
   };
 
-  const fitTo = useCallback((yaw: number, pitch: number) => {
-    const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
+  const fitTo = useCallback((rx: V3, ry: V3) => {
     const c: V3 = [(bounds.lo[0] + bounds.hi[0]) / 2, (bounds.lo[1] + bounds.hi[1]) / 2, (bounds.lo[2] + bounds.hi[2]) / 2];
     let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
     for (const i of [0, 1]) for (const j of [0, 1]) for (const k of [0, 1]) {
       const p = [(i ? bounds.hi[0] : bounds.lo[0]) - c[0], (j ? bounds.hi[1] : bounds.lo[1]) - c[1], (k ? bounds.hi[2] : bounds.lo[2]) - c[2]];
-      const x = cy * p[0] + sy * p[2], y = sy * sp * p[0] + cp * p[1] - cy * sp * p[2];
+      const x = rx[0] * p[0] + rx[1] * p[1] + rx[2] * p[2], y = ry[0] * p[0] + ry[1] * p[1] + ry[2] * p[2];
       x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
     }
     const zoom = Math.min((W - 340) / Math.max(x1 - x0, 1e-6), (H - 190) / Math.max(y1 - y0, 1e-6), 400);
-    setCam({ yaw, pitch, zoom, px: -zoom * (x0 + x1) / 2 + 4, py: zoom * (y0 + y1) / 2, c });
+    setCam({ rx, ry, zoom, px: -zoom * (x0 + x1) / 2 + 4, py: zoom * (y0 + y1) / 2, c });
   }, [bounds, W, H]);
   const flat = bounds.hi[2] - bounds.lo[2] < 1e-9;
   useImperativeHandle(handle, () => ({
-    fit: () => fitTo(cam.yaw, cam.pitch),
-    view: v => (v === 'iso' ? fitTo(-0.5, 0.35) : v === 'front' ? fitTo(0, 0) : v === 'top' ? fitTo(0, Math.PI / 2) : fitTo(Math.PI / 2, 0)),
+    fit: () => fitTo(cam.rx, cam.ry),
+    view: v => { const a = v === 'iso' ? viewAxes(-0.5, 0.35) : v === 'front' ? viewAxes(0, 0) : v === 'top' ? viewAxes(0, Math.PI / 2) : viewAxes(Math.PI / 2, 0); fitTo(a.rx, a.ry); },
     svg: () => svgRef.current,
   }));
   // Fit when the size first becomes known and whenever a different model is loaded (its extents change).
@@ -174,7 +188,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   useEffect(() => {
     if (!size.width || lastFit.current === fitKey || tool !== 'select') return;
     const first = lastFit.current === '' || lastFit.current.startsWith('false'), loaded = lastRev.current !== fitRev; lastFit.current = fitKey; lastRev.current = fitRev;
-    if (first || loaded) fitTo(flat ? 0 : -0.5, flat ? 0 : 0.35); else fitTo(cam.yaw, cam.pitch);
+    if (first || loaded) { const a = flat ? viewAxes(0, 0) : viewAxes(-0.5, 0.35); fitTo(a.rx, a.ry); } else fitTo(cam.rx, cam.ry);
   }, [fitKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- Pointer interaction
@@ -324,7 +338,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
     if (d.mode === 'note' && noteDrag.current) { const nd = noteDrag.current; nd.dx += dx; nd.dy += dy; setNoteOff({ [nd.id]: [nd.dx, nd.dy] }); }
     else if (d.mode === 'zoom') { if (onDefScale && (mode || (opts.deflected && result))) onDefScale(Math.exp(-dy * 0.01)); } // middle drag only scales the deflected shape
     else if (d.mode === 'pan') setCam(c => ({ ...c, px: c.px + dx, py: c.py + dy }));
-    else if (d.mode === 'orbit') setCam(c => ({ ...c, yaw: c.yaw + dx * 0.008, pitch: Math.max(-Math.PI / 2, Math.min(Math.PI / 2, c.pitch + dy * 0.008)) }));
+    else if (d.mode === 'orbit') setCam(c => ({ ...c, ...turn(c.rx, c.ry, dx * 0.008, dy * 0.008) }));
   };
   /** Nearest node within 9 px, else nearest member within 6 px. */
   /** The midpoint of a member within 9 px of the pointer: a snap point when drawing, measuring or moving. */
