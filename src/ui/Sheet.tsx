@@ -92,7 +92,10 @@ export function Sheet<T extends object>({ rows, cols, onChange, newRow, selected
           <thead><tr><th style={{ width: 34 }}></th>{cols.map(c => <th key={c.key} title={c.title}>{head(c)}</th>)}<th style={{ width: 22 }}></th></tr></thead>
           <tbody>
             {rows.map((r, i) => (
-              <tr key={i} className={selected?.(r) ? 'sel' : ''}>
+              <tr key={i} className={selected?.(r) ? 'sel' : ''} onClick={e => { // a click in any cell selects the row (the row number and the delete button have their own actions)
+                if (!onSelect || (e.target as Element).closest('td.rowhead, [title="Delete Row"]')) return;
+                onSelect(r, e.shiftKey || e.ctrlKey || e.metaKey);
+              }}>
                 <td className="rowhead" title={onRenumber ? 'Click to change the number' : undefined} onClick={e => { onSelect?.(r, e.shiftKey || e.ctrlKey || e.metaKey); if (onRenumber && renum?.i !== i) setRenum({ i, text: String(idOf(r)) }); }}>
                   {renum?.i === i
                     ? <input autoFocus value={renum.text} title={renumProblem(i, renum.text) ?? 'Enter to keep, Esc to cancel'} spellCheck={false} autoComplete="off" inputMode="numeric"
