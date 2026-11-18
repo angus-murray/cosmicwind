@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppHeader, Banner, Segmented, useElementSize, Check, NumberField, ReportDialog, SelectField, StatusChip, today } from 'engineering-ui';
-import { Axis3d, Box, Eye, Ruler, FilePlus, FolderOpen, Hash, Maximize, MousePointer2, Redo2, Save, Spline, Trash2, Type, Undo2, Weight, Dot, Shapes, Cuboid, Waypoints, StickyNote, Anchor, Unlink, Crosshair } from 'lucide-react';
+import { Axis3d, Box, Eye, Ruler, FilePlus, FolderOpen, Hash, Maximize, MousePointer2, Redo2, Save, Spline, Trash2, Type, Undo2, Weight, Dot, Shapes, Cuboid, Waypoints, StickyNote, Anchor, Unlink, Crosshair, Layers, Activity, TrendingDown, ChevronsDown, Minimize2, LineChart, Calculator, Thermometer, ArrowUpFromLine, MoveDown, Combine, ListOrdered, Waves, ArrowDownToDot } from 'lucide-react';
 import {
   deleteMembersAndFreeNodes, deleteNodes, DASH, emptyModel, FREE, PIN, MATERIAL_PRESETS, nextId, normalise, RELEASES, RESTRAINTS,
   type Combo, type DistLoad, type LoadCase, type Material, type Member, type Model, type Node, type NodeLoad, type NodeMass, type PointLoad, type Section, type Settlement, type ThermalLoad, mergeMembers, intersectMembers, moveSelection,
@@ -383,17 +383,17 @@ export default function App() {
   useEffect(() => { document.querySelector('.input-column .sheet tr.sel')?.scrollIntoView({ block: 'nearest' }); }, [sel]);
   const treeGroups: TreeGroup[] = [
     { key: 'structure', title: 'Structure', items: [
-      { key: 'nodes', label: 'Nodes', count: model.nodes.length, render: () => (
+      { key: 'nodes', icon: Dot, label: 'Nodes', count: model.nodes.length, render: () => (
                 <Sheet rows={model.nodes} addLabel="Add Node" cols={nodeCols} onChange={set('nodes')} rowLabel={idLabel} selected={r => sel.nodes.has(r.id)} onSelect={pickN}
                   newRow={() => { const l = model.nodes[model.nodes.length - 1]; return { id: nextId(model.nodes), x: l?.x ?? 0, y: l?.y ?? 0, z: l?.z ?? 0, r: FREE }; }}
                   onDelete={r => setModel(m => deleteNodes(m, new Set([r.id])))} />
       ) },
-      { key: 'members', label: 'Members', count: model.members.length, render: () => (
+      { key: 'members', icon: Spline, label: 'Members', count: model.members.length, render: () => (
                 <Sheet rows={model.members} addLabel="Add Member" cols={memCols} onChange={v => setModel(m => ({ ...ensureSection(m), members: v }))} rowLabel={idLabel} selected={r => sel.members.has(r.id)} onSelect={pickM}
                   newRow={() => { const l = model.members[model.members.length - 1]; return { id: nextId(model.members), a: l?.b ?? model.nodes[0]?.id ?? 1, b: model.nodes[model.nodes.length - 1]?.id ?? 2, sec: l?.sec ?? model.sections[0]?.id ?? 1, mat: l?.mat ?? model.materials[0]?.id ?? 1, angle: 0, type: 'N' as const, relA: DASH, relB: DASH }; }}
                   onDelete={r => setModel(m => deleteMembersAndFreeNodes(m, new Set([r.id])))} />
       ) },
-      { key: 'sections', label: 'Sections', count: model.sections.length, render: () => (
+      { key: 'sections', icon: Shapes, label: 'Sections', count: model.sections.length, render: () => (
                 <>
                   <Sheet rows={model.sections} addLabel="Add Section" cols={secCols} onChange={set('sections')} rowLabel={idLabel} selected={r => r.id === secSel} onSelect={r => { setSecSel(r.id); selectFromCanvas({ nodes: new Set(), members: new Set(model.members.filter(m => m.sec === r.id).map(m => m.id)) }); }} newRow={() => ({ id: nextId(model.sections), name: `Section ${nextId(model.sections)}`, A: 5000, Iy: 1e7, Iz: 5e7, J: 1e5 })}
                     onDelete={r => (used('sec', r.id) ? alert(`Section ${r.id} is used by members.`) : set('sections')(model.sections.filter(s => s.id !== r.id)))} />
@@ -401,7 +401,7 @@ export default function App() {
                   <button className="btn" disabled={secSel === null || !model.sections.some(x => x.id === secSel)} title="Select a section row, then choose a new type for its number; members keep the number" onClick={() => { setAssignOnAdd(false); setReplaceSec(secSel); setDialog('section'); }}><Shapes className="w-3.5 h-3.5" /> {secSel !== null && model.sections.some(x => x.id === secSel) ? `Change Type of Section ${secSel}` : 'Change Type of Selected Section'}</button>
                 </>
       ) },
-      { key: 'materials', label: 'Materials', count: model.materials.length, render: () => (
+      { key: 'materials', icon: Cuboid, label: 'Materials', count: model.materials.length, render: () => (
                 <>
                   <Sheet rows={model.materials} cols={matCols} onChange={set('materials')} rowLabel={idLabel} selected={r => r.id === matSel} onSelect={r => { setMatSel(r.id); selectFromCanvas({ nodes: new Set(), members: new Set(model.members.filter(m => m.mat === r.id).map(m => m.id)) }); }}
                     onDelete={r => (used('mat', r.id) ? alert(`Material ${r.id} is used by members.`) : set('materials')(model.materials.filter(s => s.id !== r.id)))} />
@@ -409,26 +409,26 @@ export default function App() {
                     <option value="">Add Material…</option>{MATERIAL_PRESETS.map((p, i) => <option key={p.name} value={i}>{p.name}</option>)}</select>
                 </>
       ) },
-      { key: 'masses', label: 'Masses', count: model.masses.length, render: () => (
+      { key: 'masses', icon: Weight, label: 'Masses', count: model.masses.length, render: () => (
                 <Sheet rows={model.masses} addLabel="Add Mass" cols={massCols} onChange={set('masses')} newRow={() => ({ node: firstNode, m: 1 })} empty="No node masses (used for natural frequencies)" />
       ) },
     ] },
     { key: 'boundary', title: 'Boundary Conditions', items: [
-      { key: 'restraints', label: 'Node Restraints', count: restraintRows.length, render: () => (
+      { key: 'restraints', icon: Anchor, label: 'Node Restraints', count: restraintRows.length, render: () => (
         <Sheet rows={restraintRows} cols={restraintCols} addLabel="Add Restraint" onChange={setRestraints} rowLabel={r => r.node} selected={r => sel.nodes.has(r.node)} onSelect={(r, add) => pickN({ id: r.node }, add)}
           newRow={() => ({ node: model.nodes.find(n => nodeFree(n.r))?.id ?? model.nodes[0]?.id ?? 1, r: PIN })} empty="No restraints: every node is free" />
       ) },
-      { key: 'releases', label: 'Member Releases', count: releaseRows.length, render: () => (
+      { key: 'releases', icon: Unlink, label: 'Member Releases', count: releaseRows.length, render: () => (
         <Sheet rows={releaseRows} cols={releaseCols} addLabel="Add Release" onChange={setReleases} rowLabel={r => r.member} selected={r => sel.members.has(r.member)} onSelect={(r, add) => pickM({ id: r.member }, add)}
           newRow={() => ({ member: model.members.find(b => memberFree(b.relA) && memberFree(b.relB))?.id ?? model.members[0]?.id ?? 1, relA: PIN, relB: DASH })} empty="No releases: every member is rigidly connected" />
       ) },
-      { key: 'supports', label: 'Member Supports', count: supportRows.length, render: () => (
+      { key: 'supports', icon: Waves, label: 'Member Supports', count: supportRows.length, render: () => (
         <Sheet rows={supportRows} cols={supportCols} addLabel="Add Support" onChange={setSupports} rowLabel={r => r.member} selected={r => sel.members.has(r.member)} onSelect={(r, add) => pickM({ id: r.member }, add)}
           newRow={() => ({ member: model.members.find(b => !b.ky && !b.kz)?.id ?? model.members[0]?.id ?? 1, ky: 1000, kz: 0 })} empty="No continuous supports along members" />
       ) },
     ] },
     { key: 'loads', title: 'Loads', items: [
-      { key: 'cases', label: 'Cases', count: model.loadCases.length, render: () => (
+      { key: 'cases', icon: ListOrdered, label: 'Cases', count: model.loadCases.length, render: () => (
                 <Sheet rows={model.loadCases} addLabel="Add Case" cols={lcCols} onChange={set('loadCases')} rowLabel={idLabel} newRow={() => ({ id: nextId(cases), name: 'Load Case', gx: 0, gy: 0, gz: 0 })}
                   onDelete={r => setModel(m => {
                     const f = <T extends { lc: number }>(a: T[]) => a.filter(x => x.lc !== r.id);
@@ -436,22 +436,22 @@ export default function App() {
                       combos: m.combos.map(c => { const { [r.id]: _, ...rest } = c.f; return { ...c, f: rest }; }) };
                   })} />
       ) },
-      { key: 'combos', label: 'Combinations', count: model.combos.length, render: () => (
+      { key: 'combos', icon: Combine, label: 'Combinations', count: model.combos.length, render: () => (
                 <Sheet rows={model.combos} addLabel="Add Combination" cols={comboCols} onChange={set('combos')} rowLabel={idLabel} newRow={() => ({ id: Math.max(nextId(cases), 10), name: 'Combination', f: {} })} empty="No combinations" />
       ) },
-      { key: 'nload', label: 'Node Loads', count: model.nodeLoads.length, render: () => (
+      { key: 'nload', icon: Weight, label: 'Node Loads', count: model.nodeLoads.length, render: () => (
                 <Sheet rows={model.nodeLoads} addLabel="Add Node Load" cols={nlCols} onChange={set('nodeLoads')} newRow={() => ({ lc: lcOnly, node: firstNode, fx: 0, fy: -10, fz: 0, mx: 0, my: 0, mz: 0 })} empty="No node loads" />
       ) },
-      { key: 'dist', label: 'Distributed', count: model.distLoads.length, render: () => (
+      { key: 'dist', icon: ChevronsDown, label: 'Distributed', count: model.distLoads.length, render: () => (
                 <Sheet rows={model.distLoads} addLabel="Add Distributed Load" cols={dlCols} onChange={set('distLoads')} newRow={() => ({ lc: lcOnly, member: firstMem, axes: 'G' as const, dir: 'Y' as const, w1: -5, w2: -5, s: 0, e: 100 })} empty="No distributed loads" />
       ) },
-      { key: 'point', label: 'Point', count: model.pointLoads.length, render: () => (
+      { key: 'point', icon: ArrowDownToDot, label: 'Point', count: model.pointLoads.length, render: () => (
                 <Sheet rows={model.pointLoads} addLabel="Add Point Load" cols={plCols} onChange={set('pointLoads')} newRow={() => ({ lc: lcOnly, member: firstMem, axes: 'G' as const, dir: 'Y' as const, p: -10, pos: 50 })} empty="No point loads" />
       ) },
-      { key: 'settle', label: 'Settlements', count: model.settlements.length, render: () => (
+      { key: 'settle', icon: TrendingDown, label: 'Settlements', count: model.settlements.length, render: () => (
                 <Sheet rows={model.settlements} addLabel="Add Settlement" cols={stCols} onChange={set('settlements')} newRow={() => ({ lc: lcOnly, node: firstNode, dx: 0, dy: -10, dz: 0 })} empty="No support settlements" />
       ) },
-      { key: 'thermal', label: 'Temperature', count: model.thermal.length, render: () => (
+      { key: 'thermal', icon: Thermometer, label: 'Temperature', count: model.thermal.length, render: () => (
                 <Sheet rows={model.thermal} addLabel="Add Temperature Load" cols={thCols} onChange={set('thermal')} newRow={() => ({ lc: lcOnly, member: firstMem, dT: 20 })} empty="No temperature loads" />
       ) },
     ] },
@@ -462,14 +462,14 @@ export default function App() {
         {analysis.warnings.length > 0 && <Banner kind="warning" title="Warnings" items={analysis.warnings} />}
       </div> : null,
       items: [
-      { key: 'analysis', label: 'Analysis', render: () => (
+      { key: 'analysis', icon: Calculator, label: 'Analysis', render: () => (
 <div className="space-y-2.5">
                 <Check checked={model.settings.nonlinear} onChange={v => setModel(m => ({ ...m, settings: { ...m.settings, nonlinear: v } }))} title="Iterates with the geometric stiffness from the member axial forces">Second-Order (P-Δ) Analysis</Check>
                 {analysis && (analysis.errors.length ? <StatusChip kind="fail">Not Solved</StatusChip> : res?.error ? <StatusChip kind="fail">Case Not Solved</StatusChip>
                   : <StatusChip kind="pass">{model.settings.nonlinear ? 'Second-Order' : 'Linear'} Analysis Solved in {analysis.ms < 10 ? analysis.ms.toFixed(1) : analysis.ms.toFixed(0)} ms</StatusChip>)}
 </div>
       ) },
-      { key: 'defl', label: 'Deflections', render: () => (
+      { key: 'defl', icon: MoveDown, label: 'Deflections', render: () => (
 <div className="space-y-2.5">
                 <div className="space-y-2.5">
                   <div>
@@ -481,7 +481,7 @@ export default function App() {
                 </div>
 </div>
       ) },
-      { key: 'diag', label: 'Diagrams', render: () => (
+      { key: 'diag', icon: LineChart, label: 'Diagrams', render: () => (
 <div className="space-y-2.5">
                 <div className="grid grid-cols-2 gap-x-3 items-start">
                   <div key={DIAGRAM_GROUPS[0].title}>
@@ -514,23 +514,23 @@ export default function App() {
                 <NumberField label="Diagram Scale" value={opts.scale} min={0.1} max={20} step={0.25} onChange={o('scale')} />
 </div>
       ) },
-      { key: 'react', label: 'Reactions', render: () => (
+      { key: 'react', icon: ArrowUpFromLine, label: 'Reactions', render: () => (
 <div className="space-y-2.5">
                 <Check checked={opts.reactions} onChange={o('reactions')}>Show Reactions</Check>
 </div>
       ) },
-      { key: 'stress', label: 'Stresses', render: () => (
+      { key: 'stress', icon: Layers, label: 'Stresses', render: () => (
 <div className="space-y-2.5">
                 <SelectField hint="Colours the rendered members; switches to the rendered view" label="Normal Stress" value={opts.stress} onChange={v => setOpts(q => ({ ...q, stress: v as StressKey, solid: v !== 'none' ? true : q.solid }))} options={STRESSES.map(t => ({ value: t.key, label: t.label }))} />
 </div>
       ) },
-      { key: 'buck', label: 'Buckling', render: () => (
+      { key: 'buck', icon: Minimize2, label: 'Buckling', render: () => (
 <div className="space-y-2.5">
                 <NumberField label="Modes" value={model.settings.bucklingModes} min={0} max={20} onChange={v => setModel(m => ({ ...m, settings: { ...m.settings, bucklingModes: Math.round(v) } }))} />
                 {modeTable('buckling', okRes?.buckling?.values, 'Load Factor')}
 </div>
       ) },
-      { key: 'vib', label: 'Vibration', render: () => (
+      { key: 'vib', icon: Activity, label: 'Vibration', render: () => (
 <div className="space-y-2.5">
                 <NumberField label="Modes" value={model.settings.modalModes} min={0} max={30} onChange={v => setModel(m => ({ ...m, settings: { ...m.settings, modalModes: Math.round(v) } }))} />
                 {modeTable('modal', analysis?.modal?.values, 'Frequency (Hz)')}

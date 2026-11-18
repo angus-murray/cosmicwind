@@ -1,9 +1,12 @@
 import type React from 'react';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, Folder, FolderOpen } from 'lucide-react';
 
+type Icon = React.ComponentType<{ className?: string }>;
 export interface TreeItem {
   key: string;
   label: string;
+  /** An icon like the ones of the toolbar and the dialogs for the same thing. */
+  icon: Icon;
   /** Number of rows in the datasheet, shown at the right; omit for an item without rows. */
   count?: number;
   /** The content that drops down under the item. It is only called while the item is open. */
@@ -18,40 +21,44 @@ export interface TreeGroup {
 }
 
 /**
- * A tree of panels. Each group is a panel whose title folds it; each item in a group opens as a drop-down in place, with its content directly beneath it.
+ * A tree in one panel. A group is a folder that folds; each item in it opens as a drop-down in place, with its content directly beneath it, and thin guide lines mark the levels.
  * Any number of items can be open at once. The classes (`tree-*`) are in `index.css` and use only the house-style tokens, so the dark theme applies.
  */
 export function Tree({ groups, open, onToggle, closed, onToggleGroup }: {
   groups: TreeGroup[]; open: Record<string, boolean>; onToggle: (key: string) => void; closed: Record<string, boolean>; onToggleGroup: (key: string) => void;
 }) {
   return (
-    <>
+    <section className="panel !space-y-1">
       {groups.map(g => {
-        const folded = !!closed[g.key];
+        const folded = !!closed[g.key], FolderIcon = folded ? Folder : FolderOpen;
         return (
-          <section key={g.key} className="panel">
-            <button type="button" className="tree-title" aria-expanded={!folded} onClick={() => onToggleGroup(g.key)}>
-              <ChevronDown className={`w-3.5 h-3.5 text-slate-500 transition-transform ${folded ? '-rotate-90' : ''}`} />{g.title}
+          <div key={g.key}>
+            <button type="button" className="tree-group" aria-expanded={!folded} onClick={() => onToggleGroup(g.key)}>
+              <ChevronDown className={`w-3.5 h-3.5 shrink-0 text-slate-500 transition-transform ${folded ? '-rotate-90' : ''}`} />
+              <FolderIcon className="w-3.5 h-3.5 shrink-0 text-slate-500" />{g.title}
             </button>
-            {!folded && g.notice}
-            {!folded && <div className="space-y-0.5">
-              {g.items.map(it => {
-                const isOpen = !!open[it.key];
-                return (
-                  <div key={it.key}>
-                    <button type="button" className={`tree-item ${isOpen ? 'tree-item-open' : it.count === 0 ? 'tree-item-empty' : ''}`} aria-expanded={isOpen} onClick={() => onToggle(it.key)}>
-                      <ChevronDown className={`w-3.5 h-3.5 shrink-0 text-slate-500 transition-transform ${isOpen ? '' : '-rotate-90'}`} />
-                      <span>{it.label}</span>
-                      {it.count !== undefined && <span className={`ml-auto text-[11px] tabular-nums ${isOpen ? 'text-blue-700' : 'text-slate-500'}`}>{it.count}</span>}
-                    </button>
-                    {isOpen && <div className="tree-body">{it.render()}</div>}
-                  </div>
-                );
-              })}
-            </div>}
-          </section>
+            {!folded && (
+              <div className="tree-children">
+                {g.notice}
+                {g.items.map(it => {
+                  const isOpen = !!open[it.key], Icon = it.icon;
+                  return (
+                    <div key={it.key}>
+                      <button type="button" className={`tree-item ${isOpen ? 'tree-item-open' : it.count === 0 ? 'tree-item-empty' : ''}`} aria-expanded={isOpen} onClick={() => onToggle(it.key)}>
+                        <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform ${isOpen ? 'text-blue-700' : 'text-slate-400 -rotate-90'}`} />
+                        <Icon className={`w-3.5 h-3.5 shrink-0 ${isOpen ? 'text-blue-700' : 'text-slate-500'}`} />
+                        <span>{it.label}</span>
+                        {it.count !== undefined && <span className={`ml-auto text-[11px] font-normal tabular-nums ${isOpen ? 'text-blue-700' : 'text-slate-500'}`}>{it.count}</span>}
+                      </button>
+                      {isOpen && <div className="tree-body">{it.render()}</div>}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         );
       })}
-    </>
+    </section>
   );
 }
