@@ -3,7 +3,7 @@ import { AppHeader, Banner, Segmented, useElementSize, Check, NumberField, Repor
 import { Axis3d, Box, Eye, Ruler, FilePlus, FolderOpen, Hash, Maximize, MousePointer2, Redo2, Save, Spline, Trash2, Type, Undo2, Weight, Dot, Shapes, Cuboid, Waypoints, StickyNote, Anchor, Unlink, Crosshair, Layers, Activity, TrendingDown, ChevronsDown, Minimize2, LineChart, Calculator, Thermometer, ArrowUpFromLine, MoveDown, Combine, ListOrdered, Waves, ArrowDownToDot } from 'lucide-react';
 import {
   deleteMembersAndFreeNodes, deleteNodes, DASH, emptyModel, FREE, PIN, MATERIAL_PRESETS, nextId, normalise, RELEASES, RESTRAINTS,
-  type Combo, type DistLoad, type LoadCase, type Material, type Member, type Model, type Node, type NodeLoad, type NodeMass, type PointLoad, type Section, type Settlement, type ThermalLoad, mergeMembers, intersectMembers, moveSelection,
+  type Combo, type DistLoad, type LoadCase, type Material, type Member, type Model, type Node, type NodeLoad, type NodeMass, type PointLoad, type Section, type Settlement, type ThermalLoad, mergeMembers, intersectMembers, moveSelection, expandCombo, comboIncludes,
 } from './model/types';
 import { defaultModel } from './model/templates';
 import { analyse } from './solver/frame';
@@ -89,8 +89,8 @@ export default function App() {
   const lcOnly = model.loadCases.find(c => c.id === cur?.id)?.id ?? model.loadCases[0]?.id ?? 1;
   const drawLoads = useMemo<[number, number][]>(() => {
     const cb = model.combos.find(c => c.id === cur?.id);
-    return cb ? Object.entries(cb.f).filter(e => e[1]).map(([k, v]) => [Number(k), v]) : cur ? [[cur.id, 1]] : [];
-  }, [model.combos, cur]);
+    return cb ? [...expandCombo(model, cb.id)].filter(e => e[1]) : cur ? [[cur.id, 1]] : [];
+  }, [model, cur]);
 
   /** Gravity of the case shown (multipliers of g in X, Y, Z), summed over the cases of a combination. */
   const gravity = useMemo(() => {
@@ -345,7 +345,26 @@ export default function App() {
   const matCols: Col<Material>[] = [{ key: 'name', label: 'Name', type: 'text', w: 110 }, { key: 'E', label: <i>E</i>, q: 'stress', w: 60 }, { key: 'G', label: <i>G</i>, q: 'stress', w: 60 }, { key: 'rho', label: 'Density', q: 'density', w: 70 }, { key: 'alpha', label: <i>α</i>, q: 'perTemp', w: 70 }];
   const massCols: Col<NodeMass>[] = [{ key: 'node', label: 'Node' }, { key: 'm', label: 'Mass', q: 'mass' }];
   const lcCols: Col<LoadCase>[] = [{ key: 'name', label: 'Name', type: 'text', w: 130 }, { key: 'gx', label: 'Gravity X', title: 'Gravity load as a multiplier of g in global X' }, { key: 'gy', label: 'Gravity Y', title: 'Gravity load as a multiplier of g in global Y (−1 is downward)' }, { key: 'gz', label: 'Gravity Z', title: 'Gravity load as a multiplier of g in global Z' }];
-  const comboCols: Col<Combo>[] = [{ key: 'name', label: 'Name', type: 'text', w: 150 }, ...model.loadCases.map((c): Col<Combo> => ({ key: `f${c.id}`, label: `× Case ${c.id}`, title: c.name, w: 58, get: r => r.f[c.id] ?? 0, set: (r, v) => ({ ...r, f: { ...r.f, [c.id]: Number(v) } }) }))];
+  /** A combination may include load cases and other combinations, but not itself or one that includes it. */
+  const comboCols: Col<Combo>[] = [{ key: 'name', label: 'Name', type: 'text', w: 150 },
+    ...model.loadCases.map((c): Col<Combo> => ({ key: `f${c.id}`, label: `× Case ${c.id}`, title: c.name, w: 58, get: r => r.f[c.id] ?? 0, set: (r, v) => ({ ...r, f: { ...r.f, [c.id]: Number(v) } }) })),
+    ...model.combos.map((c): Col<Combo> => ({ key: `f${c.id}`, label: `× Comb. ${c.id}`, title: `${c.name} (a combination)`, w: 58, get: r => r.f[c.id] ?? 0,
+      set: (r, v) => (r.id === c.id || comboIncludes(model, c.id, r.id) ? r : { ...r, f: { ...r.f, [c.id]: Number(v) } }) }))];
+  /** Load cases and combinations share their numbers, so a number is taken if either has it. Renumbering carries the number into everything that refers to it. */
+  const caseNumberTaken = (id: number) => model.loadCases.some(c => c.id === id) || model.combos.some(c => c.id === id);
+  const renameKey = (f: Record<number, number>, from: number, to: number) => Object.fromEntries(Object.entries(f).map(([k, v]) => [Number(k) === from ? to : k, v])) as Record<number, number>;
+  const renumberCase = (r: LoadCase, id: number) => {
+    setModel(m => { const re = <T extends { lc: number }>(a: T[]) => a.map(x => (x.lc === r.id ? { ...x, lc: id } : x));
+      return { ...m, loadCases: m.loadCases.map(c => (c.id === r.id ? { ...c, id } : c)), nodeLoads: re(m.nodeLoads), distLoads: re(m.distLoads), pointLoads: re(m.pointLoads), settlements: re(m.settlements), thermal: re(m.thermal),
+        combos: m.combos.map(c => (r.id in c.f ? { ...c, f: renameKey(c.f, r.id, id) } : c)) }; });
+    setCaseId(c => (c === r.id ? id : c));
+  };
+  const renumberCombo = (r: Combo, id: number) => {
+    setModel(m => ({ ...m, combos: m.combos.map(c => (c.id === r.id ? { ...c, id } : r.id in c.f ? { ...c, f: renameKey(c.f, r.id, id) } : c)) }));
+    setCaseId(c => (c === r.id ? id : c));
+  };
+  /** Deleting a combination also removes it from the combinations that include it. */
+  const setCombos = (rows: Combo[]) => setModel(m => { const gone = m.combos.filter(c => !rows.some(r => r.id === c.id)).map(c => c.id); return { ...m, combos: rows.map(c => (gone.some(g => g in c.f) ? { ...c, f: Object.fromEntries(Object.entries(c.f).filter(([k]) => !gone.includes(Number(k)))) } : c)) }; });
   const lcCol = idSel('lc', 'Case', model.loadCases.map(c => ({ value: String(c.id), label: String(c.id) })), 44);
   const axesCol = { key: 'axes', label: 'Axes', type: 'select' as const, w: 66, options: [{ value: 'G', label: 'Global' }, { value: 'L', label: 'Local' }] };
   const nlCols: Col<NodeLoad>[] = [lcCol, { key: 'node', label: 'Node', w: 44 }, ...(['fx', 'fy', 'fz'] as const).map(k => ({ key: k, label: k.toUpperCase(), q: 'force' as const, w: 54 })), ...(['mx', 'my', 'mz'] as const).map(k => ({ key: k, label: k.toUpperCase(), q: 'moment' as const, w: 58 }))];
@@ -429,7 +448,7 @@ export default function App() {
     ] },
     { key: 'loads', title: 'Loads', items: [
       { key: 'cases', icon: ListOrdered, label: 'Cases', count: model.loadCases.length, render: () => (
-                <Sheet rows={model.loadCases} addLabel="Add Case" cols={lcCols} onChange={set('loadCases')} rowLabel={idLabel} newRow={() => ({ id: nextId(cases), name: 'Load Case', gx: 0, gy: 0, gz: 0 })}
+                <Sheet rows={model.loadCases} addLabel="Add Case" onRenumber={renumberCase} isTaken={caseNumberTaken} cols={lcCols} onChange={set('loadCases')} rowLabel={idLabel} newRow={() => ({ id: nextId(cases), name: 'Load Case', gx: 0, gy: 0, gz: 0 })}
                   onDelete={r => setModel(m => {
                     const f = <T extends { lc: number }>(a: T[]) => a.filter(x => x.lc !== r.id);
                     return { ...m, loadCases: m.loadCases.filter(c => c.id !== r.id), nodeLoads: f(m.nodeLoads), distLoads: f(m.distLoads), pointLoads: f(m.pointLoads), settlements: f(m.settlements), thermal: f(m.thermal),
@@ -437,7 +456,7 @@ export default function App() {
                   })} />
       ) },
       { key: 'combos', icon: Combine, label: 'Combinations', count: model.combos.length, render: () => (
-                <Sheet rows={model.combos} addLabel="Add Combination" cols={comboCols} onChange={set('combos')} rowLabel={idLabel} newRow={() => ({ id: Math.max(nextId(cases), 10), name: 'Combination', f: {} })} empty="No combinations" />
+                <Sheet rows={model.combos} addLabel="Add Combination" onRenumber={renumberCombo} isTaken={caseNumberTaken} cols={comboCols} onChange={setCombos} rowLabel={idLabel} newRow={() => ({ id: Math.max(nextId(cases), 10), name: 'Combination', f: {} })} empty="No combinations" />
       ) },
       { key: 'nload', icon: Weight, label: 'Node Loads', count: model.nodeLoads.length, render: () => (
                 <Sheet rows={model.nodeLoads} addLabel="Add Node Load" cols={nlCols} onChange={set('nodeLoads')} newRow={() => ({ lc: lcOnly, node: firstNode, fx: 0, fy: -10, fz: 0, mx: 0, my: 0, mz: 0 })} empty="No node loads" />

@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { deleteMembersAndFreeNodes, intersectMembers, mergeMembers, moveSelection, emptyModel, normalise, releaseCode, restraintCode, type Member, type Model } from './types';
+import { deleteMembersAndFreeNodes, intersectMembers, mergeMembers, moveSelection, expandCombo, comboIncludes, emptyModel, normalise, releaseCode, restraintCode, type Member, type Model } from './types';
 
 const mem = (id: number, a: number, b: number): Member => ({ id, a, b, sec: 1, mat: 1, angle: 0, type: 'N', relA: 'FFFFFF', relB: 'FFFFFF' });
 const frame = (): Model => ({
@@ -109,4 +109,17 @@ test('a selected node moves in place with every member attached to it', () => {
   const m = moveSelection(frame(), new Set([2]), new Set(), n => [n.x, n.y + 5, n.z]);
   expect(m.nodes.map(n => [n.id, n.y])).toEqual([[1, 0], [2, 5], [3, 0], [4, 0]]);
   expect(m.members.map(b => [b.a, b.b])).toEqual([[1, 2], [2, 3], [3, 4]]);
+});
+
+test('a combination can include other combinations, and a loop is not allowed', () => {
+  const m: Model = { ...emptyModel(), loadCases: [{ id: 1, name: 'A', gx: 0, gy: 0, gz: 0 }, { id: 2, name: 'B', gx: 0, gy: 0, gz: 0 }],
+    combos: [{ id: 10, name: 'C10', f: { 1: 1.2, 2: 1.5 } }, { id: 11, name: 'C11', f: { 10: 2, 1: 1 } }, { id: 12, name: 'C12', f: { 11: 1, 2: -1 } }] };
+  expect([...expandCombo(m, 10)]).toEqual([[1, 1.2], [2, 1.5]]);
+  const e11 = expandCombo(m, 11); expect(e11.get(1)).toBeCloseTo(3.4); expect(e11.get(2)).toBeCloseTo(3);
+  const e12 = expandCombo(m, 12); expect(e12.get(1)).toBeCloseTo(3.4); expect(e12.get(2)).toBeCloseTo(2);
+  expect(comboIncludes(m, 12, 10)).toBe(true);
+  expect(comboIncludes(m, 10, 12)).toBe(false);
+  // a loop in a file is cut where it comes back to a combination being expanded
+  const loop: Model = { ...m, combos: [{ id: 10, name: 'C10', f: { 1: 1, 12: 1 } }, ...m.combos.slice(1)] };
+  const eloop = expandCombo(loop, 10); expect(eloop.get(1)).toBeCloseTo(2); expect(eloop.get(2)).toBeCloseTo(-1);
 });

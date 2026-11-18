@@ -291,3 +291,31 @@ export function moveSelection(m: Model, nodeIds: Set<number>, memberIds: Set<num
     members: m.members.map(b => (memberIds.has(b.id) && (copy.has(b.a) || copy.has(b.b)) ? { ...b, a: copy.get(b.a) ?? b.a, b: copy.get(b.b) ?? b.b } : b)),
   };
 }
+
+/**
+ * The load cases that a combination is made of, with their factors, where a combination may include other combinations: the factor of an included combination
+ * multiplies the factors of its own parts. A reference that would loop back to a combination being expanded is ignored.
+ */
+export function expandCombo(m: Model, id: number): Map<number, number> {
+  const out = new Map<number, number>(), combos = new Map(m.combos.map(c => [c.id, c]));
+  const walk = (cid: number, mult: number, path: Set<number>) => {
+    const c = combos.get(cid); if (!c || path.has(cid)) return;
+    const p = new Set(path).add(cid);
+    for (const [k, v] of Object.entries(c.f)) {
+      const kid = Number(k), f = Number(v); if (!f) continue;
+      if (combos.has(kid)) walk(kid, mult * f, p); else out.set(kid, (out.get(kid) ?? 0) + mult * f);
+    }
+  };
+  walk(id, 1, new Set());
+  return out;
+}
+/** Whether combination `a` includes combination `b`, directly or through others (so that `b` may not include `a`). */
+export function comboIncludes(m: Model, a: number, b: number): boolean {
+  const combos = new Map(m.combos.map(c => [c.id, c])), seen = new Set<number>();
+  const walk = (id: number): boolean => {
+    if (seen.has(id)) return false; seen.add(id);
+    const c = combos.get(id); if (!c) return false;
+    return Object.entries(c.f).some(([k, v]) => v && combos.has(Number(k)) && (Number(k) === b || walk(Number(k))));
+  };
+  return walk(a);
+}

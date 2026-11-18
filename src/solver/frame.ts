@@ -3,7 +3,7 @@
  * compression-only members, elastic critical buckling and natural frequencies.
  * Internal units: kN, m, t (so E is in kPa and frequencies come out in rad/s).
  */
-import { releaseCode, restraintCode, type Member, type Model } from '../model/types';
+import { releaseCode, restraintCode, type Member, type Model, expandCombo } from '../model/types';
 import { Skyline, subspace } from './linalg';
 
 /** Standard gravitational acceleration (m/s²). */
@@ -356,7 +356,7 @@ export function analyse(model: Model): Analysis {
   // ---- Solve each load case and combination
   const cases = [
     ...model.loadCases.map(c => ({ id: c.id, name: c.name, combo: false, f: [[c.id, 1]] as [number, number][] })),
-    ...model.combos.map(c => ({ id: c.id, name: c.name, combo: true, f: Object.entries(c.f).map(([k, v]) => [Number(k), Number(v)] as [number, number]).filter(([k, v]) => v && lcs.has(k)) })),
+    ...model.combos.map(c => ({ id: c.id, name: c.name, combo: true, f: [...expandCombo(model, c.id)].filter(([k, v]) => v && lcs.has(k)) })),
   ];
   const nStations = STATIONS;
   const massVec = new Float64Array(neq);

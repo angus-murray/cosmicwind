@@ -70,7 +70,7 @@ export async function makeReport(model: Model, an: Analysis, info: ReportInfo, s
   heading('Load Cases and Combinations');
   table(['Case', 'Name', 'Definition'], [
     ...model.loadCases.map(c => [c.id, c.name, c.gx || c.gy || c.gz ? `Gravity factors (${c.gx}, ${c.gy}, ${c.gz})` : 'Applied loads']),
-    ...model.combos.map(c => [c.id, c.name, Object.entries(c.f).filter(e => e[1]).map(([k, v]) => `${v} x Case ${k}`).join(' + ')]),
+    ...model.combos.map(c => [c.id, c.name, Object.entries(c.f).filter(e => e[1]).map(([k, v]) => `${v} x ${model.combos.some(x => x.id === Number(k)) ? 'Combination' : 'Case'} ${k}`).join(' + ')]),
   ]);
   for (const c of an.cases) {
     heading(`Results: Case ${c.id}, ${c.name}`);

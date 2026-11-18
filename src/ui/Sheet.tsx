@@ -32,18 +32,21 @@ const show = (v: unknown) => (typeof v === 'number' ? (v !== 0 && (Math.abs(v) <
 const parseNum = (s: string) => { const v = Number(s.trim().replace('−', '-').replace(/,/g, '')); return s.trim() === '' || !isFinite(v) ? null : v; };
 
 /** Editable datasheet. Cells commit on Enter or blur; a block copied from a spreadsheet can be pasted in. */
-export function Sheet<T extends object>({ rows, cols, onChange, newRow, selected, onSelect, onDelete, rowLabel, empty, addLabel = 'Add Row', onRenumber }: {
+export function Sheet<T extends object>({ rows, cols, onChange, newRow, selected, onSelect, onDelete, rowLabel, empty, addLabel = 'Add Row', onRenumber, isTaken }: {
   rows: T[]; cols: Col<T>[]; onChange: (rows: T[]) => void; newRow?: () => T;
   selected?: (row: T) => boolean; onSelect?: (row: T, additive: boolean) => void; onDelete?: (row: T, i: number) => void;
   rowLabel?: (row: T, i: number) => React.ReactNode; empty?: string; /** Text of the button that adds a row, for example Add Node. */ addLabel?: string;
   /** Makes the number at the start of a row editable (a click on it): the new number, which is never one that another row has. */
   onRenumber?: (row: T, id: number) => void;
+  /** Numbers that are used elsewhere (by another datasheet), in addition to those of the other rows, which a row cannot take. */
+  isTaken?: (id: number) => boolean;
 }) {
   const ref = useRef<HTMLTableElement>(null);
+  const [rev, setRev] = useState(0);
   const [renum, setRenum] = useState<{ i: number; text: string } | null>(null);
   const idOf = (r: T) => (r as { id?: number }).id;
   /** Why a typed row number cannot be used, or null when it can. */
-  const renumProblem = (i: number, text: string) => { const n = Number(text); return !/^\d+$/.test(text.trim()) || n < 1 ? 'Enter a whole number from 1' : rows.some((r, k) => k !== i && idOf(r) === n) ? `${n} is already used` : null; };
+  const renumProblem = (i: number, text: string) => { const n = Number(text); return !/^\d+$/.test(text.trim()) || n < 1 ? 'Enter a whole number from 1' : rows.some((r, k) => k !== i && idOf(r) === n) || (n !== idOf(rows[i]) && isTaken?.(n)) ? `${n} is already used` : null; };
   const renumCommit = (i: number) => { if (!renum) return; const r = rows[i]; if (!renumProblem(i, renum.text) && Number(renum.text) !== idOf(r)) onRenumber?.(r, Number(renum.text)); setRenum(null); };
   const weight = (c: Col<T>) => c.weight ?? (c.type === 'text' ? 2 : 1), total = cols.filter(c => c.type !== 'colour').reduce((a, c) => a + weight(c), 0) || 1;
   const { u } = useUnits();
@@ -65,6 +68,7 @@ export function Sheet<T extends object>({ rows, cols, onChange, newRow, selected
   const commit = (i: number, c: Col<T>, raw: string) => {
     if (raw === show(val(rows[i], c))) return;
     const r = apply(rows[i], c, raw);
+    if (!r || r === rows[i]) setRev(n => n + 1); // an entry that is not accepted goes back to the stored value
     if (r) onChange(rows.map((x, k) => (k === i ? r : x)));
   };
   const focus = (i: number, j: number) => (ref.current?.querySelector(`[data-c="${i}-${j}"]`) as HTMLElement | null)?.focus();
@@ -118,7 +122,7 @@ export function Sheet<T extends object>({ rows, cols, onChange, newRow, selected
                           {v}<ChevronDown className="w-3 h-3 text-slate-400" />
                         </button>
                       ) : (
-                        <input data-c={`${i}-${j}`} key={v} defaultValue={v} readOnly={c.type === 'ro'} spellCheck={false} autoComplete="off" list={c.list ? `dl-${c.key}` : undefined}
+                        <input data-c={`${i}-${j}`} key={`${v}|${rev}`} defaultValue={v} readOnly={c.type === 'ro'} spellCheck={false} autoComplete="off" list={c.list ? `dl-${c.key}` : undefined}
                           className={c.type === 'ro' ? 'text-slate-500' : ''}
                           onFocus={e => e.target.select()} onBlur={e => commit(i, c, e.target.value)} onPaste={e => paste(e, i, j)}
                           onKeyDown={e => {

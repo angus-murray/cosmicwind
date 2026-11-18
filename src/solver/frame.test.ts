@@ -167,3 +167,15 @@ test('continuous support in the local z direction of a member rotated by 90 degr
   const ref = beam(4, 4, 'FFFFRR', 'RFFRRR'); ref.members.forEach(b => { b.ky = 1000; }); ref.sections[0].Iy = I; udl(ref, -5);
   close(c.disp.get(3)![1], analyse(ref).cases[0].disp.get(3)![1].valueOf(), 1e-3);
 });
+
+test('a combination of combinations gives the same results as its load cases combined directly', () => {
+  const m = beam(4, 1, 'FFFFRR', 'RFFRRR');
+  m.loadCases = [{ id: 1, name: 'A', gx: 0, gy: 0, gz: 0 }, { id: 2, name: 'B', gx: 0, gy: 0, gz: 0 }];
+  m.nodeLoads.push({ lc: 1, node: 2, fx: 0, fy: 0, fz: 0, mx: 0, my: 0, mz: 12 }, { lc: 2, node: 2, fx: 0, fy: 0, fz: 0, mx: 0, my: 0, mz: -5 });
+  m.combos = [{ id: 10, name: 'C10', f: { 1: 1.2, 2: 1.5 } }, { id: 11, name: 'C11', f: { 10: 2, 1: 1 } }, { id: 12, name: 'Flat', f: { 1: 3.4, 2: 3 } }];
+  const r = analyse(m); expect(r.errors).toEqual([]);
+  const get = (id: number) => r.cases.find(c => c.id === id)!;
+  close(get(11).disp.get(2)![5], get(12).disp.get(2)![5]);
+  close(get(11).reactions.get(1)![5], get(12).reactions.get(1)![5]);
+  expect(Math.abs(get(11).disp.get(2)![5])).toBeGreaterThan(0);
+});
