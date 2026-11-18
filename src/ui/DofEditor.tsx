@@ -23,7 +23,7 @@ export interface DofSpec<T> {
   dflt: string;
 }
 
-const NEXT: Record<string, string> = { F: 'R', R: 'S', S: 'F' };
+const NEXT: Record<string, string> = { R: 'F', F: 'S', S: 'R' };
 const TINT: Record<string, string> = { F: 'bg-slate-700 text-white', R: 'bg-white text-slate-700 border-slate-300', S: 'bg-amber-100 text-amber-800 border-amber-300' };
 const DEFAULT_K = 1000;
 
