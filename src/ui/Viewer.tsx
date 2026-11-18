@@ -2,7 +2,7 @@ import { useUnits, type Quantity } from '../model/units';
 import React, { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { useElementSize } from 'engineering-ui';
 import { sym } from './Sym';
-import { releaseCode, restraintCode, type Model, type Note } from '../model/types';
+import { releaseCode, restraintCode, FIXED, PIN, type Model, type Note } from '../model/types';
 import { outlineLoops, outlineOf } from '../model/sections';
 import { memberAxes, type CaseResult, type Vec6 } from '../solver/frame';
 
@@ -213,7 +213,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
     return () => cancelAnimationFrame(raf);
   }, [animating, mode]);
   /** Hover tip for the diagram curve under the pointer. */
-  const [tip, setTip] = useState<{ x: number; y: number; dot: [number, number]; foot?: [number, number]; colour: string; lines: string[] } | null>(null);
+  const [tip, setTip] = useState<{ x: number; y: number; dot: [number, number]; foot?: [number, number]; colour: string; lines: string[]; /** Basic information about the element under the pointer: the first line is a heading, and there is no marker. */ info?: boolean } | null>(null);
   /** Node or member under the pointer, highlighted so the click target is clear. */
   const [hover, setHover] = useState<{ n: number | null; m: number | null }>({ n: null, m: null });
   /** First corner of a selection box that is waiting for its second click. */
@@ -264,6 +264,34 @@ export const Viewer = React.forwardRef<ViewerHandle, {
     const mode = nt && e.button === 0 ? 'note' : e.button === 2 ? 'pan' : e.button === 1 ? 'zoom' : e.button === 0 ? 'orbit' : null;
     drag.current = { x: e.clientX, y: e.clientY, sx, sy, moved: false, mode };
   };
+  /** The lines of basic information shown when the pointer rests on a node or a member. */
+  const infoLines = (nodeId: number | null, memberId: number | null): string[] | null => {
+    const u = uLabel('length'), pos = (n: { x: number; y: number; z: number }) => `${len3(n.x)}, ${len3(n.y)}, ${len3(n.z)} ${u}`;
+    const code = (c: string) => (c === FIXED ? 'Fixed' : c === PIN ? 'Pinned' : c);
+    if (nodeId !== null) {
+      const n = nodeMap.get(nodeId); if (!n) return null;
+      const out = [`Node ${n.id}`, `X, Y, Z: ${pos(n)}`], r = restraintCode(n.r);
+      if (r !== 'RRRRRR') out.push(`Restraint: ${code(r)}${r !== FIXED && r !== PIN ? ' (DX DY DZ RX RY RZ)' : ''}`);
+      const k = model.members.filter(b => b.a === n.id || b.b === n.id).length; out.push(`Members: ${k}`);
+      const loads = model.nodeLoads.filter(l => l.node === n.id).length; if (loads) out.push(`Node loads: ${loads}`);
+      const ms = model.masses.filter(l => l.node === n.id).reduce((a, l) => a + l.m, 0); if (ms) out.push(`Mass: ${Number(uShow('mass', ms).toPrecision(4))} ${uLabel('mass')}`);
+      return out;
+    }
+    if (memberId !== null) {
+      const b = model.members.find(x => x.id === memberId), a = b && nodeMap.get(b.a), c = b && nodeMap.get(b.b); if (!b || !a || !c) return null;
+      const sec = model.sections.find(x => x.id === b.sec), mat = model.materials.find(x => x.id === b.mat);
+      const out = [`Member ${b.id}`, `Nodes: ${b.a} – ${b.b}`, `Length: ${len3(Math.hypot(c.x - a.x, c.y - a.y, c.z - a.z))} ${u}`, `Section: ${sec ? `${sec.id}: ${sec.name}` : b.sec}`, `Material: ${mat ? `${mat.id}: ${mat.name}` : b.mat}`];
+      if (b.angle) out.push(`Angle: ${+b.angle.toFixed(3)}°`);
+      if (b.type !== 'N') out.push(`Type: ${b.type === 'T' ? 'Tension only' : 'Compression only'}`);
+      const ra = releaseCode(b.relA), rb = releaseCode(b.relB);
+      if (ra !== 'FFFFFF') out.push(`Release at end 1: ${code(ra)}`);
+      if (rb !== 'FFFFFF') out.push(`Release at end 2: ${code(rb)}`);
+      if (b.ky || b.kz) out.push(`Continuous support: ${[b.ky ? `ky ${fq('forcePerLength2', b.ky)}` : '', b.kz ? `kz ${fq('forcePerLength2', b.kz)}` : ''].filter(Boolean).join(', ')} ${uLabel('forcePerLength2')}`);
+      const loads = model.distLoads.filter(l => l.member === b.id).length + model.pointLoads.filter(l => l.member === b.id).length; if (loads) out.push(`Member loads: ${loads}`);
+      return out;
+    }
+    return null;
+  };
   const move = (e: React.PointerEvent) => {
     const [lx, ly] = local(e), dragging = !!drag.current?.moved;
     if (!dragging) {
@@ -271,7 +299,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
       setHover(v => (v.n === hn && v.m === hm ? v : { n: hn, m: hm }));
       const nr = hn === null ? pickCurve(curvesRef.current, lx, ly) : null; // the diagram, or the member it hangs from, under the pointer
       const fh = faceHit.current, stressTip = !nr && hn === null && stressOn && fh && fh.v !== undefined ? { x: lx, y: ly, dot: [lx, ly] as [number, number], colour: '#475569', lines: [`Member ${fh.id}`, `${STRESSES.find(t => t.key === opts.stress)!.label.replace(/ \(.*\)$/, '')}: ${fmt(uShow('stress', fh.v))} ${uLabel('stress')}`] } : null;
-      setTip(nr ? { x: lx, y: ly, dot: nr.edge, foot: nr.foot, colour: DIAGRAMS.find(d => d.key === nr.c.key)!.colour, lines: [`Member ${nr.c.id}, x = ${len3(nr.x)} ${uLabel('length')} (${(100 * nr.x / nr.c.L).toFixed(0)}%)`, ...nr.c.lines(nr.i, nr.f)] } : stressTip);
+      setTip(nr ? { x: lx, y: ly, dot: nr.edge, foot: nr.foot, colour: DIAGRAMS.find(d => d.key === nr.c.key)!.colour, lines: [`Member ${nr.c.id}, x = ${len3(nr.x)} ${uLabel('length')} (${(100 * nr.x / nr.c.L).toFixed(0)}%)`, ...nr.c.lines(nr.i, nr.f)] } : stressTip ?? ((tool === 'select' && !pick && !anchor.current) && (hn !== null || hm !== null) ? (() => { const lines = infoLines(hn, hn === null ? hm : null); return lines ? { x: lx, y: ly, dot: [lx, ly] as [number, number], colour: '#475569', lines, info: true } : null; })() : null));
       if (tool !== 'select' || pick) {
         const nn = hn !== null ? nodeMap.get(hn) : null, mid = !nn ? midAt(lx, ly) : null, org = !nn && !mid ? originAt(lx, ly) : null, drawing = tool === 'member' && chain !== null, dt = drawing && !nn && !mid && !org ? drawTarget(lx, ly) : null;
         const pt: V3 | null = nn ? [nn.x, nn.y, nn.z] : mid ? mid.pt : org ? org : dt ? dt.pt : onPlane(lx, ly), at = pt ? P(pt) : null;
@@ -837,9 +865,9 @@ export const Viewer = React.forwardRef<ViewerHandle, {
         <span>{fq('stress', stressMesh.lo)} {uLabel('stress')}</span>
       </div>}
       {tip && <>
-        <svg width={W} height={H} className="absolute inset-0 pointer-events-none">{tip.foot && <><line x1={tip.foot[0]} y1={tip.foot[1]} x2={tip.dot[0]} y2={tip.dot[1]} stroke={tip.colour} strokeWidth={1.25} /><circle cx={tip.foot[0]} cy={tip.foot[1]} r={2.5} fill={tip.colour} /></>}<circle cx={tip.dot[0]} cy={tip.dot[1]} r={4.5} fill="#fff" stroke={tip.colour} strokeWidth={2} /></svg>
-        <div className="absolute z-10 pointer-events-none bg-white/95 border border-slate-200 rounded-md shadow-md px-2 py-1 text-[11px] text-slate-700 whitespace-nowrap" style={{ left: Math.min(tip.x + 14, W - 230), top: Math.min(tip.y + 14, H - 70) }}>
-          {tip.lines.map((l, i) => <div key={i} className={i === 1 ? 'font-semibold' : ''} style={i === 1 ? { color: tip.colour } : undefined}>{sym(l)}</div>)}
+        <svg width={W} height={H} className="absolute inset-0 pointer-events-none">{!tip.info && tip.foot && <><line x1={tip.foot[0]} y1={tip.foot[1]} x2={tip.dot[0]} y2={tip.dot[1]} stroke={tip.colour} strokeWidth={1.25} /><circle cx={tip.foot[0]} cy={tip.foot[1]} r={2.5} fill={tip.colour} /></>}{!tip.info && <circle cx={tip.dot[0]} cy={tip.dot[1]} r={4.5} fill="#fff" stroke={tip.colour} strokeWidth={2} />}</svg>
+        <div className="absolute z-10 pointer-events-none bg-white/95 border border-slate-200 rounded-md shadow-md px-2 py-1 text-[11px] text-slate-700 whitespace-nowrap" style={{ left: Math.min(tip.x + 14, W - 230), top: Math.max(4, Math.min(tip.y + 14, H - 14 - tip.lines.length * 15)) }}>
+          {tip.lines.map((l, i) => { const bold = tip.info ? i === 0 : i === 1; return <div key={i} className={bold ? 'font-semibold' : ''} style={bold && !tip.info ? { color: tip.colour } : undefined}>{sym(l)}</div>; })}
         </div>
       </>}
     </div>
