@@ -55,7 +55,7 @@ export default function App() {
   /** A stored value in the units shown, a typed value back in the stored units, and the unit text. */
   const sh = (q: Quantity, v: number) => toShown(q, units, v), rd = (q: Quantity, v: number) => fromShown(q, units, v), ul = (q: Quantity) => unitLabel(q, units);
   /** Which items of the tree are open (each drops down in place), and which groups are folded. */
-  const [openKeys, setOpenKeys] = useState<Record<string, boolean>>({ nodes: true });
+  const [openKeys, setOpenKeys] = useState<Record<string, boolean>>({});
   const [closedGroups, setClosedGroups] = useState<Record<string, boolean>>({});
   const tab: Tab = RESULT_KEYS.some(k => openKeys[k]) ? 'results' : 'structure';
   const [sel, setSel] = useState<Sel>(noSel);
@@ -115,7 +115,7 @@ export default function App() {
     return { ...m, members: [...m.members, { id: nextId(m.members), a, b, sec: m.sections.some(s => s.id === drawSec) ? drawSec! : last?.sec ?? m.sections[0].id, mat: m.materials.some(s => s.id === drawMat) ? drawMat! : last?.mat ?? m.materials[0]?.id ?? 1, angle: 0, type: 'N', relA: DASH, relB: DASH }] };
   });
   /** A blank model: no nodes or members, steel, and a dead load case. Undo brings the previous model back. */
-  const newModel = () => { setModel(() => emptyModel()); setFitRev(r => r + 1); setSel(noSel()); setCaseId(1); setModeIx(null); setDialog(null); setOpenKeys({ nodes: true }); };
+  const newModel = () => { setModel(() => emptyModel()); setFitRev(r => r + 1); setSel(noSel()); setCaseId(1); setModeIx(null); setDialog(null); setOpenKeys({}); };
   const delSel = useCallback(() => { setModel(m => deleteNodes(deleteMembersAndFreeNodes(m, sel.members), sel.nodes)); setSel(noSel()); }, [sel, setModel]);
   const patchMembers = (p: Partial<Member>) => setModel(m => ({ ...m, members: m.members.map(x => (sel.members.has(x.id) ? { ...x, ...p } : x)) }));
   const subdivide = (np: number = 4, which: Set<number> = sel.members) => setModel(m => {
