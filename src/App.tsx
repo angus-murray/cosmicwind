@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppHeader, Banner, Segmented, useElementSize, Check, NumberField, ReportDialog, SelectField, StatusChip, today } from 'engineering-ui';
 import { Axis3d, Box, Eye, Ruler, FilePlus, FolderOpen, Hash, Maximize, MousePointer2, Redo2, Save, Spline, Trash2, Type, Undo2, Weight, Dot, Shapes, Cuboid, Waypoints, StickyNote, Anchor, Unlink, Crosshair } from 'lucide-react';
 import {
-  deleteMembersAndFreeNodes, deleteNodes, DASH, emptyModel, FREE, MATERIAL_PRESETS, nextId, normalise, RELEASES, RESTRAINTS,
+  deleteMembersAndFreeNodes, deleteNodes, DASH, emptyModel, FREE, PIN, MATERIAL_PRESETS, nextId, normalise, RELEASES, RESTRAINTS,
   type Combo, type DistLoad, type LoadCase, type Material, type Member, type Model, type Node, type NodeLoad, type NodeMass, type PointLoad, type Section, type Settlement, type ThermalLoad, mergeMembers, intersectMembers, moveSelection,
 } from './model/types';
 import { defaultModel } from './model/templates';
@@ -18,6 +18,12 @@ import { loadUnits, saveUnits, toShown, fromShown, unitLabel, UnitsContext, type
 import type { ReportInfo } from './report';
 
 type Tab = 'structure' | 'results';
+/** The boundary conditions are kept on the nodes and members; the Boundary Conditions datasheets list them only where they exist, one row each. */
+interface RestraintRow { node: number; r: string; k?: number[] }
+interface ReleaseRow { member: number; relA: string; relB: string; kA?: number[]; kB?: number[] }
+interface SupportRow { member: number; ky: number; kz: number }
+const nodeFree = (c: string | undefined) => !c || c === DASH || c === 'RRRRRR';
+const memberFree = (c: string | undefined) => !c || c === DASH || c === 'FFFFFF';
 /** The items of the Analysis and Results group of the tree: while any of them is open the analysis runs and the model is shown with its results. */
 const RESULT_KEYS = ['analysis', 'defl', 'diag', 'react', 'stress', 'buck', 'vib'];
 const STORE = 'moonrock-model';
@@ -310,15 +316,30 @@ export default function App() {
   });
   /** A release code typed or pasted into a cell: springs are not allowed on the shear forces. */
   const relCode = (v: string | number, old: string) => { const c = code(v, old); return c !== old && (c[1] === 'S' || c[2] === 'S') ? old : c; };
-  const nodeCols: Col<Node>[] = [{ key: 'x', label: 'X', q: 'length' }, { key: 'y', label: 'Y', q: 'length' }, { key: 'z', label: 'Z', q: 'length' },
-    { key: 'r', label: 'Restraint', type: 'dof', dof: nodeSpec, w: 96, title: 'F fixed, R released or S spring, for DX DY DZ RX RY RZ', set: (r, v) => ({ ...r, r: code(v, r.r) }) }];
-  // The end nodes are not columns: a member is joined to its nodes on the canvas, and the datasheet keeps to what fits the column without scrolling sideways
-  const memCols: Col<Member>[] = [{ ...idSel('sec', 'Section No.', secNo, 44), wrap: true }, idSel('mat', 'Material', model.materials.map(r => ({ value: String(r.id), label: r.name })), 62),
-    { key: 'angle', label: 'Angle (°)', w: 40, wrap: true }, { key: 'type', label: 'Type', type: 'select', w: 76, options: [{ value: 'N', label: 'Normal' }, { value: 'T', label: 'Tension Only' }, { value: 'C', label: 'Compr. Only' }] },
-    { key: 'relA', label: 'Release 1', type: 'dof', dof: memSpec('A'), w: 70, wrap: true, title: 'F fixed, R released or S spring (not for the shears), for the local x y z forces and moments', set: (r, v) => ({ ...r, relA: relCode(v, r.relA) }) },
-    { key: 'relB', label: 'Release 2', type: 'dof', dof: memSpec('B'), w: 70, wrap: true, title: 'F fixed, R released or S spring (not for the shears), for the local x y z forces and moments', set: (r, v) => ({ ...r, relB: relCode(v, r.relB) }) },
-    { key: 'ky', label: 'Supp. ky', q: 'forcePerLength2', w: 60, wrap: true, title: 'Continuous support in the local y direction, force per length per length of member; 0 or blank for none', get: r => r.ky ?? 0, set: (r, v) => ({ ...r, ky: Math.max(0, Number(v) || 0) || undefined }) },
-    { key: 'kz', label: 'Supp. kz', q: 'forcePerLength2', w: 60, wrap: true, title: 'Continuous support in the local z direction, force per length per length of member; 0 or blank for none', get: r => r.kz ?? 0, set: (r, v) => ({ ...r, kz: Math.max(0, Number(v) || 0) || undefined }) }];
+  const nodeCols: Col<Node>[] = [{ key: 'x', label: 'X', q: 'length' }, { key: 'y', label: 'Y', q: 'length' }, { key: 'z', label: 'Z', q: 'length' }];
+  const memCols: Col<Member>[] = [{ key: 'a', label: 'End 1', title: 'Node at end 1 of the member', w: 40 }, { key: 'b', label: 'End 2', title: 'Node at end 2 of the member', w: 40 }, idSel('sec', 'Section No.', secNo, 58), idSel('mat', 'Material', model.materials.map(r => ({ value: String(r.id), label: r.name })), 72),
+    { key: 'angle', label: 'Angle (°)', w: 44 }, { key: 'type', label: 'Type', type: 'select', w: 84, options: [{ value: 'N', label: 'Normal' }, { value: 'T', label: 'Tension Only' }, { value: 'C', label: 'Compr. Only' }] }];
+
+  // ---- Boundary conditions
+  const nodeIds = model.nodes.map(n => ({ value: String(n.id), label: String(n.id) })), memIds = model.members.map(b => ({ value: String(b.id), label: String(b.id) }));
+  const restraintRows: RestraintRow[] = model.nodes.filter(n => !nodeFree(n.r)).map(n => ({ node: n.id, r: n.r, k: n.k }));
+  const setRestraints = (rows: RestraintRow[]) => setModel(m => ({ ...m, nodes: m.nodes.map(n => { const row = rows.find(x => x.node === n.id); return row ? { ...n, r: row.r, k: row.k } : nodeFree(n.r) ? n : { ...n, r: DASH, k: undefined }; }) }));
+  const releaseRows: ReleaseRow[] = model.members.filter(b => !memberFree(b.relA) || !memberFree(b.relB)).map(b => ({ member: b.id, relA: b.relA, relB: b.relB, kA: b.kA, kB: b.kB }));
+  const setReleases = (rows: ReleaseRow[]) => setModel(m => ({ ...m, members: m.members.map(b => { const row = rows.find(x => x.member === b.id); return row ? { ...b, relA: row.relA, kA: row.kA, relB: row.relB, kB: row.kB } : memberFree(b.relA) && memberFree(b.relB) ? b : { ...b, relA: DASH, relB: DASH, kA: undefined, kB: undefined }; }) }));
+  const supportRows: SupportRow[] = model.members.filter(b => b.ky || b.kz).map(b => ({ member: b.id, ky: b.ky ?? 0, kz: b.kz ?? 0 }));
+  const setSupports = (rows: SupportRow[]) => setModel(m => ({ ...m, members: m.members.map(b => { const row = rows.find(x => x.member === b.id); return row ? { ...b, ky: row.ky || undefined, kz: row.kz || undefined } : b.ky || b.kz ? { ...b, ky: undefined, kz: undefined } : b; }) }));
+  const restraintSpec: DofSpec<RestraintRow> = { ...nodeSpec, title: r => `Node ${r.node}: Restraint`, code: r => r.r, stiffness: r => r.k ?? [], apply: (r, c, k) => ({ ...r, r: c === 'RRRRRR' ? DASH : c, k: c.includes('S') ? k : undefined }) };
+  const releaseSpec = (end: 'A' | 'B'): DofSpec<ReleaseRow> => ({ ...memSpec(end), title: r => `Member ${r.member}: Release at End ${end === 'A' ? 1 : 2}`, code: r => (end === 'A' ? r.relA : r.relB), stiffness: r => (end === 'A' ? r.kA : r.kB) ?? [],
+    apply: (r, c, k) => { const rel = c === 'FFFFFF' ? DASH : c, ks = c.includes('S') ? k : undefined; return end === 'A' ? { ...r, relA: rel, kA: ks } : { ...r, relB: rel, kB: ks }; } });
+  const dofTitle = 'F fixed, R released or S spring';
+  const restraintCols: Col<RestraintRow>[] = [{ key: 'node', label: 'Node', type: 'select', options: nodeIds, w: 70, set: (r, v) => ({ ...r, node: Number(v) }) },
+    { key: 'r', label: 'Restraint', type: 'dof', dof: restraintSpec, w: 110, title: `${dofTitle}, for DX DY DZ RX RY RZ`, set: (r, v) => ({ ...r, r: code(v, r.r) }) }];
+  const releaseCols: Col<ReleaseRow>[] = [{ key: 'member', label: 'Member', type: 'select', options: memIds, w: 70, set: (r, v) => ({ ...r, member: Number(v) }) },
+    { key: 'relA', label: 'Release 1', type: 'dof', dof: releaseSpec('A'), w: 110, title: `${dofTitle} (not for the shears), for the local x y z forces and moments`, set: (r, v) => ({ ...r, relA: relCode(v, r.relA) }) },
+    { key: 'relB', label: 'Release 2', type: 'dof', dof: releaseSpec('B'), w: 110, title: `${dofTitle} (not for the shears), for the local x y z forces and moments`, set: (r, v) => ({ ...r, relB: relCode(v, r.relB) }) }];
+  const supportCols: Col<SupportRow>[] = [{ key: 'member', label: 'Member', type: 'select', options: memIds, w: 70, set: (r, v) => ({ ...r, member: Number(v) }) },
+    { key: 'ky', label: <><i>k</i><sub>y</sub></>, q: 'forcePerLength2', w: 90, title: 'Continuous support in the local y direction, force per length per length of member; 0 for none', set: (r, v) => ({ ...r, ky: Math.max(0, Number(v) || 0) }) },
+    { key: 'kz', label: <><i>k</i><sub>z</sub></>, q: 'forcePerLength2', w: 90, title: 'Continuous support in the local z direction, force per length per length of member; 0 for none', set: (r, v) => ({ ...r, kz: Math.max(0, Number(v) || 0) }) }];
   const secCols: Col<Section>[] = [{ key: 'colour', label: '', type: 'colour', w: 28, get: r => (r.colour && /^#[0-9a-f]{6}$/i.test(r.colour) ? r.colour : sectionColour(r.id)), autoColour: r => !r.colour, set: (r, v) => (typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? { ...r, colour: v.toLowerCase() } : { ...r, colour: undefined }) },
     { key: 'name', label: 'Section Type', type: 'text', w: 150 }, { key: 'A', label: <i>A</i>, q: 'area', w: 60 }, { key: 'Iz', label: <><i>I</i><sub>z</sub></>, q: 'inertia', w: 76 }, { key: 'Iy', label: <><i>I</i><sub>y</sub></>, q: 'inertia', w: 76 }, { key: 'J', label: <i>J</i>, q: 'inertia', w: 70 }];
   const matCols: Col<Material>[] = [{ key: 'name', label: 'Name', type: 'text', w: 110 }, { key: 'E', label: <i>E</i>, q: 'stress', w: 60 }, { key: 'G', label: <i>G</i>, q: 'stress', w: 60 }, { key: 'rho', label: 'Density', q: 'density', w: 70 }, { key: 'alpha', label: <i>α</i>, q: 'perTemp', w: 70 }];
@@ -390,6 +411,20 @@ export default function App() {
       ) },
       { key: 'masses', label: 'Masses', count: model.masses.length, render: () => (
                 <Sheet rows={model.masses} addLabel="Add Mass" cols={massCols} onChange={set('masses')} newRow={() => ({ node: firstNode, m: 1 })} empty="No node masses (used for natural frequencies)" />
+      ) },
+    ] },
+    { key: 'boundary', title: 'Boundary Conditions', items: [
+      { key: 'restraints', label: 'Node Restraints', count: restraintRows.length, render: () => (
+        <Sheet rows={restraintRows} cols={restraintCols} addLabel="Add Restraint" onChange={setRestraints} rowLabel={r => r.node} selected={r => sel.nodes.has(r.node)} onSelect={(r, add) => pickN({ id: r.node }, add)}
+          newRow={() => ({ node: model.nodes.find(n => nodeFree(n.r))?.id ?? model.nodes[0]?.id ?? 1, r: PIN })} empty="No restraints: every node is free" />
+      ) },
+      { key: 'releases', label: 'Member Releases', count: releaseRows.length, render: () => (
+        <Sheet rows={releaseRows} cols={releaseCols} addLabel="Add Release" onChange={setReleases} rowLabel={r => r.member} selected={r => sel.members.has(r.member)} onSelect={(r, add) => pickM({ id: r.member }, add)}
+          newRow={() => ({ member: model.members.find(b => memberFree(b.relA) && memberFree(b.relB))?.id ?? model.members[0]?.id ?? 1, relA: PIN, relB: DASH })} empty="No releases: every member is rigidly connected" />
+      ) },
+      { key: 'supports', label: 'Member Supports', count: supportRows.length, render: () => (
+        <Sheet rows={supportRows} cols={supportCols} addLabel="Add Support" onChange={setSupports} rowLabel={r => r.member} selected={r => sel.members.has(r.member)} onSelect={(r, add) => pickM({ id: r.member }, add)}
+          newRow={() => ({ member: model.members.find(b => !b.ky && !b.kz)?.id ?? model.members[0]?.id ?? 1, ky: 1000, kz: 0 })} empty="No continuous supports along members" />
       ) },
     ] },
     { key: 'loads', title: 'Loads', items: [
