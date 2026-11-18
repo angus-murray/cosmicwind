@@ -10,7 +10,7 @@ const round = (v: number) => Math.round(v * 1e6) / 1e6;
 
 function base(title: string, sections: Section[]): Model {
   const m = emptyModel(); m.title = title; m.sections = sections;
-  m.loadCases = [{ id: 1, name: 'Dead Load', gx: 0, gy: -1, gz: 0 }, { id: 2, name: 'Live Load', gx: 0, gy: 0, gz: 0 }, { id: 3, name: 'Wind Load', gx: 0, gy: 0, gz: 0 }];
+  m.loadCases = [{ id: 1, name: 'Dead Load', gx: 0, gy: 0, gz: 0 }, { id: 2, name: 'Live Load', gx: 0, gy: 0, gz: 0 }, { id: 3, name: 'Wind Load', gx: 0, gy: 0, gz: 0 }];
   m.combos = [
     { id: 10, name: '1.35G', f: { 1: 1.35 } }, { id: 11, name: '1.2G + 1.5Q', f: { 1: 1.2, 2: 1.5 } },
     { id: 12, name: '1.2G + Wu + 0.4Q', f: { 1: 1.2, 2: 0.4, 3: 1 } }, { id: 13, name: '0.9G + Wu', f: { 1: 0.9, 3: 1 } },

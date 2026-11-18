@@ -80,7 +80,7 @@ export const DEFAULT_SETTINGS: Settings = { nonlinear: false, bucklingModes: 0, 
 
 export const emptyModel = (): Model => ({
   title: 'Untitled', nodes: [], members: [], sections: [], materials: [{ ...STEEL }],
-  loadCases: [{ id: 1, name: 'Dead Load', gx: 0, gy: -1, gz: 0 }], combos: [],
+  loadCases: [{ id: 1, name: 'Dead Load', gx: 0, gy: 0, gz: 0 }], combos: [],
   nodeLoads: [], distLoads: [], pointLoads: [], settlements: [], thermal: [], masses: [], notes: [],
   settings: { ...DEFAULT_SETTINGS },
 });
