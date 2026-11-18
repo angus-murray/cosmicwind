@@ -11,7 +11,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "engineering-ui": "github:angus-murray/engineering-ui#1851865",
+    "engineering-ui": "github:angus-murray/engineering-ui#bed0584",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.9",
     "lucide-react": "^1.72.0",

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppHeader, Banner, Segmented, useElementSize, Check, NumberField, ReportDialog, SelectField, StatusChip, today } from 'engineering-ui';
-import { Axis3d, Box, Eye, Ruler, FilePlus, FolderOpen, Hash, Maximize, MousePointer2, Redo2, Save, Spline, Trash2, Type, Undo2, Weight, Dot, LineChart, Shapes, Cuboid, Waypoints, StickyNote, Anchor, Unlink, Crosshair } from 'lucide-react';
+import { Axis3d, Box, Eye, Ruler, FilePlus, FolderOpen, Hash, Maximize, MousePointer2, Redo2, Save, Spline, Trash2, Type, Undo2, Weight, Dot, Shapes, Cuboid, Waypoints, StickyNote, Anchor, Unlink, Crosshair } from 'lucide-react';
 import {
   deleteMembersAndFreeNodes, deleteNodes, DASH, emptyModel, FREE, MATERIAL_PRESETS, nextId, normalise, RELEASES, RESTRAINTS,
   type Combo, type DistLoad, type LoadCase, type Material, type Member, type Model, type Node, type NodeLoad, type NodeMass, type PointLoad, type Section, type Settlement, type ThermalLoad, mergeMembers, intersectMembers, moveSelection,
@@ -9,6 +9,7 @@ import { defaultModel } from './model/templates';
 import { analyse } from './solver/frame';
 import { DofEditor, type DofSpec } from './ui/DofEditor';
 import { Sheet, type Col } from './ui/Sheet';
+import { Tree, type TreeGroup } from './ui/Tree';
 import { DIAGRAMS, STRESSES, sectionColour, Viewer, type DiagramKey, type StressKey, type Sel, type Tool, type ViewerHandle, type ViewOpts } from './ui/Viewer';
 import { ContextMenu, PromptBox, TextPromptBox, ToolFlyout, type MenuItem, type MenuState, type PromptState, type TextPromptState } from './ui/CanvasMenu';
 import { About, LoadDialog, SectionDialog, type LoadSpec } from './ui/Dialogs';
@@ -16,7 +17,9 @@ import { UnitsBar } from './ui/UnitsBar';
 import { loadUnits, saveUnits, toShown, fromShown, unitLabel, UnitsContext, type Quantity, type Units } from './model/units';
 import type { ReportInfo } from './report';
 
-type Tab = 'structure' | 'loads' | 'results';
+type Tab = 'structure' | 'results';
+/** The items of the Analysis and Results group of the tree: while any of them is open the analysis runs and the model is shown with its results. */
+const RESULT_KEYS = ['analysis', 'defl', 'diag', 'react', 'stress', 'buck', 'vib'];
 const STORE = 'moonrock-model';
 const load = (): Model => { try { const s = localStorage.getItem(STORE); if (s) return normalise(JSON.parse(s)); } catch { /* fall through */ } return defaultModel(); };
 const code = (v: string | number, old: string) => { const s = String(v).toUpperCase().trim(); return /^[-–—]?$/.test(s) ? DASH : /^[FRS]{6}$/.test(s) ? s : old; };
@@ -45,8 +48,10 @@ export default function App() {
   useEffect(() => saveUnits(units), [units]);
   /** A stored value in the units shown, a typed value back in the stored units, and the unit text. */
   const sh = (q: Quantity, v: number) => toShown(q, units, v), rd = (q: Quantity, v: number) => fromShown(q, units, v), ul = (q: Quantity) => unitLabel(q, units);
-  const [tab, setTab] = useState<Tab>('structure');
-  const [sub, setSub] = useState({ structure: 'nodes', loads: 'cases' });
+  /** Which items of the tree are open (each drops down in place), and which groups are folded. */
+  const [openKeys, setOpenKeys] = useState<Record<string, boolean>>({ nodes: true });
+  const [closedGroups, setClosedGroups] = useState<Record<string, boolean>>({});
+  const tab: Tab = RESULT_KEYS.some(k => openKeys[k]) ? 'results' : 'structure';
   const [sel, setSel] = useState<Sel>(noSel);
   const [tool, setTool] = useState<Tool>('select');
   const [opts, setOpts] = useState<ViewOpts>({ notes: true, nodeNo: false, memberNo: false, secNames: false, loads: true, localAxes: false, diagrams: { N: false, T: false, Vy: false, Vz: false, Vres: false, Mz: true, My: false, Mres: false }, stress: 'none', deflected: false, defLabels: 'none', origin: true, restraints: true, releases: true, reactions: true, scale: 1, defScale: 1, solid: false });
@@ -104,7 +109,7 @@ export default function App() {
     return { ...m, members: [...m.members, { id: nextId(m.members), a, b, sec: m.sections.some(s => s.id === drawSec) ? drawSec! : last?.sec ?? m.sections[0].id, mat: m.materials.some(s => s.id === drawMat) ? drawMat! : last?.mat ?? m.materials[0]?.id ?? 1, angle: 0, type: 'N', relA: DASH, relB: DASH }] };
   });
   /** A blank model: no nodes or members, steel, and a dead load case. Undo brings the previous model back. */
-  const newModel = () => { setModel(() => emptyModel()); setFitRev(r => r + 1); setSel(noSel()); setCaseId(1); setModeIx(null); setDialog(null); setTab('structure'); };
+  const newModel = () => { setModel(() => emptyModel()); setFitRev(r => r + 1); setSel(noSel()); setCaseId(1); setModeIx(null); setDialog(null); setOpenKeys({ nodes: true }); };
   const delSel = useCallback(() => { setModel(m => deleteNodes(deleteMembersAndFreeNodes(m, sel.members), sel.nodes)); setSel(noSel()); }, [sel, setModel]);
   const patchMembers = (p: Partial<Member>) => setModel(m => ({ ...m, members: m.members.map(x => (sel.members.has(x.id) ? { ...x, ...p } : x)) }));
   const subdivide = (np: number = 4, which: Set<number> = sel.members) => setModel(m => {
@@ -307,12 +312,13 @@ export default function App() {
   const relCode = (v: string | number, old: string) => { const c = code(v, old); return c !== old && (c[1] === 'S' || c[2] === 'S') ? old : c; };
   const nodeCols: Col<Node>[] = [{ key: 'x', label: 'X', q: 'length' }, { key: 'y', label: 'Y', q: 'length' }, { key: 'z', label: 'Z', q: 'length' },
     { key: 'r', label: 'Restraint', type: 'dof', dof: nodeSpec, w: 96, title: 'F fixed, R released or S spring, for DX DY DZ RX RY RZ', set: (r, v) => ({ ...r, r: code(v, r.r) }) }];
-  const memCols: Col<Member>[] = [{ key: 'a', label: 'End 1', title: 'Node at end 1 of the member', w: 40 }, { key: 'b', label: 'End 2', title: 'Node at end 2 of the member', w: 40 }, idSel('sec', 'Section No.', secNo, 58), idSel('mat', 'Material', matOpt, 72),
-    { key: 'angle', label: 'Angle (°)', w: 44 }, { key: 'type', label: 'Type', type: 'select', w: 84, options: [{ value: 'N', label: 'Normal' }, { value: 'T', label: 'Tension Only' }, { value: 'C', label: 'Compr. Only' }] },
-    { key: 'ky', label: 'Supp. ky', q: 'forcePerLength2', w: 84, title: 'Continuous support in the local y direction, force per length per length of member; 0 or blank for none', get: r => r.ky ?? 0, set: (r, v) => ({ ...r, ky: Math.max(0, Number(v) || 0) || undefined }) },
-    { key: 'kz', label: 'Supp. kz', q: 'forcePerLength2', w: 84, title: 'Continuous support in the local z direction, force per length per length of member; 0 or blank for none', get: r => r.kz ?? 0, set: (r, v) => ({ ...r, kz: Math.max(0, Number(v) || 0) || undefined }) },
-    { key: 'relA', label: 'Release 1', type: 'dof', dof: memSpec('A'), w: 84, title: 'F fixed, R released or S spring (not for the shears), for the local x y z forces and moments', set: (r, v) => ({ ...r, relA: relCode(v, r.relA) }) },
-    { key: 'relB', label: 'Release 2', type: 'dof', dof: memSpec('B'), w: 84, title: 'F fixed, R released or S spring (not for the shears), for the local x y z forces and moments', set: (r, v) => ({ ...r, relB: relCode(v, r.relB) }) }];
+  // The end nodes are not columns: a member is joined to its nodes on the canvas, and the datasheet keeps to what fits the column without scrolling sideways
+  const memCols: Col<Member>[] = [{ ...idSel('sec', 'Section No.', secNo, 44), wrap: true }, idSel('mat', 'Material', model.materials.map(r => ({ value: String(r.id), label: r.name })), 62),
+    { key: 'angle', label: 'Angle (°)', w: 40, wrap: true }, { key: 'type', label: 'Type', type: 'select', w: 76, options: [{ value: 'N', label: 'Normal' }, { value: 'T', label: 'Tension Only' }, { value: 'C', label: 'Compr. Only' }] },
+    { key: 'relA', label: 'Release 1', type: 'dof', dof: memSpec('A'), w: 70, wrap: true, title: 'F fixed, R released or S spring (not for the shears), for the local x y z forces and moments', set: (r, v) => ({ ...r, relA: relCode(v, r.relA) }) },
+    { key: 'relB', label: 'Release 2', type: 'dof', dof: memSpec('B'), w: 70, wrap: true, title: 'F fixed, R released or S spring (not for the shears), for the local x y z forces and moments', set: (r, v) => ({ ...r, relB: relCode(v, r.relB) }) },
+    { key: 'ky', label: 'Supp. ky', q: 'forcePerLength2', w: 60, wrap: true, title: 'Continuous support in the local y direction, force per length per length of member; 0 or blank for none', get: r => r.ky ?? 0, set: (r, v) => ({ ...r, ky: Math.max(0, Number(v) || 0) || undefined }) },
+    { key: 'kz', label: 'Supp. kz', q: 'forcePerLength2', w: 60, wrap: true, title: 'Continuous support in the local z direction, force per length per length of member; 0 or blank for none', get: r => r.kz ?? 0, set: (r, v) => ({ ...r, kz: Math.max(0, Number(v) || 0) || undefined }) }];
   const secCols: Col<Section>[] = [{ key: 'colour', label: '', type: 'colour', w: 28, get: r => (r.colour && /^#[0-9a-f]{6}$/i.test(r.colour) ? r.colour : sectionColour(r.id)), autoColour: r => !r.colour, set: (r, v) => (typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? { ...r, colour: v.toLowerCase() } : { ...r, colour: undefined }) },
     { key: 'name', label: 'Section Type', type: 'text', w: 150 }, { key: 'A', label: <i>A</i>, q: 'area', w: 60 }, { key: 'Iz', label: <><i>I</i><sub>z</sub></>, q: 'inertia', w: 76 }, { key: 'Iy', label: <><i>I</i><sub>y</sub></>, q: 'inertia', w: 76 }, { key: 'J', label: <i>J</i>, q: 'inertia', w: 70 }];
   const matCols: Col<Material>[] = [{ key: 'name', label: 'Name', type: 'text', w: 110 }, { key: 'E', label: <i>E</i>, q: 'stress', w: 60 }, { key: 'G', label: <i>G</i>, q: 'stress', w: 60 }, { key: 'rho', label: 'Density', q: 'density', w: 70 }, { key: 'alpha', label: <i>α</i>, q: 'perTemp', w: 70 }];
@@ -335,11 +341,6 @@ export default function App() {
   const idLabel = (r: { id: number }) => r.id;
   const used = (k: 'sec' | 'mat', id: number) => model.members.some(m => m[k] === id);
 
-  const SUBS = {
-    structure: [['nodes', 'Nodes'], ['members', 'Members'], ['sections', 'Sections'], ['materials', 'Materials'], ['masses', 'Masses']],
-    loads: [['cases', 'Cases'], ['combos', 'Combinations'], ['node', 'Node Loads'], ['dist', 'Distributed'], ['point', 'Point'], ['settle', 'Settlements'], ['thermal', 'Temperature']],
-  } as const;
-  const st = sub.structure, ld = sub.loads;
   const nSel = sel.nodes.size, mSel = sel.members.size;
 
   /** The calculated buckling or vibration modes, one row each; a click shows or hides the mode shape on the canvas. */
@@ -353,90 +354,88 @@ export default function App() {
     </table>;
   };
 
-  return (
-    <UnitsContext.Provider value={units}>
-    <div className="fill-window app-wide min-h-screen bg-slate-100 lg:h-screen lg:overflow-hidden flex flex-col">
-      <AppHeader name="CosmicWind" logoSrc="/favicon.svg" onAbout={() => setDialog('about')} onReport={() => setDialog('report')}
-        tabs={[{ key: 'structure', label: 'Structure', icon: <Box className="w-3.5 h-3.5" /> }, { key: 'loads', label: 'Loads', icon: <Weight className="w-3.5 h-3.5" /> }, { key: 'results', label: 'Analysis and Results', icon: <LineChart className="w-3.5 h-3.5" /> }]}
-        activeTab={tab} onTab={setTab}
-        actions={<div className="flex items-center gap-1">
-          <button className="btn !px-2" title="Undo (Ctrl+Z)" disabled={!hist.past.length} onClick={undo}><Undo2 className="w-3.5 h-3.5" /></button>
-          <button className="btn !px-2" title="Redo (Ctrl+Y)" disabled={!hist.future.length} onClick={redo}><Redo2 className="w-3.5 h-3.5" /></button>
-          <button className="btn" title="New blank model" onClick={newModel}><FilePlus className="w-3.5 h-3.5" /><span className="hidden md:inline">New</span></button>
-          <button className="btn" title="Open a model file" onClick={() => fileRef.current?.click()}><FolderOpen className="w-3.5 h-3.5" /><span className="hidden md:inline">Open</span></button>
-          <button className="btn" title="Save the model to a file" onClick={save}><Save className="w-3.5 h-3.5" /><span className="hidden md:inline">Save</span></button>
-          <input ref={fileRef} type="file" accept=".json,application/json" className="hidden" onChange={e => { open(e.target.files?.[0]); e.target.value = ''; }} />
-        </div>} />
-      <main className="flex-1 flex flex-col lg:min-h-0 p-3 w-full">
-        <div className="tab-grid lg:!grid-cols-[minmax(600px,1fr)_minmax(0,2fr)]">
-          <div className="input-column scroll-thin">
-            {tab === 'structure' && tool === 'member' && (() => {
-              const lastM = model.members[model.members.length - 1];
-              const secV = model.sections.some(s => s.id === drawSec) ? drawSec : lastM?.sec ?? model.sections[0]?.id, matV = model.materials.some(s => s.id === drawMat) ? drawMat : lastM?.mat ?? model.materials[0]?.id;
-              const presets = MATERIAL_PRESETS.map((p, i) => ({ p, i })).filter(({ p }) => !model.materials.some(x => x.name === p.name));
-              return <div className="panel">
-                <h2 className="panel-title">New Members</h2>
-                <div className="grid grid-cols-2 gap-2">
-                  <SelectField label="Section" value={secV === undefined ? '' : String(secV)} onChange={v => v === '+' ? (setAssignOnAdd(false), setAssignDraw(true), setReplaceSec(null), setDialog('section')) : setDrawSec(Number(v))} options={[...secOpt, { value: '+', label: 'Add Section…' }]} />
-                  <SelectField label="Material" value={matV === undefined ? '' : String(matV)} onChange={v => {
-                    if (v.startsWith('p')) { const p = MATERIAL_PRESETS[Number(v.slice(1))], id = nextId(model.materials); setModel(m => ({ ...m, materials: [...m.materials, { ...p, id }] })); setDrawMat(id); } else setDrawMat(Number(v));
-                  }} options={[...matOpt, ...presets.map(({ p, i }) => ({ value: `p${i}`, label: `Add ${p.name}` }))]} />
-                </div>
-              </div>;
-            })()}
-            {tab !== 'results' && <div className="panel">
-              <div className="flex gap-1 flex-wrap">{SUBS[tab].map(([k, l]) => <button key={k} className={`subtab ${sub[tab] === k ? 'subtab-active' : ''}`} onClick={() => setSub({ ...sub, [tab]: k })}>{l}</button>)}</div>
-              {tab === 'structure' && <>
-                {st === 'nodes' && <Sheet rows={model.nodes} cols={nodeCols} onChange={set('nodes')} rowLabel={idLabel} selected={r => sel.nodes.has(r.id)} onSelect={pickN}
+  /** A selection made on the canvas opens the datasheets of what it selects, so the rows can be seen. */
+  function selectFromCanvas(s: Sel) {
+    setSel(s);
+    if (s.nodes.size || s.members.size) setOpenKeys(o => ({ ...o, ...(s.nodes.size ? { nodes: true } : {}), ...(s.members.size ? { members: true } : {}) }));
+  }
+  useEffect(() => { document.querySelector('.input-column .sheet tr.sel')?.scrollIntoView({ block: 'nearest' }); }, [sel]);
+  const treeGroups: TreeGroup[] = [
+    { key: 'structure', title: 'Structure', items: [
+      { key: 'nodes', label: 'Nodes', count: model.nodes.length, render: () => (
+                <Sheet rows={model.nodes} addLabel="Add Node" cols={nodeCols} onChange={set('nodes')} rowLabel={idLabel} selected={r => sel.nodes.has(r.id)} onSelect={pickN}
                   newRow={() => { const l = model.nodes[model.nodes.length - 1]; return { id: nextId(model.nodes), x: l?.x ?? 0, y: l?.y ?? 0, z: l?.z ?? 0, r: FREE }; }}
-                  onDelete={r => setModel(m => deleteNodes(m, new Set([r.id])))} />}
-                {st === 'members' && <Sheet rows={model.members} cols={memCols} onChange={v => setModel(m => ({ ...ensureSection(m), members: v }))} rowLabel={idLabel} selected={r => sel.members.has(r.id)} onSelect={pickM}
+                  onDelete={r => setModel(m => deleteNodes(m, new Set([r.id])))} />
+      ) },
+      { key: 'members', label: 'Members', count: model.members.length, render: () => (
+                <Sheet rows={model.members} addLabel="Add Member" cols={memCols} onChange={v => setModel(m => ({ ...ensureSection(m), members: v }))} rowLabel={idLabel} selected={r => sel.members.has(r.id)} onSelect={pickM}
                   newRow={() => { const l = model.members[model.members.length - 1]; return { id: nextId(model.members), a: l?.b ?? model.nodes[0]?.id ?? 1, b: model.nodes[model.nodes.length - 1]?.id ?? 2, sec: l?.sec ?? model.sections[0]?.id ?? 1, mat: l?.mat ?? model.materials[0]?.id ?? 1, angle: 0, type: 'N' as const, relA: DASH, relB: DASH }; }}
-                  onDelete={r => setModel(m => deleteMembersAndFreeNodes(m, new Set([r.id])))} />}
-                {st === 'sections' && <>
-                  <Sheet rows={model.sections} cols={secCols} onChange={set('sections')} rowLabel={idLabel} selected={r => r.id === secSel} onSelect={r => setSecSel(r.id)} newRow={() => ({ id: nextId(model.sections), name: `Section ${nextId(model.sections)}`, A: 5000, Iy: 1e7, Iz: 5e7, J: 1e5 })}
+                  onDelete={r => setModel(m => deleteMembersAndFreeNodes(m, new Set([r.id])))} />
+      ) },
+      { key: 'sections', label: 'Sections', count: model.sections.length, render: () => (
+                <>
+                  <Sheet rows={model.sections} addLabel="Add Section" cols={secCols} onChange={set('sections')} rowLabel={idLabel} selected={r => r.id === secSel} onSelect={r => setSecSel(r.id)} newRow={() => ({ id: nextId(model.sections), name: `Section ${nextId(model.sections)}`, A: 5000, Iy: 1e7, Iz: 5e7, J: 1e5 })}
                     onDelete={r => (used('sec', r.id) ? alert(`Section ${r.id} is used by members.`) : set('sections')(model.sections.filter(s => s.id !== r.id)))} />
                   <button className="btn-primary" onClick={() => { setAssignOnAdd(false); setReplaceSec(null); setDialog('section'); }}><Shapes className="w-3.5 h-3.5" /> Add From Library or Shape</button>
                   <button className="btn" disabled={secSel === null || !model.sections.some(x => x.id === secSel)} title="Select a section row, then choose a new type for its number; members keep the number" onClick={() => { setAssignOnAdd(false); setReplaceSec(secSel); setDialog('section'); }}><Shapes className="w-3.5 h-3.5" /> {secSel !== null && model.sections.some(x => x.id === secSel) ? `Change Type of Section ${secSel}` : 'Change Type of Selected Section'}</button>
-                </>}
-                {st === 'materials' && <>
+                </>
+      ) },
+      { key: 'materials', label: 'Materials', count: model.materials.length, render: () => (
+                <>
                   <Sheet rows={model.materials} cols={matCols} onChange={set('materials')} rowLabel={idLabel}
                     onDelete={r => (used('mat', r.id) ? alert(`Material ${r.id} is used by members.`) : set('materials')(model.materials.filter(s => s.id !== r.id)))} />
                   <select className="control" value="" onChange={e => { const p = MATERIAL_PRESETS[Number(e.target.value)]; if (p) set('materials')([...model.materials, { ...p, id: nextId(model.materials) }]); }}>
                     <option value="">Add Material…</option>{MATERIAL_PRESETS.map((p, i) => <option key={p.name} value={i}>{p.name}</option>)}</select>
-                </>}
-                {st === 'masses' && <Sheet rows={model.masses} cols={massCols} onChange={set('masses')} newRow={() => ({ node: firstNode, m: 1 })} empty="No node masses (used for natural frequencies)" />}
-              </>}
-              {tab === 'loads' && <>
-                {ld === 'cases' && <Sheet rows={model.loadCases} cols={lcCols} onChange={set('loadCases')} rowLabel={idLabel} newRow={() => ({ id: nextId(cases), name: 'Load Case', gx: 0, gy: 0, gz: 0 })}
+                </>
+      ) },
+      { key: 'masses', label: 'Masses', count: model.masses.length, render: () => (
+                <Sheet rows={model.masses} addLabel="Add Mass" cols={massCols} onChange={set('masses')} newRow={() => ({ node: firstNode, m: 1 })} empty="No node masses (used for natural frequencies)" />
+      ) },
+    ] },
+    { key: 'loads', title: 'Loads', items: [
+      { key: 'cases', label: 'Cases', count: model.loadCases.length, render: () => (
+                <Sheet rows={model.loadCases} addLabel="Add Case" cols={lcCols} onChange={set('loadCases')} rowLabel={idLabel} newRow={() => ({ id: nextId(cases), name: 'Load Case', gx: 0, gy: 0, gz: 0 })}
                   onDelete={r => setModel(m => {
                     const f = <T extends { lc: number }>(a: T[]) => a.filter(x => x.lc !== r.id);
                     return { ...m, loadCases: m.loadCases.filter(c => c.id !== r.id), nodeLoads: f(m.nodeLoads), distLoads: f(m.distLoads), pointLoads: f(m.pointLoads), settlements: f(m.settlements), thermal: f(m.thermal),
                       combos: m.combos.map(c => { const { [r.id]: _, ...rest } = c.f; return { ...c, f: rest }; }) };
-                  })} />}
-                {ld === 'combos' && <Sheet rows={model.combos} cols={comboCols} onChange={set('combos')} rowLabel={idLabel} newRow={() => ({ id: Math.max(nextId(cases), 10), name: 'Combination', f: {} })} empty="No combinations" />}
-                {ld === 'node' && <Sheet rows={model.nodeLoads} cols={nlCols} onChange={set('nodeLoads')} newRow={() => ({ lc: lcOnly, node: firstNode, fx: 0, fy: -10, fz: 0, mx: 0, my: 0, mz: 0 })} empty="No node loads" />}
-                {ld === 'dist' && <Sheet rows={model.distLoads} cols={dlCols} onChange={set('distLoads')} newRow={() => ({ lc: lcOnly, member: firstMem, axes: 'G' as const, dir: 'Y' as const, w1: -5, w2: -5, s: 0, e: 100 })} empty="No distributed loads" />}
-                {ld === 'point' && <Sheet rows={model.pointLoads} cols={plCols} onChange={set('pointLoads')} newRow={() => ({ lc: lcOnly, member: firstMem, axes: 'G' as const, dir: 'Y' as const, p: -10, pos: 50 })} empty="No point loads" />}
-                {ld === 'settle' && <Sheet rows={model.settlements} cols={stCols} onChange={set('settlements')} newRow={() => ({ lc: lcOnly, node: firstNode, dx: 0, dy: -10, dz: 0 })} empty="No support settlements" />}
-                {ld === 'thermal' && <Sheet rows={model.thermal} cols={thCols} onChange={set('thermal')} newRow={() => ({ lc: lcOnly, member: firstMem, dT: 20 })} empty="No temperature loads" />}
-              </>}
-            </div>}
-            {tab === 'results' && analysis && (analysis.errors.length > 0 || analysis.warnings.length > 0 || !!res?.error) && <div className="panel">
-              {analysis.errors.length > 0 && <Banner kind="error" title="The model could not be analysed" items={analysis.errors} />}
-              {res?.error && <Banner kind="error" title="This case could not be solved" items={[res.error]} />}
-              {analysis.warnings.length > 0 && <Banner kind="warning" title="Warnings" items={analysis.warnings} />}
-            </div>}
-            {tab === 'results' && <>
-              <div className="panel">
-                <h2 className="panel-title">Analysis</h2>
+                  })} />
+      ) },
+      { key: 'combos', label: 'Combinations', count: model.combos.length, render: () => (
+                <Sheet rows={model.combos} addLabel="Add Combination" cols={comboCols} onChange={set('combos')} rowLabel={idLabel} newRow={() => ({ id: Math.max(nextId(cases), 10), name: 'Combination', f: {} })} empty="No combinations" />
+      ) },
+      { key: 'nload', label: 'Node Loads', count: model.nodeLoads.length, render: () => (
+                <Sheet rows={model.nodeLoads} addLabel="Add Node Load" cols={nlCols} onChange={set('nodeLoads')} newRow={() => ({ lc: lcOnly, node: firstNode, fx: 0, fy: -10, fz: 0, mx: 0, my: 0, mz: 0 })} empty="No node loads" />
+      ) },
+      { key: 'dist', label: 'Distributed', count: model.distLoads.length, render: () => (
+                <Sheet rows={model.distLoads} addLabel="Add Distributed Load" cols={dlCols} onChange={set('distLoads')} newRow={() => ({ lc: lcOnly, member: firstMem, axes: 'G' as const, dir: 'Y' as const, w1: -5, w2: -5, s: 0, e: 100 })} empty="No distributed loads" />
+      ) },
+      { key: 'point', label: 'Point', count: model.pointLoads.length, render: () => (
+                <Sheet rows={model.pointLoads} addLabel="Add Point Load" cols={plCols} onChange={set('pointLoads')} newRow={() => ({ lc: lcOnly, member: firstMem, axes: 'G' as const, dir: 'Y' as const, p: -10, pos: 50 })} empty="No point loads" />
+      ) },
+      { key: 'settle', label: 'Settlements', count: model.settlements.length, render: () => (
+                <Sheet rows={model.settlements} addLabel="Add Settlement" cols={stCols} onChange={set('settlements')} newRow={() => ({ lc: lcOnly, node: firstNode, dx: 0, dy: -10, dz: 0 })} empty="No support settlements" />
+      ) },
+      { key: 'thermal', label: 'Temperature', count: model.thermal.length, render: () => (
+                <Sheet rows={model.thermal} addLabel="Add Temperature Load" cols={thCols} onChange={set('thermal')} newRow={() => ({ lc: lcOnly, member: firstMem, dT: 20 })} empty="No temperature loads" />
+      ) },
+    ] },
+    { key: 'results', title: 'Analysis and Results',
+      notice: tab === 'results' && analysis && (analysis.errors.length > 0 || analysis.warnings.length > 0 || !!res?.error) ? <div className="space-y-2.5">
+        {analysis.errors.length > 0 && <Banner kind="error" title="The model could not be analysed" items={analysis.errors} />}
+        {res?.error && <Banner kind="error" title="This case could not be solved" items={[res.error]} />}
+        {analysis.warnings.length > 0 && <Banner kind="warning" title="Warnings" items={analysis.warnings} />}
+      </div> : null,
+      items: [
+      { key: 'analysis', label: 'Analysis', render: () => (
+<div className="space-y-2.5">
                 <Check checked={model.settings.nonlinear} onChange={v => setModel(m => ({ ...m, settings: { ...m.settings, nonlinear: v } }))} title="Iterates with the geometric stiffness from the member axial forces">Second-Order (P-Δ) Analysis</Check>
                 {analysis && (analysis.errors.length ? <StatusChip kind="fail">Not Solved</StatusChip> : res?.error ? <StatusChip kind="fail">Case Not Solved</StatusChip>
                   : <StatusChip kind="pass">{model.settings.nonlinear ? 'Second-Order' : 'Linear'} Analysis Solved in {analysis.ms < 10 ? analysis.ms.toFixed(1) : analysis.ms.toFixed(0)} ms</StatusChip>)}
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-              <div className="panel">
-                <h2 className="panel-title">Deflections</h2>
+</div>
+      ) },
+      { key: 'defl', label: 'Deflections', render: () => (
+<div className="space-y-2.5">
                 <div className="space-y-2.5">
                   <div>
                     <span className="label">Global Deflection at Nodes</span>
@@ -445,9 +444,10 @@ export default function App() {
                   <Check checked={opts.deflected} onChange={o('deflected')}>Deflected Shape</Check>
                   <NumberField label="Deflection Scale" value={opts.defScale} min={0.1} max={20} step={0.25} onChange={o('defScale')} />
                 </div>
-              </div>
-              <div className="panel">
-                <h2 className="panel-title">Diagrams</h2>
+</div>
+      ) },
+      { key: 'diag', label: 'Diagrams', render: () => (
+<div className="space-y-2.5">
                 <div className="grid grid-cols-2 gap-x-3 items-start">
                   <div key={DIAGRAM_GROUPS[0].title}>
                     <h3 className="label">{DIAGRAM_GROUPS[0].title}</h3>
@@ -477,34 +477,68 @@ export default function App() {
                   </div>
                 </div>
                 <NumberField label="Diagram Scale" value={opts.scale} min={0.1} max={20} step={0.25} onChange={o('scale')} />
-              </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-              <div className="panel">
-                <h2 className="panel-title">Reactions</h2>
+</div>
+      ) },
+      { key: 'react', label: 'Reactions', render: () => (
+<div className="space-y-2.5">
                 <Check checked={opts.reactions} onChange={o('reactions')}>Show Reactions</Check>
-              </div>
-              <div className="panel">
-                <h2 className="panel-title">Stresses</h2>
+</div>
+      ) },
+      { key: 'stress', label: 'Stresses', render: () => (
+<div className="space-y-2.5">
                 <SelectField hint="Colours the rendered members; switches to the rendered view" label="Normal Stress" value={opts.stress} onChange={v => setOpts(q => ({ ...q, stress: v as StressKey, solid: v !== 'none' ? true : q.solid }))} options={STRESSES.map(t => ({ value: t.key, label: t.label }))} />
-              </div>
-              </div>
-              <div className="panel">
-                <h2 className="panel-title">Buckling</h2>
+</div>
+      ) },
+      { key: 'buck', label: 'Buckling', render: () => (
+<div className="space-y-2.5">
                 <NumberField label="Modes" value={model.settings.bucklingModes} min={0} max={20} onChange={v => setModel(m => ({ ...m, settings: { ...m.settings, bucklingModes: Math.round(v) } }))} />
                 {modeTable('buckling', okRes?.buckling?.values, 'Load Factor')}
-              </div>
-              <div className="panel">
-                <h2 className="panel-title">Vibration</h2>
+</div>
+      ) },
+      { key: 'vib', label: 'Vibration', render: () => (
+<div className="space-y-2.5">
                 <NumberField label="Modes" value={model.settings.modalModes} min={0} max={30} onChange={v => setModel(m => ({ ...m, settings: { ...m.settings, modalModes: Math.round(v) } }))} />
                 {modeTable('modal', analysis?.modal?.values, 'Frequency (Hz)')}
-              </div>
-            </>}
+</div>
+      ) },
+    ] },
+  ];
+
+  return (
+    <UnitsContext.Provider value={units}>
+    <div className="fill-window app-wide min-h-screen bg-slate-100 lg:h-screen lg:overflow-hidden flex flex-col">
+      <AppHeader name="CosmicWind" logoSrc="/favicon.svg" onAbout={() => setDialog('about')} onReport={() => setDialog('report')}
+        actions={<div className="flex items-center gap-1">
+          <button className="btn !px-2" title="Undo (Ctrl+Z)" disabled={!hist.past.length} onClick={undo}><Undo2 className="w-3.5 h-3.5" /></button>
+          <button className="btn !px-2" title="Redo (Ctrl+Y)" disabled={!hist.future.length} onClick={redo}><Redo2 className="w-3.5 h-3.5" /></button>
+          <button className="btn" title="New blank model" onClick={newModel}><FilePlus className="w-3.5 h-3.5" /><span className="hidden md:inline">New</span></button>
+          <button className="btn" title="Open a model file" onClick={() => fileRef.current?.click()}><FolderOpen className="w-3.5 h-3.5" /><span className="hidden md:inline">Open</span></button>
+          <button className="btn" title="Save the model to a file" onClick={save}><Save className="w-3.5 h-3.5" /><span className="hidden md:inline">Save</span></button>
+          <input ref={fileRef} type="file" accept=".json,application/json" className="hidden" onChange={e => { open(e.target.files?.[0]); e.target.value = ''; }} />
+        </div>} />
+      <main className="flex-1 flex flex-col lg:min-h-0 p-3 w-full">
+        <div className="tab-grid lg:!grid-cols-[minmax(600px,1fr)_minmax(0,2fr)]">
+          <div className="input-column scroll-thin">
+            {tab !== 'results' && tool === 'member' && (() => {
+              const lastM = model.members[model.members.length - 1];
+              const secV = model.sections.some(s => s.id === drawSec) ? drawSec : lastM?.sec ?? model.sections[0]?.id, matV = model.materials.some(s => s.id === drawMat) ? drawMat : lastM?.mat ?? model.materials[0]?.id;
+              const presets = MATERIAL_PRESETS.map((p, i) => ({ p, i })).filter(({ p }) => !model.materials.some(x => x.name === p.name));
+              return <div className="panel">
+                <h2 className="panel-title">New Members</h2>
+                <div className="grid grid-cols-2 gap-2">
+                  <SelectField label="Section" value={secV === undefined ? '' : String(secV)} onChange={v => v === '+' ? (setAssignOnAdd(false), setAssignDraw(true), setReplaceSec(null), setDialog('section')) : setDrawSec(Number(v))} options={[...secOpt, { value: '+', label: 'Add Section…' }]} />
+                  <SelectField label="Material" value={matV === undefined ? '' : String(matV)} onChange={v => {
+                    if (v.startsWith('p')) { const p = MATERIAL_PRESETS[Number(v.slice(1))], id = nextId(model.materials); setModel(m => ({ ...m, materials: [...m.materials, { ...p, id }] })); setDrawMat(id); } else setDrawMat(Number(v));
+                  }} options={[...matOpt, ...presets.map(({ p, i }) => ({ value: `p${i}`, label: `Add ${p.name}` }))]} />
+                </div>
+              </div>;
+            })()}
+            <Tree groups={treeGroups} open={openKeys} onToggle={k => setOpenKeys(o => ({ ...o, [k]: !o[k] }))} closed={closedGroups} onToggleGroup={k => setClosedGroups(c => ({ ...c, [k]: !c[k] }))} />
           </div>
 
           <div className="results-column">
             <div ref={cvRef} className="relative bg-slate-50 rounded-lg border border-slate-200 shadow-2xs overflow-hidden h-[520px] lg:h-auto lg:flex-1 lg:min-h-[240px]">
-              <Viewer ref={viewer} notes={model.notes} onNoteMove={(id, dx, dy) => setModel(m => ({ ...m, notes: m.notes.map(n => (n.id === id ? { ...n, dx, dy } : n)) }))} onNoteEdit={(id, x, y) => { const nt = model.notes.find(n => n.id === id); if (nt) setTextPrompt({ x, y, title: 'Edit Note', text: nt.text, onSubmit: t => setNote(nt.kind, nt.ref, nt.id, t) }); }} fitRev={fitRev} onSplitMember={splitMember} pick={pickMove} onPickEnd={() => setPickMove(null)} model={model} opts={opts} tool={tool} sel={sel} onSelect={setSel} loadCases={drawLoads} result={tab === 'results' ? okRes : null} mode={tab === 'results' ? modeShape : null} animateMode={modeIx?.kind === 'modal'} onDefScale={f => setOpts(p => ({ ...p, defScale: Math.min(20, Math.max(0.1, +(p.defScale * f).toFixed(3))) }))} onAddNode={addNode} onAddMember={addMember}
+              <Viewer ref={viewer} notes={model.notes} onNoteMove={(id, dx, dy) => setModel(m => ({ ...m, notes: m.notes.map(n => (n.id === id ? { ...n, dx, dy } : n)) }))} onNoteEdit={(id, x, y) => { const nt = model.notes.find(n => n.id === id); if (nt) setTextPrompt({ x, y, title: 'Edit Note', text: nt.text, onSubmit: t => setNote(nt.kind, nt.ref, nt.id, t) }); }} fitRev={fitRev} onSplitMember={splitMember} pick={pickMove} onPickEnd={() => setPickMove(null)} model={model} opts={opts} tool={tool} sel={sel} onSelect={selectFromCanvas} loadCases={drawLoads} result={tab === 'results' ? okRes : null} mode={tab === 'results' ? modeShape : null} animateMode={modeIx?.kind === 'modal'} onDefScale={f => setOpts(p => ({ ...p, defScale: Math.min(20, Math.max(0.1, +(p.defScale * f).toFixed(3))) }))} onAddNode={addNode} onAddMember={addMember}
                 onContext={c => { setCtx(c); if (c.node !== null && !sel.nodes.has(c.node)) setSel({ nodes: new Set([c.node]), members: new Set() }); else if (c.node === null && c.member !== null && !sel.members.has(c.member)) setSel({ nodes: new Set(), members: new Set([c.member]) }); }} />
               {ctx && menuOf() && <ContextMenu menu={menuOf()!} W={cvSize.width} H={cvSize.height} onClose={() => setCtx(null)} />}
               {textPrompt && <TextPromptBox prompt={textPrompt} W={cvSize.width} H={cvSize.height} onClose={() => setTextPrompt(null)} />}

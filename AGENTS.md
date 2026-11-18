@@ -7,7 +7,9 @@ Structural analysis app; follows the `engineering-ui` house style (`node_modules
 - The input column is one third of the width (at least 600 px) instead of one quarter, so that the datasheet headings of the Loads tab fit on one line. The canvas has the rest; the load case is chosen in the canvas.
 - Model data is entered in datasheets (`.sheet` in `src/index.css`, `src/ui/Sheet.tsx`) and not in `NumberField`
   controls. Cells commit on Enter or blur and accept a block pasted from a spreadsheet.
-- There is no Solve button: the analysis runs when the Analysis and Results tab is open and the model changes.
+- The input column is a tree of panels (`src/ui/Tree.tsx`, with the `.tree-*` classes in `src/index.css`) and not tabs: Structure, Loads, and Analysis and Results are panels, and each item in them opens as a drop-down in place. Several can be open at once. The classes use only house-style tokens and are intended to move into `engineering-ui`.
+- Selecting a row in the Nodes or Members datasheet selects the same element on the canvas, and selecting on the canvas opens the datasheet and scrolls to the row.
+- There is no Solve button: the analysis runs while any item of Analysis and Results is open, and the model changes. While one is open the model is shown with its results and the drawing tools are hidden.
 - The PDF report uses the built-in Helvetica font and `jspdf-autotable`, so it avoids symbols outside Latin-1.
 
 ## Conventions

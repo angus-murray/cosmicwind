@@ -297,9 +297,14 @@ export const Viewer = React.forwardRef<ViewerHandle, {
       const out = [`Member ${b.id}`, `Nodes: ${b.a} – ${b.b}`, `Length: ${len3(Math.hypot(c.x - a.x, c.y - a.y, c.z - a.z))} ${u}`, `Section: ${sec ? `${sec.id}: ${sec.name}` : b.sec}`, `Material: ${mat ? `${mat.id}: ${mat.name}` : b.mat}`];
       if (b.angle) out.push(`Angle: ${+b.angle.toFixed(3)}°`);
       if (b.type !== 'N') out.push(`Type: ${b.type === 'T' ? 'Tension only' : 'Compression only'}`);
-      const ra = releaseCode(b.relA), rb = releaseCode(b.relB);
-      if (ra !== 'FFFFFF') out.push(`Release at end 1: ${code(ra)}`);
-      if (rb !== 'FFFFFF') out.push(`Release at end 2: ${code(rb)}`);
+      // Releases at each end: the force or moment that is released (R), or sprung (S) with its stiffness
+      const names = ['Fx', 'Fy', 'Fz', 'Mx', 'My', 'Mz'];
+      [['1', b.relA, b.kA], ['2', b.relB, b.kB]].forEach(([end, raw, ks]) => {
+        const c = releaseCode(raw as string); if (c === 'FFFFFF') return;
+        const rel = names.filter((_, i) => c[i] === 'R'), spr = names.map((n, i) => (c[i] === 'S' ? `${n} spring ${fq(i < 3 ? 'forcePerLength' : 'rotStiffness', (ks as number[] | undefined)?.[i] ?? 0)} ${uLabel(i < 3 ? 'forcePerLength' : 'rotStiffness')}` : '')).filter(Boolean);
+        const named = c === PIN ? 'Pinned (Mx, My, Mz released)' : c === 'FFFFRR' ? 'Pinned (My, Mz released)' : '';
+        out.push(`Release at end ${end}: ${[named || (rel.length ? `${rel.join(', ')} released` : ''), ...spr].filter(Boolean).join('; ')}`);
+      });
       if (b.ky || b.kz) out.push(`Continuous support: ${[b.ky ? `ky ${fq('forcePerLength2', b.ky)}` : '', b.kz ? `kz ${fq('forcePerLength2', b.kz)}` : ''].filter(Boolean).join(', ')} ${uLabel('forcePerLength2')}`);
       const loads = model.distLoads.filter(l => l.member === b.id).length + model.pointLoads.filter(l => l.member === b.id).length; if (loads) out.push(`Member loads: ${loads}`);
       return out;

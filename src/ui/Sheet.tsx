@@ -9,6 +9,8 @@ export interface Col<T> {
   key: string; /** The heading; a function gets the units in use. */ label: React.ReactNode | ((u: Units) => React.ReactNode); w?: number; title?: string;
   /** The quantity of a number column, or of a row when it depends on the row. The stored value is converted to the units in use and the unit is added to the heading. */
   q?: Quantity | ((row: T) => Quantity);
+  /** Let the heading wrap onto two lines, for a narrow column. */
+  wrap?: boolean;
   type?: 'num' | 'text' | 'select' | 'ro' | 'dof' | 'colour';
   /** For a 'dof' column: the popover that sets each degree of freedom to F, R or S. */
   dof?: DofSpec<T>;
@@ -27,10 +29,10 @@ const show = (v: unknown) => (typeof v === 'number' ? String(Math.abs(v) >= 1e7 
 const parseNum = (s: string) => { const v = Number(s.trim().replace('−', '-').replace(/,/g, '')); return s.trim() === '' || !isFinite(v) ? null : v; };
 
 /** Editable datasheet. Cells commit on Enter or blur; a block copied from a spreadsheet can be pasted in. */
-export function Sheet<T extends object>({ rows, cols, onChange, newRow, selected, onSelect, onDelete, rowLabel, empty }: {
+export function Sheet<T extends object>({ rows, cols, onChange, newRow, selected, onSelect, onDelete, rowLabel, empty, addLabel = 'Add Row' }: {
   rows: T[]; cols: Col<T>[]; onChange: (rows: T[]) => void; newRow?: () => T;
   selected?: (row: T) => boolean; onSelect?: (row: T, additive: boolean) => void; onDelete?: (row: T, i: number) => void;
-  rowLabel?: (row: T, i: number) => React.ReactNode; empty?: string;
+  rowLabel?: (row: T, i: number) => React.ReactNode; empty?: string; /** Text of the button that adds a row, for example Add Node. */ addLabel?: string;
 }) {
   const ref = useRef<HTMLTableElement>(null);
   const { u } = useUnits();
@@ -70,7 +72,7 @@ export function Sheet<T extends object>({ rows, cols, onChange, newRow, selected
     <div className="space-y-1.5">
       <div className="overflow-auto max-h-[calc(100vh-250px)] scroll-thin border border-slate-200 rounded">
         <table className="sheet" ref={ref}>
-          <thead><tr><th style={{ width: 34 }}></th>{cols.map(c => <th key={c.key} title={c.title} style={{ minWidth: c.w ?? 56 }}>{head(c)}</th>)}<th style={{ width: 22 }}></th></tr></thead>
+          <thead><tr><th style={{ width: 34 }}></th>{cols.map(c => <th key={c.key} title={c.title} className={c.wrap ? '!whitespace-normal' : undefined} style={{ minWidth: c.w ?? 56 }}>{head(c)}</th>)}<th style={{ width: 22 }}></th></tr></thead>
           <tbody>
             {rows.map((r, i) => (
               <tr key={i} className={selected?.(r) ? 'sel' : ''}>
@@ -123,7 +125,7 @@ export function Sheet<T extends object>({ rows, cols, onChange, newRow, selected
         return <ColourPicker value={cur} auto={!!(c.autoColour?.(row))} at={cpop} onClose={() => setCpop(null)} onChange={h => { const r = c.set ? c.set(row, h ?? '') : row; onChange(rows.map((x, k) => (k === cpop.i ? r : x))); }} />;
       })()}
       {cols.filter(c => c.list).map(c => <datalist key={c.key} id={`dl-${c.key}`}>{c.list!.map(o => <option key={o} value={o} />)}</datalist>)}
-      {newRow && <button className="btn" onClick={() => onChange([...rows, newRow()])}><Plus className="w-3.5 h-3.5" /> Add Row</button>}
+      {newRow && <button className="btn" onClick={() => onChange([...rows, newRow()])}><Plus className="w-3.5 h-3.5" /> {addLabel}</button>}
     </div>
   );
 }

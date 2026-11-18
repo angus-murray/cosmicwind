@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { OPTIONS, PRESETS, presetOf, type Units } from '../model/units';
 
+/** The temperature units as shown: Celsius with its degree sign. */
+const TEMP = { C: '°C', K: 'K' } as const;
 const FIELDS: { key: keyof Units; label: string }[] = [
   { key: 'length', label: 'Length' }, { key: 'force', label: 'Force' }, { key: 'mass', label: 'Mass' }, { key: 'stress', label: 'Stress' }, { key: 'temp', label: 'Temperature' },
 ];
@@ -17,7 +19,7 @@ export function UnitsBar({ units, onChange }: { units: Units; onChange: (u: Unit
     return () => { document.removeEventListener('pointerdown', away); document.removeEventListener('keydown', esc); };
   }, [open]);
   const active = presetOf(units);
-  const shown = [units.length, units.force, units.mass, units.stress, units.temp];
+  const shown = [units.length, units.force, units.mass, units.stress, TEMP[units.temp]];
   return (
     <div ref={box} data-ui className="absolute bottom-2 right-2 z-10 flex flex-col items-end gap-1 max-h-[calc(100%-16px)]" onPointerDown={e => e.stopPropagation()} onContextMenu={e => e.stopPropagation()}>
       {open && (
@@ -31,7 +33,7 @@ export function UnitsBar({ units, onChange }: { units: Units; onChange: (u: Unit
             <label key={f.key} className="flex items-center justify-between gap-2">
               <span>{f.label}</span>
               <select className="control !w-24 !h-6 !py-0 !text-[11px]" value={units[f.key]} onChange={e => onChange({ ...units, [f.key]: e.target.value })}>
-                {OPTIONS[f.key].map(o => <option key={o} value={o}>{o}</option>)}
+                {OPTIONS[f.key].map(o => <option key={o} value={o}>{f.key === 'temp' ? TEMP[o as 'C' | 'K'] : o}</option>)}
               </select>
             </label>
           ))}
