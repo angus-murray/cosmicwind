@@ -1,6 +1,7 @@
 import { G0 } from '../solver/frame';
 import { Children, useState } from 'react';
-import { CollapsePanel, Formula, Modal, NumberField, Segmented, SelectField } from 'engineering-ui';
+import { AboutModal, CollapsePanel, Formula, Modal, NumberField, Segmented, SelectField } from 'engineering-ui';
+import { RELEASE_DATE, VERSION } from '../version';
 import { LIB_GROUPS, LIBRARY, SHAPES, shapeName, shapeProps, type Outline, type Props, type Shape } from '../model/sections';
 import { sym } from './Sym';
 import type { Axes, Dir, PointDir } from '../model/types';
@@ -46,12 +47,12 @@ export function SectionDialog({ onClose, onAdd, assign, replace }: { onClose: ()
 export function About({ onClose }: { onClose: () => void }) {
   const P = ({ children }: { children: React.ReactNode }) => <p className="text-xs text-slate-700 leading-relaxed select-text">{Children.map(children, c => (typeof c === 'string' ? sym(c) : c))}</p>;
   return (
-    <Modal title="About CosmicWind" onClose={onClose} variant="page">
-      <div className="panel"><P>CosmicWind analyses three-dimensional frames and trusses in the browser. The model is built in datasheets or drawn in the
-        graphics window, and is solved by the direct stiffness method for load cases and combinations. Inputs and datasheets are in the left column and the
+    <AboutModal name="CosmicWind" version={VERSION} date={RELEASE_DATE} onClose={onClose}>
+      <CollapsePanel title="Overview" defaultOpen><P>CosmicWind analyses three-dimensional frames and trusses in the browser. The model is built in datasheets or drawn in the
+        graphics window, and is solved by the direct stiffness method for load cases and combinations. Inputs and datasheets are in the tree on the left and the
         graphics window is on the right. Everything runs on the user's computer; the model is kept in the browser's storage and can be saved to and opened
-        from a file. New starts a blank model, and Undo brings the previous one back.</P></div>
-      <CollapsePanel title="Units and Axes" defaultOpen>
+        from a file. New starts a blank model, and Undo brings the previous one back.</P></CollapsePanel>
+      <CollapsePanel title="Units and Axes">
         <P>The units are chosen with the controls at the bottom of the graphics window (length in mm or m, force in N, kN or MN, stress in Pa, kPa or MPa, mass in kg or t, temperature in C or K) or with the SI, N.mm and kN.m presets. Time is always in seconds. Changing the units changes only how values are shown and typed; the model and its forces are not altered. Global Y is
           vertical. A member's local x axis runs from end 1 to end 2. For a member that is not vertical, the local y axis lies in the vertical plane
           through the member and points upward, and the local z axis is horizontal. For a vertical member the local z axis is parallel to global Z. The
@@ -67,22 +68,26 @@ export function About({ onClose }: { onClose: () => void }) {
           of a member is its density times its cross-sectional area times <i>g</i>, applied along its length, and node masses and member masses for vibration
           modes are in the mass unit chosen.</P>
       </CollapsePanel>
-      <CollapsePanel title="Using the Program" defaultOpen>
-        <P>The Structure tab holds the datasheets for nodes, members, sections, materials and node masses. The Loads tab holds load cases, combinations,
-          node loads, distributed and point member loads, support settlements and temperature loads. The Analysis and Results tab solves the model and
+      <CollapsePanel title="Using the Program">
+        <P>The input column is a tree. The Structure folder holds the datasheets for nodes, members, sections, materials and node masses. Boundary Conditions
+          holds node restraints, member releases and continuous member supports, each listing only the nodes or members that have one. The Loads folder holds
+          load cases, combinations, node loads, distributed and point member loads, support settlements and temperature loads. Clicking an item opens its
+          datasheet or options in place, and several can stay open together. Selecting a row in the Nodes or Members datasheet selects the same node or
+          member in the graphics window, and selecting in the graphics window opens the datasheet at its row. The number of a section or material can be
+          changed by clicking it, to any number that is not already used. The Analysis and Results folder solves the model while any of its items is open and
           controls what is drawn. The load case or combination shown is chosen in the graphics window, which also shows its gravity load under the selector
           when Loads is on.</P>
         <P>In the graphics window, drag with the left button to rotate, click twice to draw a selection box, use the wheel to zoom, and drag with the right
-          button to pan. Dragging with the middle button scales the deflected shape up and down on the Analysis and Results tab. Right-clicking a
+          button to pan. Dragging with the middle button scales the deflected shape up and down while an Analysis and Results item is open. Right-clicking a
           node, a member or empty space gives the actions that apply, such as loads, restraints, releases, section, angle, subdivide, move and copy. The
           buttons at the right of the graphics window switch on the node and member numbers, section names, local axes, the origin, restraints, releases,
           loads and notes. The origin is a snap point while it is switched on.</P>
         <P>Nodes and members are drawn with the Node and Member tools on the XY plane at Z = 0. The pointer snaps to nodes, to member midpoints and to the
           origin, and a member being drawn is held to a global axis when it is within 8 degrees of one (the Z axis only in a view where it can be seen) or when X, Y or Z is typed. A length can be typed for
           the member. The section and material of new members are chosen in the panel that appears when the Member tool is selected.</P>
-        <P>On the Analysis and Results tab, Deflections can show the global displacements at the nodes (X, Y, Z or XYZ, in the length unit) and the deflected shape
+        <P>In the Analysis and Results folder, Deflections can show the global displacements at the nodes (X, Y, Z or XYZ, in the length unit) and the deflected shape
           with its nodes. Diagrams draws the member actions, and hovering over a member or its diagram gives the values at that point, joined to the
-          diagram by a line. Reactions and Stresses are switched on in their own panels, and the stress scale is at the top left of the graphics window.
+          diagram by a line. Reactions and Stresses are switched on in their own items, and the stress scale is at the top left of the graphics window.
           Buckling and Vibration give the number of modes to calculate; clicking a mode in the list shows its shape, and vibration modes are animated.</P>
       </CollapsePanel>
       <CollapsePanel title="Analysis Method">
@@ -133,7 +138,7 @@ export function About({ onClose }: { onClose: () => void }) {
         <P>McGuire, W., Gallagher, R. H. and Ziemian, R. D., <i>Matrix Structural Analysis</i>, 2nd edition, 2000.</P>
         <P>Bathe, K. J., <i>Finite Element Procedures</i>, 2nd edition, 2014 (skyline solution and subspace iteration).</P>
       </CollapsePanel>
-    </Modal>
+    </AboutModal>
   );
 }
 
