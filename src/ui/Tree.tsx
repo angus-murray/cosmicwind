@@ -28,14 +28,14 @@ export function Tree({ groups, open, onToggle, closed, onToggleGroup }: {
   groups: TreeGroup[]; open: Record<string, boolean>; onToggle: (key: string) => void; closed: Record<string, boolean>; onToggleGroup: (key: string) => void;
 }) {
   return (
-    <section className="panel !space-y-1">
+    <section className="panel !space-y-1 lg:flex-1">
       {groups.map(g => {
         const folded = !!closed[g.key], FolderIcon = folded ? Folder : FolderOpen;
         return (
           <div key={g.key}>
             <button type="button" className="tree-group" aria-expanded={!folded} onClick={() => onToggleGroup(g.key)}>
-              <ChevronDown className={`w-3.5 h-3.5 shrink-0 text-slate-500 transition-transform ${folded ? '-rotate-90' : ''}`} />
-              <FolderIcon className="w-3.5 h-3.5 shrink-0 text-slate-500" />{g.title}
+              <ChevronDown className={`w-4 h-4 shrink-0 text-slate-500 transition-transform ${folded ? '-rotate-90' : ''}`} />
+              <FolderIcon className="w-4 h-4 shrink-0 text-slate-500" />{g.title}
             </button>
             {!folded && (
               <div className="tree-children">
@@ -45,10 +45,10 @@ export function Tree({ groups, open, onToggle, closed, onToggleGroup }: {
                   return (
                     <div key={it.key}>
                       <button type="button" className={`tree-item ${isOpen ? 'tree-item-open' : it.count === 0 ? 'tree-item-empty' : ''}`} aria-expanded={isOpen} onClick={() => onToggle(it.key)}>
-                        <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform ${isOpen ? 'text-blue-700' : 'text-slate-400 -rotate-90'}`} />
-                        <Icon className={`w-3.5 h-3.5 shrink-0 ${isOpen ? 'text-blue-700' : 'text-slate-500'}`} />
+                        <ChevronDown className={`w-4 h-4 shrink-0 transition-transform ${isOpen ? 'text-blue-700' : 'text-slate-400 -rotate-90'}`} />
+                        <Icon className={`w-4 h-4 shrink-0 ${isOpen ? 'text-blue-700' : 'text-slate-500'}`} />
                         <span>{it.label}</span>
-                        {it.count !== undefined && <span className={`ml-auto text-[11px] font-normal tabular-nums ${isOpen ? 'text-blue-700' : 'text-slate-500'}`}>{it.count}</span>}
+                        {it.count !== undefined && <span className={`ml-auto text-xs font-normal tabular-nums ${isOpen ? 'text-blue-700' : 'text-slate-500'}`}>{it.count}</span>}
                       </button>
                       {isOpen && <div className="tree-body">{it.render()}</div>}
                     </div>

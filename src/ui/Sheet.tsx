@@ -32,12 +32,19 @@ const show = (v: unknown) => (typeof v === 'number' ? (v !== 0 && (Math.abs(v) <
 const parseNum = (s: string) => { const v = Number(s.trim().replace('−', '-').replace(/,/g, '')); return s.trim() === '' || !isFinite(v) ? null : v; };
 
 /** Editable datasheet. Cells commit on Enter or blur; a block copied from a spreadsheet can be pasted in. */
-export function Sheet<T extends object>({ rows, cols, onChange, newRow, selected, onSelect, onDelete, rowLabel, empty, addLabel = 'Add Row' }: {
+export function Sheet<T extends object>({ rows, cols, onChange, newRow, selected, onSelect, onDelete, rowLabel, empty, addLabel = 'Add Row', onRenumber }: {
   rows: T[]; cols: Col<T>[]; onChange: (rows: T[]) => void; newRow?: () => T;
   selected?: (row: T) => boolean; onSelect?: (row: T, additive: boolean) => void; onDelete?: (row: T, i: number) => void;
   rowLabel?: (row: T, i: number) => React.ReactNode; empty?: string; /** Text of the button that adds a row, for example Add Node. */ addLabel?: string;
+  /** Makes the number at the start of a row editable (a click on it): the new number, which is never one that another row has. */
+  onRenumber?: (row: T, id: number) => void;
 }) {
   const ref = useRef<HTMLTableElement>(null);
+  const [renum, setRenum] = useState<{ i: number; text: string } | null>(null);
+  const idOf = (r: T) => (r as { id?: number }).id;
+  /** Why a typed row number cannot be used, or null when it can. */
+  const renumProblem = (i: number, text: string) => { const n = Number(text); return !/^\d+$/.test(text.trim()) || n < 1 ? 'Enter a whole number from 1' : rows.some((r, k) => k !== i && idOf(r) === n) ? `${n} is already used` : null; };
+  const renumCommit = (i: number) => { if (!renum) return; const r = rows[i]; if (!renumProblem(i, renum.text) && Number(renum.text) !== idOf(r)) onRenumber?.(r, Number(renum.text)); setRenum(null); };
   const weight = (c: Col<T>) => c.weight ?? (c.type === 'text' ? 2 : 1), total = cols.filter(c => c.type !== 'colour').reduce((a, c) => a + weight(c), 0) || 1;
   const { u } = useUnits();
   const qOf = (r: T, c: Col<T>) => (typeof c.q === 'function' ? c.q(r) : c.q);
@@ -82,7 +89,14 @@ export function Sheet<T extends object>({ rows, cols, onChange, newRow, selected
           <tbody>
             {rows.map((r, i) => (
               <tr key={i} className={selected?.(r) ? 'sel' : ''}>
-                <td className="rowhead" onClick={e => onSelect?.(r, e.shiftKey || e.ctrlKey || e.metaKey)}>{rowLabel ? rowLabel(r, i) : i + 1}</td>
+                <td className="rowhead" title={onRenumber ? 'Click to change the number' : undefined} onClick={e => { onSelect?.(r, e.shiftKey || e.ctrlKey || e.metaKey); if (onRenumber && renum?.i !== i) setRenum({ i, text: String(idOf(r)) }); }}>
+                  {renum?.i === i
+                    ? <input autoFocus value={renum.text} title={renumProblem(i, renum.text) ?? 'Enter to keep, Esc to cancel'} spellCheck={false} autoComplete="off" inputMode="numeric"
+                        className={`!w-full !h-5 !px-0 text-center text-[11px] font-semibold rounded ${renumProblem(i, renum.text) ? '!bg-rose-100 !text-rose-800 ring-1 ring-rose-300' : '!bg-white !text-slate-800 ring-1 ring-blue-500'}`}
+                        onFocus={e => e.target.select()} onClick={e => e.stopPropagation()} onChange={e => setRenum({ i, text: e.target.value })} onBlur={() => renumCommit(i)}
+                        onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter') { if (!renumProblem(i, renum.text)) renumCommit(i); } else if (e.key === 'Escape') setRenum(null); }} />
+                    : (rowLabel ? rowLabel(r, i) : i + 1)}
+                </td>
                 {cols.map((c, j) => {
                   const v = show(val(r, c));
                   return (

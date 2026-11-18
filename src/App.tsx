@@ -72,7 +72,7 @@ export default function App() {
   const [drawSec, setDrawSec] = useState<number | null>(null), [drawMat, setDrawMat] = useState<number | null>(null), [assignDraw, setAssignDraw] = useState(false);
   /** Section number whose type is being changed in the section dialog, or null when adding a section. */
   const [replaceSec, setReplaceSec] = useState<number | null>(null);
-  const [secSel, setSecSel] = useState<number | null>(null), [matSel, setMatSel] = useState<number | null>(null);
+  const [secSel, setSecSel] = useState<number | null>(null);
   const [loadKind, setLoadKind] = useState<'node' | 'member'>('node');
   const [info, setInfo] = useState<ReportInfo>({ project: '', number: '', structure: '', designer: '', date: today() });
   const viewer = useRef<ViewerHandle>(null);
@@ -395,7 +395,7 @@ export default function App() {
       ) },
       { key: 'sections', icon: Shapes, label: 'Sections', count: model.sections.length, render: () => (
                 <>
-                  <Sheet rows={model.sections} addLabel="Add Section" cols={secCols} onChange={set('sections')} rowLabel={idLabel} selected={r => r.id === secSel} onSelect={r => { setSecSel(r.id); selectFromCanvas({ nodes: new Set(), members: new Set(model.members.filter(m => m.sec === r.id).map(m => m.id)) }); }} newRow={() => ({ id: nextId(model.sections), name: `Section ${nextId(model.sections)}`, A: 5000, Iy: 1e7, Iz: 5e7, J: 1e5 })}
+                  <Sheet rows={model.sections} addLabel="Add Section" cols={secCols} onChange={set('sections')} rowLabel={idLabel} selected={r => r.id === secSel} onSelect={r => setSecSel(r.id)} onRenumber={(r, id) => { setModel(m => ({ ...m, sections: m.sections.map(x => (x.id === r.id ? { ...x, id } : x)), members: m.members.map(b => (b.sec === r.id ? { ...b, sec: id } : b)) })); setSecSel(id); }} newRow={() => ({ id: nextId(model.sections), name: `Section ${nextId(model.sections)}`, A: 5000, Iy: 1e7, Iz: 5e7, J: 1e5 })}
                     onDelete={r => (used('sec', r.id) ? alert(`Section ${r.id} is used by members.`) : set('sections')(model.sections.filter(s => s.id !== r.id)))} />
                   <button className="btn-primary" onClick={() => { setAssignOnAdd(false); setReplaceSec(null); setDialog('section'); }}><Shapes className="w-3.5 h-3.5" /> Add From Library or Shape</button>
                   <button className="btn" disabled={secSel === null || !model.sections.some(x => x.id === secSel)} title="Select a section row, then choose a new type for its number; members keep the number" onClick={() => { setAssignOnAdd(false); setReplaceSec(secSel); setDialog('section'); }}><Shapes className="w-3.5 h-3.5" /> {secSel !== null && model.sections.some(x => x.id === secSel) ? `Change Type of Section ${secSel}` : 'Change Type of Selected Section'}</button>
@@ -403,7 +403,7 @@ export default function App() {
       ) },
       { key: 'materials', icon: Cuboid, label: 'Materials', count: model.materials.length, render: () => (
                 <>
-                  <Sheet rows={model.materials} cols={matCols} onChange={set('materials')} rowLabel={idLabel} selected={r => r.id === matSel} onSelect={r => { setMatSel(r.id); selectFromCanvas({ nodes: new Set(), members: new Set(model.members.filter(m => m.mat === r.id).map(m => m.id)) }); }}
+                  <Sheet rows={model.materials} cols={matCols} onChange={set('materials')} rowLabel={idLabel} onRenumber={(r, id) => setModel(m => ({ ...m, materials: m.materials.map(x => (x.id === r.id ? { ...x, id } : x)), members: m.members.map(b => (b.mat === r.id ? { ...b, mat: id } : b)) }))}
                     onDelete={r => (used('mat', r.id) ? alert(`Material ${r.id} is used by members.`) : set('materials')(model.materials.filter(s => s.id !== r.id)))} />
                   <select className="control" value="" onChange={e => { const p = MATERIAL_PRESETS[Number(e.target.value)]; if (p) set('materials')([...model.materials, { ...p, id: nextId(model.materials) }]); }}>
                     <option value="">Add Material…</option>{MATERIAL_PRESETS.map((p, i) => <option key={p.name} value={i}>{p.name}</option>)}</select>
@@ -553,7 +553,7 @@ export default function App() {
         </div>} />
       <main className="flex-1 flex flex-col lg:min-h-0 p-3 w-full">
         <div className="tab-grid lg:!grid-cols-[minmax(500px,1fr)_minmax(0,3fr)]">
-          <div className="input-column scroll-thin">
+          <div className="input-column scroll-thin lg:flex lg:flex-col">
             {tab !== 'results' && tool === 'member' && (() => {
               const lastM = model.members[model.members.length - 1];
               const secV = model.sections.some(s => s.id === drawSec) ? drawSec : lastM?.sec ?? model.sections[0]?.id, matV = model.materials.some(s => s.id === drawMat) ? drawMat : lastM?.mat ?? model.materials[0]?.id;
