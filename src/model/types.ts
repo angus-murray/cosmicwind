@@ -268,3 +268,26 @@ export function intersectMembers(m: Model, ids: Set<number>): { model: Model; me
   members.sort((p, q) => p.id - q.id);
   return { model: { ...m, nodes: [...nodes, ...made], members, distLoads: [...keep(m.distLoads), ...dist], pointLoads: [...keep(m.pointLoads), ...point], thermal: [...keep(m.thermal), ...thermal] }, members: out };
 }
+
+/**
+ * Moves the selected nodes and members. A member moves with its end nodes, but a node that is also used by a member that is not selected stays where it is:
+ * the selected members are joined to a new node at the moved position instead (without the restraint, loads or mass of the original). A node that is itself
+ * selected moves, and takes every member attached to it along.
+ */
+export function moveSelection(m: Model, nodeIds: Set<number>, memberIds: Set<number>, tf: (n: Node) => [number, number, number]): Model {
+  const used = new Map<number, boolean>(); // node → used by a member that is not selected
+  for (const b of m.members) if (!memberIds.has(b.id)) { used.set(b.a, true); used.set(b.b, true); }
+  const inPlace = new Set(nodeIds), copy = new Map<number, number>();
+  let nid = nextId(m.nodes);
+  for (const b of m.members) if (memberIds.has(b.id)) for (const n of [b.a, b.b]) {
+    if (inPlace.has(n) || copy.has(n)) continue;
+    if (used.get(n)) copy.set(n, nid++); else inPlace.add(n);
+  }
+  const at = (n: Node) => { const [x, y, z] = tf(n).map(v => +v.toFixed(6)); return { x, y, z }; };
+  const made: Node[] = m.nodes.filter(n => copy.has(n.id)).map(n => ({ id: copy.get(n.id)!, ...at(n), r: DASH }));
+  return {
+    ...m,
+    nodes: [...m.nodes.map(n => (inPlace.has(n.id) ? { ...n, ...at(n) } : n)), ...made],
+    members: m.members.map(b => (memberIds.has(b.id) && (copy.has(b.a) || copy.has(b.b)) ? { ...b, a: copy.get(b.a) ?? b.a, b: copy.get(b.b) ?? b.b } : b)),
+  };
+}

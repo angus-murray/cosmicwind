@@ -3,7 +3,7 @@ import { AppHeader, Banner, Segmented, useElementSize, Check, NumberField, Repor
 import { Axis3d, Box, Eye, Ruler, FilePlus, FolderOpen, Hash, Maximize, MousePointer2, Redo2, Save, Spline, Trash2, Type, Undo2, Weight, Dot, LineChart, Shapes, Cuboid, Waypoints, StickyNote, Anchor, Unlink, Crosshair } from 'lucide-react';
 import {
   deleteMembersAndFreeNodes, deleteNodes, DASH, emptyModel, FREE, MATERIAL_PRESETS, nextId, normalise, RELEASES, RESTRAINTS,
-  type Combo, type DistLoad, type LoadCase, type Material, type Member, type Model, type Node, type NodeLoad, type NodeMass, type PointLoad, type Section, type Settlement, type ThermalLoad, mergeMembers, intersectMembers,
+  type Combo, type DistLoad, type LoadCase, type Material, type Member, type Model, type Node, type NodeLoad, type NodeMass, type PointLoad, type Section, type Settlement, type ThermalLoad, mergeMembers, intersectMembers, moveSelection,
 } from './model/types';
 import { defaultModel } from './model/templates';
 import { analyse } from './solver/frame';
@@ -68,7 +68,7 @@ export default function App() {
   const [fitRev, setFitRev] = useState(0);
   const [prompt, setPrompt] = useState<PromptState | null>(null);
   const [textPrompt, setTextPrompt] = useState<TextPromptState | null>(null);
-  const [pickMove, setPickMove] = useState<{ base: [number, number, number]; nodes: number[]; repeat: boolean; apply: (d: [number, number, number]) => void } | null>(null);
+  const [pickMove, setPickMove] = useState<{ base: [number, number, number]; nodes: number[]; members?: number[]; repeat: boolean; apply: (d: [number, number, number]) => void } | null>(null);
   const [cvRef, cvSize] = useElementSize<HTMLDivElement>();
   const [ctx, setCtx] = useState<{ x: number; y: number; node: number | null; member: number | null; note?: number | null; endNode: number | null } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -152,10 +152,8 @@ export default function App() {
     return { ...m, nodes, members, distLoads: dist, pointLoads: point, nodeLoads: nl };
   });
   /** Moves the selected nodes and the end nodes of the selected members. */
-  const moveWith = (tf: (n: Node) => [number, number, number]) => setModel(m => {
-    const ids = new Set([...sel.nodes, ...m.members.filter(x => sel.members.has(x.id)).flatMap(x => [x.a, x.b])]);
-    return { ...m, nodes: m.nodes.map(n => { if (!ids.has(n.id)) return n; const [x, y, z] = tf(n).map(v => +v.toFixed(6)); return { ...n, x, y, z }; }) };
-  });
+  /** Moves the selection; a node shared with a member that is not selected stays, and the selected members get a new node instead. */
+  const moveWith = (tf: (n: Node) => [number, number, number]) => setModel(m => moveSelection(m, sel.nodes, sel.members, tf));
 
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
@@ -216,7 +214,7 @@ export default function App() {
     const startPick = (repeat: boolean) => {
       if (!baseNode) return;
       setCtx(null);
-      setPickMove({ base: [baseNode.x, baseNode.y, baseNode.z], nodes: [...moved], repeat, apply: d => (repeat ? copyWith(n => [n.x + d[0], n.y + d[1], n.z + d[2]]) : moveWith(n => [n.x + d[0], n.y + d[1], n.z + d[2]])) });
+      setPickMove({ base: [baseNode.x, baseNode.y, baseNode.z], nodes: [...moved], members: !repeat && sel.members.size ? model.members.filter(x => sel.members.has(x.id) || sel.nodes.has(x.a) || sel.nodes.has(x.b)).map(x => x.id) : undefined, repeat, apply: d => (repeat ? copyWith(n => [n.x + d[0], n.y + d[1], n.z + d[2]]) : moveWith(n => [n.x + d[0], n.y + d[1], n.z + d[2]])) });
     };
     const inc = (copyMode: boolean) => () => ask(copyMode ? 'Copy By Increment' : 'Move By Increment',
       [{ label: <>Δ<i>X</i> ({ul('length')})</>, value: 0 }, { label: <>Δ<i>Y</i> ({ul('length')})</>, value: 0 }, { label: <>Δ<i>Z</i> ({ul('length')})</>, value: 0 }, ...(copyMode ? [{ label: 'Number of copies', value: 1 }] : [])],

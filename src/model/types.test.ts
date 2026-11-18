@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { deleteMembersAndFreeNodes, intersectMembers, mergeMembers, emptyModel, normalise, releaseCode, restraintCode, type Member, type Model } from './types';
+import { deleteMembersAndFreeNodes, intersectMembers, mergeMembers, moveSelection, emptyModel, normalise, releaseCode, restraintCode, type Member, type Model } from './types';
 
 const mem = (id: number, a: number, b: number): Member => ({ id, a, b, sec: 1, mat: 1, angle: 0, type: 'N', relA: 'FFFFFF', relB: 'FFFFFF' });
 const frame = (): Model => ({
@@ -91,4 +91,22 @@ test('a member ending on another splits it at the existing node; skew and parall
   const skew: Model = { ...t, nodes: t.nodes.map(n => (n.id === 5 ? { ...n, z: 1 } : n.id === 2 ? { ...n, y: -1 } : n)) };
   expect(intersectMembers(skew, new Set([1, 2]))).toBeNull();
   expect(intersectMembers(frame(), new Set([1, 2]))).toBeNull();
+});
+
+test('moving a member leaves a node shared with an unselected member, and joins the member to a new node', () => {
+  const m = moveSelection(frame(), new Set(), new Set([2]), n => [n.x, n.y + 5, n.z]);
+  expect(m.nodes.map(n => [n.id, n.y])).toEqual([[1, 0], [2, 0], [3, 0], [4, 0], [5, 5], [6, 5]]);
+  expect(m.members.map(b => [b.id, b.a, b.b])).toEqual([[1, 1, 2], [2, 5, 6], [3, 3, 4]]);
+});
+
+test('members that share nodes only with each other move together, and an end node that is used by nothing else moves in place', () => {
+  const m = moveSelection(frame(), new Set(), new Set([1, 2]), n => [n.x, n.y + 5, n.z]);
+  expect(m.nodes.map(n => [n.id, n.y])).toEqual([[1, 5], [2, 5], [3, 0], [4, 0], [5, 5]]);
+  expect(m.members.map(b => [b.id, b.a, b.b])).toEqual([[1, 1, 2], [2, 2, 5], [3, 3, 4]]);
+});
+
+test('a selected node moves in place with every member attached to it', () => {
+  const m = moveSelection(frame(), new Set([2]), new Set(), n => [n.x, n.y + 5, n.z]);
+  expect(m.nodes.map(n => [n.id, n.y])).toEqual([[1, 0], [2, 5], [3, 0], [4, 0]]);
+  expect(m.members.map(b => [b.a, b.b])).toEqual([[1, 2], [2, 3], [3, 4]]);
 });

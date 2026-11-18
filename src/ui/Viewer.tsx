@@ -99,7 +99,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   /** A node placed on the midpoint of a member splits it there: returns the number of the new node. */
   onSplitMember?: (memberId: number) => number;
   /** Move or copy to a point: the point to pick the offset from, the nodes that travel, and what to do with the offset. */
-  pick?: { base: V3; nodes: number[]; repeat: boolean; apply: (d: V3) => void } | null; onPickEnd?: () => void;
+  pick?: { base: V3; nodes: number[]; /** Members drawn moving; when absent, those touching a moving node. */ members?: number[]; repeat: boolean; apply: (d: V3) => void } | null; onPickEnd?: () => void;
   /** Notes drawn as call-outs; a box can be dragged, and double-clicked to edit. */
   notes?: Note[]; onNoteMove?: (id: number, dx: number, dy: number) => void; onNoteEdit?: (id: number, x: number, y: number) => void;
   onContext?: (c: { x: number; y: number; node: number | null; member: number | null; note?: number | null; /** Node at the end of the member that was clicked near, if any. */ endNode: number | null }) => void;
@@ -792,7 +792,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
           const at = (id: number): [number, number] | null => { const n = nodeMap.get(id); return n ? P(set.has(id) ? [n.x + d[0], n.y + d[1], n.z + d[2]] : [n.x, n.y, n.z]) : null; };
           const pb = P(pick.base), pt = P(pickLive), fm = (v: number) => len3(v);
           return <g pointerEvents="none" stroke={AMBER} strokeWidth={1.75} strokeDasharray="5 3" fill="none">
-            {model.members.filter(m => set.has(m.a) || set.has(m.b)).map(m => { const p = at(m.a), q = at(m.b); return p && q ? <line key={m.id} x1={p[0]} y1={p[1]} x2={q[0]} y2={q[1]} /> : null; })}
+            {model.members.filter(m => (pick.members ? pick.members.includes(m.id) : set.has(m.a) || set.has(m.b))).map(m => { const p = at(m.a), q = at(m.b); return p && q ? <line key={m.id} x1={p[0]} y1={p[1]} x2={q[0]} y2={q[1]} /> : null; })}
             {pick.nodes.map(id => { const q = at(id); return q ? <rect key={id} x={q[0] - 3} y={q[1] - 3} width={6} height={6} fill={AMBER} stroke="none" /> : null; })}
             <line x1={pb[0]} y1={pb[1]} x2={pt[0]} y2={pt[1]} strokeWidth={1} />
             {text([(pb[0] + pt[0]) / 2, (pb[1] + pt[1]) / 2 - 8], `ΔX ${fm(d[0])}  ΔY ${fm(d[1])}  ΔZ ${fm(d[2])}`, 'pklbl', '#b45309', 'middle', true)}
