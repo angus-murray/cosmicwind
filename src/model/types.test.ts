@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { deleteMembersAndFreeNodes, mergeMembers, emptyModel, normalise, releaseCode, restraintCode, type Member, type Model } from './types';
+import { deleteMembersAndFreeNodes, intersectMembers, mergeMembers, emptyModel, normalise, releaseCode, restraintCode, type Member, type Model } from './types';
 
 const mem = (id: number, a: number, b: number): Member => ({ id, a, b, sec: 1, mat: 1, angle: 0, type: 'N', relA: 'FFFFFF', relB: 'FFFFFF' });
 const frame = (): Model => ({
@@ -64,4 +64,31 @@ test('members do not merge across a node with another member, a load, or a bend'
   expect('reason' in mergeMembers(f, new Set([1, 2, 3]))).toBe(false);
   expect('reason' in mergeMembers({ ...f, nodeLoads: [{ lc: 1, node: 2, fx: 0, fy: -1, fz: 0, mx: 0, my: 0, mz: 0 }] }, new Set([1, 2]))).toBe(true);
   expect('reason' in mergeMembers({ ...f, nodes: f.nodes.map(n => (n.id === 2 ? { ...n, y: 1 } : n)) }, new Set([1, 2]))).toBe(true);
+});
+
+test('crossing members are split at a new node, and their loads stay with their parts', () => {
+  const m0: Model = {
+    ...emptyModel(),
+    nodes: [{ id: 1, x: 0, y: 0, z: 0, r: 'RRRRRR' }, { id: 2, x: 4, y: 0, z: 0, r: 'RRRRRR' }, { id: 3, x: 2, y: -1, z: 0, r: 'RRRRRR' }, { id: 4, x: 2, y: 1, z: 0, r: 'RRRRRR' }],
+    members: [mem(1, 1, 2), mem(2, 3, 4)],
+    distLoads: [{ lc: 1, member: 1, axes: 'G', dir: 'Y', w1: -5, w2: -5, s: 25, e: 75 }],
+    pointLoads: [{ lc: 1, member: 1, axes: 'G', dir: 'Y', p: -10, pos: 25 }],
+  };
+  const r = intersectMembers(m0, new Set([1, 2]));
+  if (!r) throw new Error('no crossing found');
+  expect(r.model.nodes.length).toBe(5);
+  expect(r.model.nodes[4]).toMatchObject({ x: 2, y: 0, z: 0 });
+  expect(r.model.members.map(b => [b.id, b.a, b.b])).toEqual([[1, 1, 5], [2, 3, 5], [3, 5, 2], [4, 5, 4]]);
+  expect(r.model.distLoads).toMatchObject([{ member: 1, s: 50, e: 100 }, { member: 3, s: 0, e: 50 }]);
+  expect(r.model.pointLoads).toMatchObject([{ member: 1, pos: 50 }]);
+});
+
+test('a member ending on another splits it at the existing node; skew and parallel members do not intersect', () => {
+  const f = frame(), t: Model = { ...f, nodes: [...f.nodes, { id: 5, x: 2, y: 3, z: 0, r: 'RRRRRR' }], members: [mem(1, 1, 4), mem(2, 2, 5)] };
+  const r = intersectMembers(t, new Set([1, 2]));
+  expect(r?.model.members.map(b => [b.a, b.b])).toEqual([[1, 2], [2, 5], [2, 4]]);
+  expect(r?.model.nodes.length).toBe(5);
+  const skew: Model = { ...t, nodes: t.nodes.map(n => (n.id === 5 ? { ...n, z: 1 } : n.id === 2 ? { ...n, y: -1 } : n)) };
+  expect(intersectMembers(skew, new Set([1, 2]))).toBeNull();
+  expect(intersectMembers(frame(), new Set([1, 2]))).toBeNull();
 });

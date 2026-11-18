@@ -205,3 +205,66 @@ export function mergeMembers(m: Model, ids: Set<number>): { model: Model; kept: 
   };
   return { model, kept };
 }
+
+/**
+ * Splits the selected members where they cross one another (or where an end of one lies on another), at a node shared by the members. A node already there
+ * is used; otherwise a new one is made. Loads stay with the part of the member they act on. Returns the model and the numbers of the members that result
+ * from the selected ones, or null when none of them cross.
+ */
+export function intersectMembers(m: Model, ids: Set<number>): { model: Model; members: Set<number> } | null {
+  const node = new Map(m.nodes.map(n => [n.id, n]));
+  const sel = m.members.filter(b => ids.has(b.id) && node.has(b.a) && node.has(b.b));
+  const seg = new Map(sel.map(b => { const a = node.get(b.a)!, c = node.get(b.b)!; return [b.id, { a, d: [c.x - a.x, c.y - a.y, c.z - a.z], L: Math.hypot(c.x - a.x, c.y - a.y, c.z - a.z) }] as const; }));
+  const dot = (p: number[], q: number[]) => p[0] * q[0] + p[1] * q[1] + p[2] * q[2];
+  const tol = 1e-6;
+  const nodes = m.nodes.slice(), made: Node[] = [];
+  let nid = nextId(nodes);
+  /** The node at a point: an existing one, or a new one. */
+  const nodeAt = (p: number[]): number => {
+    const hit = [...nodes, ...made].find(n => Math.hypot(n.x - p[0], n.y - p[1], n.z - p[2]) < 1e-5);
+    if (hit) return hit.id;
+    const n: Node = { id: nid++, x: +p[0].toFixed(6), y: +p[1].toFixed(6), z: +p[2].toFixed(6), r: DASH }; made.push(n); return n.id;
+  };
+  const cuts = new Map<number, { t: number; node: number }[]>();
+  for (let i = 0; i < sel.length; i++) for (let j = i + 1; j < sel.length; j++) {
+    const A = seg.get(sel[i].id)!, B = seg.get(sel[j].id)!; if (A.L < tol || B.L < tol) continue;
+    // closest points of the two lines: A.a + s d1 and B.a + t d2, with s and t in metres along each member
+    const u = A.d.map(v => v / A.L), v = B.d.map(x => x / B.L), w = [A.a.x - B.a.x, A.a.y - B.a.y, A.a.z - B.a.z];
+    const b = dot(u, v), d = dot(u, w), e = dot(v, w), den = 1 - b * b; if (den < 1e-12) continue; // parallel
+    const s = (b * e - d) / den, t = (e - b * d) / den;
+    if (s < -tol || s > A.L + tol || t < -tol || t > B.L + tol) continue;
+    const pa = [A.a.x + u[0] * s, A.a.y + u[1] * s, A.a.z + u[2] * s], pb = [B.a.x + v[0] * t, B.a.y + v[1] * t, B.a.z + v[2] * t];
+    if (Math.hypot(pa[0] - pb[0], pa[1] - pb[1], pa[2] - pb[2]) > 1e-5) continue; // skew: they pass without meeting
+    const id = nodeAt(pa.map((x, k) => (x + pb[k]) / 2));
+    for (const [mb, g, pos] of [[sel[i], A, s], [sel[j], B, t]] as const) {
+      if (pos < tol || pos > g.L - tol || id === mb.a || id === mb.b) continue; // at an end: nothing to split
+      const list = cuts.get(mb.id) ?? []; if (!list.some(c => c.node === id)) list.push({ t: pos / g.L, node: id }); cuts.set(mb.id, list);
+    }
+  }
+  if (!cuts.size) return null;
+  const members: Member[] = [], dist: DistLoad[] = [], point: PointLoad[] = [], thermal: ThermalLoad[] = [], out = new Set<number>();
+  let mid = nextId(m.members);
+  for (const mb of m.members) {
+    const list = cuts.get(mb.id);
+    if (!list) { members.push(mb); continue; }
+    list.sort((p, q) => p.t - q.t);
+    const f = [0, ...list.map(c => c.t), 1], ends = [mb.a, ...list.map(c => c.node), mb.b], n = f.length - 1, ids2: number[] = [];
+    for (let k = 0; k < n; k++) {
+      const id = k === 0 ? mb.id : mid++; ids2.push(id); out.add(id);
+      members.push({ ...mb, id, a: ends[k], b: ends[k + 1], relA: k === 0 ? mb.relA : DASH, kA: k === 0 ? mb.kA : undefined, relB: k === n - 1 ? mb.relB : DASH, kB: k === n - 1 ? mb.kB : undefined });
+    }
+    for (const l of m.distLoads.filter(x => x.member === mb.id)) for (let k = 0; k < n; k++) {
+      const lo = Math.max(l.s, 100 * f[k]), hi = Math.min(l.e, 100 * f[k + 1]); if (hi - lo < 1e-9) continue;
+      const w = (p: number) => l.w1 + (l.w2 - l.w1) * (p - l.s) / (l.e - l.s), span = 100 * (f[k + 1] - f[k]);
+      dist.push({ ...l, member: ids2[k], w1: w(lo), w2: w(hi), s: +((lo - 100 * f[k]) / span * 100).toFixed(6), e: +((hi - 100 * f[k]) / span * 100).toFixed(6) });
+    }
+    for (const l of m.pointLoads.filter(x => x.member === mb.id)) {
+      let k = 0; while (k < n - 1 && l.pos > 100 * f[k + 1] + 1e-9) k++;
+      point.push({ ...l, member: ids2[k], pos: +((l.pos - 100 * f[k]) / (100 * (f[k + 1] - f[k])) * 100).toFixed(6) });
+    }
+    for (const l of m.thermal.filter(x => x.member === mb.id)) ids2.forEach(id => thermal.push({ ...l, member: id }));
+  }
+  const split = new Set(cuts.keys()), keep = <T extends { member: number }>(a: T[]) => a.filter(x => !split.has(x.member));
+  members.sort((p, q) => p.id - q.id);
+  return { model: { ...m, nodes: [...nodes, ...made], members, distLoads: [...keep(m.distLoads), ...dist], pointLoads: [...keep(m.pointLoads), ...point], thermal: [...keep(m.thermal), ...thermal] }, members: out };
+}

@@ -3,7 +3,7 @@ import { AppHeader, Banner, Segmented, useElementSize, Check, NumberField, Repor
 import { Axis3d, Box, Eye, Ruler, FilePlus, FolderOpen, Hash, Maximize, MousePointer2, Redo2, Save, Spline, Trash2, Type, Undo2, Weight, Dot, LineChart, Shapes, Cuboid, Waypoints, StickyNote, Anchor, Unlink, Crosshair } from 'lucide-react';
 import {
   deleteMembersAndFreeNodes, deleteNodes, DASH, emptyModel, FREE, MATERIAL_PRESETS, nextId, normalise, RELEASES, RESTRAINTS,
-  type Combo, type DistLoad, type LoadCase, type Material, type Member, type Model, type Node, type NodeLoad, type NodeMass, type PointLoad, type Section, type Settlement, type ThermalLoad, mergeMembers,
+  type Combo, type DistLoad, type LoadCase, type Material, type Member, type Model, type Node, type NodeLoad, type NodeMass, type PointLoad, type Section, type Settlement, type ThermalLoad, mergeMembers, intersectMembers,
 } from './model/types';
 import { defaultModel } from './model/templates';
 import { analyse } from './solver/frame';
@@ -269,6 +269,7 @@ export default function App() {
         { label: 'Continuous Support…', onClick: () => ask(`Continuous Support (${ul('forcePerLength2')})`, [{ label: <><i>k</i><sub>y</sub> ({ul('forcePerLength2')}), local y</>, value: sh('forcePerLength2', mem0?.ky ?? 0) }, { label: <><i>k</i><sub>z</sub> ({ul('forcePerLength2')}), local z</>, value: sh('forcePerLength2', mem0?.kz ?? 0) }],
           ([ky, kz]) => patchMembers({ ky: Math.max(0, rd('forcePerLength2', ky)) || undefined, kz: Math.max(0, rd('forcePerLength2', kz)) || undefined })) },
         { label: 'Member Type', sub: ([['N', 'Normal'], ['T', 'Tension Only'], ['C', 'Compression Only']] as const).map(([c, l]) => ({ label: l, onClick: run(() => patchMembers({ type: c })) })) },
+        ...(mems.length > 1 ? [{ label: 'Intersect', disabled: !intersectMembers(model, sel.members), onClick: run(() => { const r = intersectMembers(model, sel.members); if (r) { setModel(() => r.model); setSel({ nodes: new Set(), members: r.members }); } }) } as MenuItem] : []),
         ...(mems.length > 1 ? [{ label: 'Merge', disabled: 'reason' in mergeMembers(model, sel.members), onClick: run(() => { const r = mergeMembers(model, sel.members); if ('model' in r) { setModel(() => r.model); setSel({ nodes: new Set(), members: new Set([r.kept]) }); } }) } as MenuItem] : []),
         { label: 'Subdivide', sub: [2, 3, 4, 5, 6, 8, 10].map(k => ({ label: `Into ${k} Parts`, onClick: run(() => subdivide(k)) })) }, 'sep', ...moveCopy, 'sep');
       items.push({ label: 'Select Same Section', onClick: run(() => pick(sel.nodes, model.members.filter(m => m.sec === sec0).map(m => m.id))) },
