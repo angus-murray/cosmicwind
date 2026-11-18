@@ -115,7 +115,8 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   const [chain, setChain] = useState<number | null>(null);
   const [cursor, setCursor] = useState<[number, number] | null>(null);
   /** Selection box being dragged, in pixels. */
-  const [marq, setMarq] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+  /** Selection box being dragged: the first corner as a point in the model, so that it stays put when the view is zoomed, panned or orbited, and the pointer in pixels. */
+  const [marq, setMarq] = useState<{ w: V3; x1: number; y1: number } | null>(null);
   const W = size.width || 800, H = size.height || 600;
 
   const nodeMap = useMemo(() => new Map(model.nodes.map(n => [n.id, n])), [model.nodes]);
@@ -137,6 +138,11 @@ export const Viewer = React.forwardRef<ViewerHandle, {
       H / 2 + cam.py - cam.zoom * (basis.ry[0] * a + basis.ry[1] * b + basis.ry[2] * c),
     ];
   }, [W, H, cam, basis]);
+  /** The point in the model that lies under a screen position, on the plane through the orbit pivot facing the viewer. */
+  const unproject = (sx: number, sy: number): V3 => {
+    const u = (sx - W / 2 - cam.px) / cam.zoom, v = -(sy - H / 2 - cam.py) / cam.zoom;
+    return [0, 1, 2].map(i => cam.c[i] + basis.rx[i] * u + basis.ry[i] * v) as V3;
+  };
   /** Screen direction (unit) of a world vector, or null when it points at the viewer. */
   const dirS = (d: V3): [number, number] | null => {
     const x = basis.rx[0] * d[0] + basis.rx[1] * d[1] + basis.rx[2] * d[2], y = -(basis.ry[0] * d[0] + basis.ry[1] * d[1] + basis.ry[2] * d[2]), l = Math.hypot(x, y);
@@ -211,7 +217,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   /** Node or member under the pointer, highlighted so the click target is clear. */
   const [hover, setHover] = useState<{ n: number | null; m: number | null }>({ n: null, m: null });
   /** First corner of a selection box that is waiting for its second click. */
-  const anchor = useRef<[number, number] | null>(null);
+  const anchor = useRef<V3 | null>(null);
   const local = (e: { clientX: number; clientY: number }): [number, number] => { const r = svgRef.current!.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
   const onPlane = (sx: number, sy: number): V3 | null => {
     const X = (sx - W / 2 - cam.px) / cam.zoom, Y = -(sy - H / 2 - cam.py) / cam.zoom;
@@ -282,7 +288,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
       setHover(v => (v.n === null && v.m === null ? v : { n: null, m: null })); setSnapAt(null);
       if (tool === 'member' && chain !== null) setCursor([lx, ly]);
     }
-    if (anchor.current) { const [x, y] = local(e); setMarq({ x0: anchor.current[0], y0: anchor.current[1], x1: x, y1: y }); }
+    if (anchor.current) { const [x, y] = local(e); setMarq({ w: anchor.current, x1: x, y1: y }); }
     const d = drag.current; if (!d) return;
     const dx = e.clientX - d.x, dy = e.clientY - d.y;
     if (!d.moved && Math.hypot(dx, dy) < 4) return;
@@ -375,11 +381,11 @@ export const Viewer = React.forwardRef<ViewerHandle, {
       return;
     }
     if (tool === 'select' && anchor.current) { // second click: complete the box (a click without moving clears the selection)
-      const [x0, y0] = anchor.current; anchor.current = null; setMarq(null);
+      const [x0, y0] = P(anchor.current); anchor.current = null; setMarq(null);
       if (Math.hypot(sx - x0, sy - y0) < 4) { if (!add) onSelect({ nodes: new Set(), members: new Set() }); } else boxSelect({ x0, y0, x1: sx, y1: sy }, add);
       return;
     }
-    if (tool === 'select' && hitN === null && hitM === null) { anchor.current = [sx, sy]; setMarq({ x0: sx, y0: sy, x1: sx, y1: sy }); return; }
+    if (tool === 'select' && hitN === null && hitM === null) { const w = unproject(sx, sy); anchor.current = w; setMarq({ w, x1: sx, y1: sy }); return; }
     if (tool === 'select') {
       const s: Sel = add ? { nodes: new Set(sel.nodes), members: new Set(sel.members) } : { nodes: new Set(), members: new Set() };
       const toggle = (set: Set<number>, id: number) => (set.has(id) && add ? set.delete(id) : set.add(id));
@@ -785,8 +791,8 @@ export const Viewer = React.forwardRef<ViewerHandle, {
             {lines.map((l, i) => <text key={i} x={x + 7} y={y + 15 + i * 14} fontSize={11} fill="#000" style={{ userSelect: 'none' }}>{l}</text>)}
           </g>;
         })}
-        {marq && <rect x={Math.min(marq.x0, marq.x1)} y={Math.min(marq.y0, marq.y1)} width={Math.abs(marq.x1 - marq.x0)} height={Math.abs(marq.y1 - marq.y0)} fill={BLUE} fillOpacity={0.08} stroke={BLUE} strokeWidth={1}
-          strokeDasharray={marq.x1 < marq.x0 ? '5 3' : undefined} pointerEvents="none" />}
+        {marq && (() => { const [x0, y0] = P(marq.w); return <rect x={Math.min(x0, marq.x1)} y={Math.min(y0, marq.y1)} width={Math.abs(marq.x1 - x0)} height={Math.abs(marq.y1 - y0)} fill={BLUE} fillOpacity={0.08} stroke={BLUE} strokeWidth={1}
+          strokeDasharray={marq.x1 < x0 ? '5 3' : undefined} pointerEvents="none" />; })()}
         {pick && pickLive && (() => {
           const d: V3 = [pickLive[0] - pick.base[0], pickLive[1] - pick.base[1], pickLive[2] - pick.base[2]], set = new Set(pick.nodes);
           const at = (id: number): [number, number] | null => { const n = nodeMap.get(id); return n ? P(set.has(id) ? [n.x + d[0], n.y + d[1], n.z + d[2]] : [n.x, n.y, n.z]) : null; };
