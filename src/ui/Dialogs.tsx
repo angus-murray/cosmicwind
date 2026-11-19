@@ -66,7 +66,8 @@ export function About({ onClose }: { onClose: () => void }) {
           direction, so a downward load is negative in Y. Moments follow the right-hand rule and are drawn as double-headed arrows.</P>
         <P>The Gravity columns of a load case are multipliers of <i>g</i>, where <i>g</i> = {G0} m/s², the standard gravitational acceleration. The self-weight
           of a member is its density times its cross-sectional area times <i>g</i>, applied along its length. A node mass is loaded in the same way, with a force of its mass times <i>g</i> at the node in the
-          gravity direction of the case, and it also adds mass to the vibration modes, together with the mass of the members. Masses are in the mass unit chosen, and a node with a mass is marked by a solid ball (the Masses button at the right of the graphics window switches them on and off).</P>
+          gravity direction of the case, and it also adds mass to the vibration modes. A member can carry a distributed mass (mass per length) on top of the mass of its section, for example cladding: it weighs under gravity like
+          the self-weight, and in the vibration modes the mass of every member is spread along it by the shape functions of the beam element (a consistent mass matrix), so one element per member is enough for the first modes. Masses are in the mass unit chosen, and a node with a mass is marked by a solid ball and a member with a distributed mass by a row of small balls (the Masses button at the right of the graphics window switches them on and off).</P>
       </CollapsePanel>
       <CollapsePanel title="Using the Program">
         <P>The input column has two tabs. The Model tab lists Structure, which holds the datasheets for nodes, members, sections, materials and node masses. Boundary Conditions

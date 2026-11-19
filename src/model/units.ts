@@ -30,7 +30,7 @@ interface Dim { l?: number; f?: number; s?: number; m?: number; k?: number }
 const Q = {
   length: { l: 1 }, lengthMm: { l: 1, k: 1e-3 }, area: { l: 2, k: 1e-6 }, inertia: { l: 4, k: 1e-12 },
   force: { f: 1 }, moment: { f: 1, l: 1 }, forcePerLength: { f: 1, l: -1 }, forcePerLength2: { f: 1, l: -2 }, rotStiffness: { f: 1, l: 1 },
-  stress: { s: 1 }, mass: { m: 1 }, density: { m: 1, l: -3, k: 1e-3 }, tempChange: {}, perTemp: {},
+  stress: { s: 1 }, mass: { m: 1 }, density: { m: 1, l: -3, k: 1e-3 }, massPerLength: { m: 1, l: -1 }, tempChange: {}, perTemp: {},
 } satisfies Record<string, Dim>;
 export type Quantity = keyof typeof Q;
 
@@ -61,6 +61,7 @@ export function unitLabel(q: Quantity, u: Units): string {
     case 'stress': return u.stress;
     case 'mass': return u.mass;
     case 'density': return `${u.mass}/${L}³`;
+    case 'massPerLength': return `${u.mass}/${L}`;
     case 'tempChange': return u.temp === 'C' ? '°C' : 'K';
     case 'perTemp': return u.temp === 'C' ? '/°C' : '/K';
   }

@@ -64,6 +64,10 @@ export async function makeReport(model: Model, an: Analysis, info: ReportInfo, s
     heading('Continuous Supports');
     table(['Member', `ky (${ul('forcePerLength2')})`, `kz (${ul('forcePerLength2')})`], model.members.filter(m => m.ky || m.kz).map(m => [m.id, sh('forcePerLength2', m.ky ?? 0), sh('forcePerLength2', m.kz ?? 0)]));
   }
+  if (model.members.some(m => m.mu)) {
+    heading('Member Masses');
+    table(['Member', `Added Mass (${ul('massPerLength')})`], model.members.filter(m => m.mu).map(m => [m.id, sh('massPerLength', m.mu ?? 0)]));
+  }
   heading('Sections and Materials');
   table(['Section No.', 'Section Type', `A (${ul('area')})`, `Iy (${ul('inertia')})`, `Iz (${ul('inertia')})`, `J (${ul('inertia')})`], model.sections.map(s => [s.id, s.name, sh('area', s.A), sh('inertia', s.Iy), sh('inertia', s.Iz), sh('inertia', s.J)]));
   table(['Material', 'Name', `E (${ul('stress')})`, `G (${ul('stress')})`, `Density (${ul('density')})`], model.materials.map(s => [s.id, s.name, sh('stress', s.E), sh('stress', s.G), sh('density', s.rho)]));

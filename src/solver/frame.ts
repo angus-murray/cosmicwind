@@ -67,6 +67,23 @@ function elastic(EA: number, EIy: number, EIz: number, GJ: number, L: number): M
   sym(k, 4, 4, c); sym(k, 10, 10, c); sym(k, 4, 10, c / 2);
   return k;
 }
+/**
+ * Consistent mass matrix of a member in its local axes: the mass per length m (and the rotary inertia per length i about the axis) spread by the shape functions of the
+ * element, which are cubic in bending and linear in the axial movement and the twist. Rotary inertia of the bending rotation is not included (Euler-Bernoulli).
+ */
+function consistentMass(m: number, i: number, L: number): M12 {
+  const k = zeros12(), a = m * L / 6, t = i * L / 6;
+  sym(k, 0, 0, 2 * a); sym(k, 6, 6, 2 * a); sym(k, 0, 6, a);
+  sym(k, 3, 3, 2 * t); sym(k, 9, 9, 2 * t); sym(k, 3, 9, t);
+  const c = m * L / 420, L2 = L * L;
+  // bending in the xy plane: v, θz at each end
+  sym(k, 1, 1, 156 * c); sym(k, 7, 7, 156 * c); sym(k, 1, 7, 54 * c); sym(k, 1, 5, 22 * L * c); sym(k, 1, 11, -13 * L * c); sym(k, 5, 7, 13 * L * c); sym(k, 7, 11, -22 * L * c);
+  sym(k, 5, 5, 4 * L2 * c); sym(k, 11, 11, 4 * L2 * c); sym(k, 5, 11, -3 * L2 * c);
+  // bending in the xz plane: w, θy (θy = −dw/dx, so the couplings between a translation and a rotation change sign)
+  sym(k, 2, 2, 156 * c); sym(k, 8, 8, 156 * c); sym(k, 2, 8, 54 * c); sym(k, 2, 4, -22 * L * c); sym(k, 2, 10, 13 * L * c); sym(k, 4, 8, -13 * L * c); sym(k, 8, 10, 22 * L * c);
+  sym(k, 4, 4, 4 * L2 * c); sym(k, 10, 10, 4 * L2 * c); sym(k, 4, 10, -3 * L2 * c);
+  return k;
+}
 /** Geometric stiffness for an axial force P (tension positive). */
 function geometric(P: number, L: number): M12 {
   const k = zeros12(), f = P / (30 * L), a = 36 * f, b = 3 * L * f, c = 4 * L * L * f, d = -L * L * f;
@@ -123,7 +140,8 @@ interface Load { // in member local axes
 }
 interface El {
   m: Member; ia: number; ib: number; L: number; R: number[][];
-  EA: number; EIy: number; EIz: number; GJ: number; relK: number[]; wSelf: number; alpha: number; mass: number;
+  EA: number; EIy: number; EIz: number; GJ: number; relK: number[]; wSelf: number; alpha: number;
+  /** Mass per length (t/m: the section's plus the member's distributed mass) and rotary inertia about the axis per length (t·m²/m), for the mass matrix. */ mpl: number; ipl: number;
   rel: boolean[]; dofs: number[]; tension: boolean; compression: boolean;
 }
 
@@ -262,7 +280,8 @@ export function analyse(model: Model): Analysis {
     if (rel[0] && rel[6] && !relK[0] && !relK[6]) { err(`Member ${m.id}: the axial force is released at both ends.`); continue; }
     els.push({
       m, ia, ib, L, R, EA: mt.E * 1e3 * s.A * 1e-6, EIy: mt.E * 1e3 * s.Iy * 1e-12, EIz: mt.E * 1e3 * s.Iz * 1e-12, GJ,
-      wSelf: mt.rho * s.A * 1e-6 * G0 / 1000, alpha: mt.alpha || 0, mass: mt.rho * s.A * 1e-6 * L / 1000,
+      wSelf: (mt.rho * s.A * 1e-6 / 1000 + (m.mu || 0)) * G0, alpha: mt.alpha || 0, // the weight of the member: its own and its distributed mass
+      mpl: mt.rho * s.A * 1e-6 / 1000 + (m.mu || 0), ipl: mt.rho * (s.Iy + s.Iz) * 1e-12 / 1000,
       rel, relK, dofs: [], tension: m.type === 'T', compression: m.type === 'C',
     });
   }
@@ -342,6 +361,19 @@ export function analyse(model: Model): Analysis {
   // ---- Assembly
   const linearOnly = !model.settings.nonlinear && !els.some(e => e.tension || e.compression);
   interface Built { K: Skyline; kl: M12[]; T: (M12 | null)[]; auto: number[] }
+  /** Adds a 12 × 12 matrix of an element, given in its local axes, to a matrix in the global equations: Λᵀ k Λ, done in 3 × 3 blocks. */
+  const scatter = (K: Skyline, k: M12, e: El) => {
+    const R = e.R;
+    for (let bi = 0; bi < 4; bi++) for (let bj = bi; bj < 4; bj++) {
+      for (let a = 0; a < 3; a++) for (let b = 0; b < 3; b++) {
+        let s = 0;
+        for (let p = 0; p < 3; p++) { const rpa = R[p][a]; if (rpa === 0) continue; for (let q = 0; q < 3; q++) s += rpa * k[bi * 3 + p][bj * 3 + q] * R[q][b]; }
+        const ei = eq[e.dofs[bi * 3 + a]], ej = eq[e.dofs[bj * 3 + b]];
+        if (ei < 0 || ej < 0 || s === 0) continue;
+        if (bi === bj) { if (b >= a) K.add(ei, ej, s); } else K.add(ei, ej, s);
+      }
+    }
+  };
   const build = (active: boolean[], axial: number[] | null, geoOnly = false): Built | string => {
     const K = new Skyline(first), kl: M12[] = [], Ts: (M12 | null)[] = [];
     for (let i = 0; i < els.length; i++) {
@@ -351,17 +383,7 @@ export function analyse(model: Model): Analysis {
       let k = geoOnly ? zeros12() : tKt(T, ke).map((row, a) => row.map((v, b) => v + springK(T, e.relK)[a][b]));
       if (axial && axial[i] !== 0) { const kg = tKt(T, geometric(axial[i], e.L)); k = k.map((r, a) => r.map((v, b) => v + kg[a][b])); }
       kl.push(k); Ts.push(T);
-      // global: Λᵀ k Λ, done in 3 × 3 blocks
-      const R = e.R;
-      for (let bi = 0; bi < 4; bi++) for (let bj = bi; bj < 4; bj++) {
-        for (let a = 0; a < 3; a++) for (let b = 0; b < 3; b++) {
-          let s = 0;
-          for (let p = 0; p < 3; p++) { const rpa = R[p][a]; if (rpa === 0) continue; for (let q = 0; q < 3; q++) s += rpa * k[bi * 3 + p][bj * 3 + q] * R[q][b]; }
-          const ei = eq[e.dofs[bi * 3 + a]], ej = eq[e.dofs[bj * 3 + b]];
-          if (ei < 0 || ej < 0 || s === 0) continue;
-          if (bi === bj) { if (b >= a) K.add(ei, ej, s); } else K.add(ei, ej, s);
-        }
-      }
+      scatter(K, k, e);
     }
     const auto: number[] = [];
     if (!geoOnly) {
@@ -390,7 +412,6 @@ export function analyse(model: Model): Analysis {
     ...model.combos.map(c => ({ id: c.id, name: c.name, combo: true, f: [...expandCombo(model, c.id)].filter(([k, v]) => v && lcs.has(k)) })),
   ];
   const nStations = STATIONS;
-  const massVec = new Float64Array(neq);
   const shapeOf = (x: Float64Array) => {
     let mx = 0; for (let i = 0; i < neq; i++) if (eqDof[i] < 3) mx = Math.max(mx, Math.abs(x[i]));
     if (mx === 0) for (let i = 0; i < neq; i++) mx = Math.max(mx, Math.abs(x[i]));
@@ -506,13 +527,20 @@ export function analyse(model: Model): Analysis {
 
   // ---- Natural frequencies
   if (model.settings.modalModes > 0) {
-    els.forEach(e => { for (const i of [e.ia, e.ib]) for (let d = 0; d < 3; d++) if (eq[i * 6 + d] >= 0) massVec[eq[i * 6 + d]] += e.mass / 2; });
-    for (const m of model.masses) { const i = nodeIx.get(m.node); if (i !== undefined) for (let d = 0; d < 3; d++) if (eq[i * 6 + d] >= 0) massVec[eq[i * 6 + d]] += m.m || 0; }
+    // The mass matrix: the consistent matrix of each member (condensed with the same releases as its stiffness) plus the node masses, stored like the stiffness matrix
+    const Mm = new Skyline(first);
+    for (const e of els) {
+      const T = condenser(elastic(e.EA, e.EIy, e.EIz, e.GJ, e.L), e.rel, e.relK); if (!T) continue;
+      scatter(Mm, tKt(T, consistentMass(e.mpl, e.ipl, e.L)), e);
+    }
+    for (const m of model.masses) { const i = nodeIx.get(m.node); if (i !== undefined) for (let d = 0; d < 3; d++) if (eq[i * 6 + d] >= 0) Mm.add(eq[i * 6 + d], eq[i * 6 + d], m.m || 0); }
     const ke = shared ?? (() => { const b = build(allActive, null); if (typeof b === 'string' || b.K.factor() >= 0) return null; return b; })();
     if (ke) {
-      for (const a of ke.auto) massVec[a] = 0;
-      const want = Math.min(model.settings.modalModes, massVec.filter(v => v > 0).length);
-      const r = subspace(ke.K, x => x.map((v, i) => v * massVec[i]), want);
+      const skip = new Set(ke.auto); // equations that have no stiffness (a rotation at a truss node) carry no mass either
+      let nm = 0; for (let i = 0; i < neq; i++) if (!skip.has(i) && Mm.diag(i) > 0) nm++;
+      const want = Math.min(model.settings.modalModes, nm);
+      const mulM = (x: Float64Array) => { const xm = Float64Array.from(x); for (const a of skip) xm[a] = 0; const y = Mm.mul(xm); for (const a of skip) y[a] = 0; return y; };
+      const r = subspace(ke.K, mulM, want);
       out.modal = { values: r.values.map(v => Math.sqrt(Math.max(v, 0)) / (2 * Math.PI)), shapes: r.vectors.map(shapeOf) };
     } else out.warnings.push('Natural frequencies were not calculated: the structure is unstable.');
   }

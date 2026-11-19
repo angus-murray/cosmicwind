@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppHeader, Banner, Segmented, useElementSize, Check, NumberField, ReportDialog, SelectField, StatusChip, today } from 'engineering-ui';
-import { Axis3d, Box, Eye, Ruler, FilePlus, FolderOpen, Hash, Maximize, MousePointer2, Redo2, Save, Spline, Trash2, Type, Undo2, Weight, Dot, Shapes, Cuboid, Waypoints, StickyNote, Anchor, Unlink, Crosshair, Layers, Activity, TrendingDown, ChevronsDown, Minimize2, LineChart, Calculator, Thermometer, ArrowUpFromLine, MoveDown, Combine, ListOrdered, Waves, ArrowDownToDot, Circle } from 'lucide-react';
+import { Axis3d, Box, Eye, Ruler, FilePlus, FolderOpen, Hash, Maximize, MousePointer2, Redo2, Save, Spline, Trash2, Type, Undo2, Weight, Dot, Shapes, Cuboid, Waypoints, StickyNote, Anchor, Unlink, Crosshair, Layers, Activity, TrendingDown, ChevronsDown, Minimize2, LineChart, Calculator, Thermometer, ArrowUpFromLine, MoveDown, Combine, ListOrdered, Waves, ArrowDownToDot, Circle, GripHorizontal } from 'lucide-react';
 import {
   deleteMembersAndFreeNodes, deleteNodes, DASH, emptyModel, FREE, PIN, MATERIAL_PRESETS, nextId, normalise, RELEASES, RESTRAINTS,
   type Combo, type DistLoad, type LoadCase, type Material, type Member, type Model, type Node, type NodeLoad, type NodeMass, type PointLoad, type Section, type Settlement, type ThermalLoad, mergeMembers, intersectMembers, moveSelection, expandCombo, comboIncludes, rotatePoint,
@@ -22,6 +22,7 @@ type Tab = 'structure' | 'results';
 interface RestraintRow { node: number; r: string; k?: number[] }
 interface ReleaseRow { member: number; relA: string; relB: string; kA?: number[]; kB?: number[] }
 interface SupportRow { member: number; ky: number; kz: number }
+interface MemberMassRow { member: number; mu: number }
 const nodeFree = (c: string | undefined) => !c || c === DASH || c === 'RRRRRR';
 const memberFree = (c: string | undefined) => !c || c === DASH || c === 'FFFFFF';
 const STORE = 'moonrock-model';
@@ -300,6 +301,8 @@ export default function App() {
         { label: 'Section', sub: [...[...model.sections].sort((p, q) => p.id - q.id).map(x => ({ label: `${x.id}. ${x.name}`, checked: mems.every(id => model.members.find(m => m.id === id)?.sec === x.id), onClick: run(() => patchMembers({ sec: x.id })) })), 'sep' as const, { label: 'Add Section…', onClick: run(() => { setAssignOnAdd(true); setReplaceSec(null); setDialog('section'); }) }] },
         releaseItem,
         { label: 'Angle…', onClick: () => ask('Member Angle', [{ label: 'Angle (°)', value: model.members.find(m => m.id === mems[0])?.angle ?? 0 }], ([ang]) => patchMembers({ angle: ang })) },
+        { label: 'Distributed Mass…', onClick: () => ask(`Distributed Mass (${ul('massPerLength')})`, [{ label: <>Mass per length ({ul('massPerLength')})</>, value: sh('massPerLength', mem0?.mu ?? 0) }],
+          ([v]) => { patchMembers({ mu: Math.max(0, rd('massPerLength', v)) || undefined }); setOpenKeys(o => ({ ...o, memmasses: true })); }) },
         { label: 'Continuous Support…', onClick: () => ask(`Continuous Support (${ul('forcePerLength2')})`, [{ label: <><i>k</i><sub>y</sub> ({ul('forcePerLength2')}), local y</>, value: sh('forcePerLength2', mem0?.ky ?? 0) }, { label: <><i>k</i><sub>z</sub> ({ul('forcePerLength2')}), local z</>, value: sh('forcePerLength2', mem0?.kz ?? 0) }],
           ([ky, kz]) => patchMembers({ ky: Math.max(0, rd('forcePerLength2', ky)) || undefined, kz: Math.max(0, rd('forcePerLength2', kz)) || undefined })) },
         { label: 'Member Type', sub: ([['N', 'Normal'], ['T', 'Tension Only'], ['C', 'Compression Only']] as const).map(([c, l]) => ({ label: l, onClick: run(() => patchMembers({ type: c })) })) },
@@ -353,6 +356,8 @@ export default function App() {
   const setReleases = (rows: ReleaseRow[]) => setModel(m => ({ ...m, members: m.members.map(b => { const row = rows.find(x => x.member === b.id); return row ? { ...b, relA: row.relA, kA: row.kA, relB: row.relB, kB: row.kB } : memberFree(b.relA) && memberFree(b.relB) ? b : { ...b, relA: DASH, relB: DASH, kA: undefined, kB: undefined }; }) }));
   const supportRows: SupportRow[] = model.members.filter(b => b.ky || b.kz).map(b => ({ member: b.id, ky: b.ky ?? 0, kz: b.kz ?? 0 }));
   const setSupports = (rows: SupportRow[]) => setModel(m => ({ ...m, members: m.members.map(b => { const row = rows.find(x => x.member === b.id); return row ? { ...b, ky: row.ky || undefined, kz: row.kz || undefined } : b.ky || b.kz ? { ...b, ky: undefined, kz: undefined } : b; }) }));
+  const memMassRows: MemberMassRow[] = model.members.filter(b => b.mu).map(b => ({ member: b.id, mu: b.mu ?? 0 }));
+  const setMemMasses = (rows: MemberMassRow[]) => setModel(m => ({ ...m, members: m.members.map(b => { const row = rows.find(x => x.member === b.id); return row ? { ...b, mu: row.mu || undefined } : b.mu ? { ...b, mu: undefined } : b; }) }));
   const restraintSpec: DofSpec<RestraintRow> = { ...nodeSpec, title: r => `Node ${r.node}: Restraint`, code: r => r.r, stiffness: r => r.k ?? [], apply: (r, c, k) => ({ ...r, r: c === 'RRRRRR' ? DASH : c, k: c.includes('S') ? k : undefined }) };
   const releaseSpec = (end: 'A' | 'B'): DofSpec<ReleaseRow> => ({ ...memSpec(end), title: r => `Member ${r.member}: Release at End ${end === 'A' ? 1 : 2}`, code: r => (end === 'A' ? r.relA : r.relB), stiffness: r => (end === 'A' ? r.kA : r.kB) ?? [],
     apply: (r, c, k) => { const rel = c === 'FFFFFF' ? DASH : c, ks = c.includes('S') ? k : undefined; return end === 'A' ? { ...r, relA: rel, kA: ks } : { ...r, relB: rel, kB: ks }; } });
@@ -365,6 +370,8 @@ export default function App() {
   const supportCols: Col<SupportRow>[] = [{ key: 'member', label: 'Member', type: 'select', options: memIds, w: 70, set: (r, v) => ({ ...r, member: Number(v) }) },
     { key: 'ky', label: <><i>k</i><sub>y</sub></>, q: 'forcePerLength2', w: 90, title: 'Continuous support in the local y direction, force per length per length of member; 0 for none', set: (r, v) => ({ ...r, ky: Math.max(0, Number(v) || 0) }) },
     { key: 'kz', label: <><i>k</i><sub>z</sub></>, q: 'forcePerLength2', w: 90, title: 'Continuous support in the local z direction, force per length per length of member; 0 for none', set: (r, v) => ({ ...r, kz: Math.max(0, Number(v) || 0) }) }];
+  const memMassCols: Col<MemberMassRow>[] = [{ key: 'member', label: 'Member', type: 'select', options: memIds, w: 70, set: (r, v) => ({ ...r, member: Number(v) }) },
+    { key: 'mu', label: 'Mass per Length', q: 'massPerLength', w: 90, title: 'Distributed mass added to the mass of the section: it weighs under gravity and adds to the natural frequencies; 0 for none', set: (r, v) => ({ ...r, mu: Math.max(0, Number(v) || 0) }) }];
   const secCols: Col<Section>[] = [{ key: 'colour', label: '', type: 'colour', w: 28, get: r => (r.colour && /^#[0-9a-f]{6}$/i.test(r.colour) ? r.colour : sectionColour(r.id)), autoColour: r => !r.colour, set: (r, v) => (typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? { ...r, colour: v.toLowerCase() } : { ...r, colour: undefined }) },
     { key: 'name', label: 'Section Type', type: 'text', w: 150, weight: 1.5 }, { key: 'A', label: <i>A</i>, q: 'area', w: 60 }, { key: 'Iz', label: <><i>I</i><sub>z</sub></>, q: 'inertia', w: 76 }, { key: 'Iy', label: <><i>I</i><sub>y</sub></>, q: 'inertia', w: 76 }, { key: 'J', label: <i>J</i>, q: 'inertia', w: 70 }];
   const matCols: Col<Material>[] = [{ key: 'name', label: 'Name', type: 'text', w: 110 }, { key: 'E', label: <i>E</i>, q: 'stress', w: 60 }, { key: 'G', label: <i>G</i>, q: 'stress', w: 60 }, { key: 'rho', label: 'Density', q: 'density', w: 70 }, { key: 'alpha', label: <i>α</i>, q: 'perTemp', w: 70 }];
@@ -453,8 +460,12 @@ export default function App() {
                     <option value="">Add Material…</option>{MATERIAL_PRESETS.map((p, i) => <option key={p.name} value={i}>{p.name}</option>)}</select>
                 </>
       ) },
-      { key: 'masses', icon: Weight, label: 'Masses', count: model.masses.length, render: () => (
+      { key: 'masses', icon: Weight, label: 'Node Masses', count: model.masses.length, render: () => (
                 <Sheet rows={model.masses} addLabel="Add Mass" cols={massCols} onChange={set('masses')} newRow={() => ({ node: firstNode, m: 1 })} empty="No node masses (they weigh under gravity and add to the natural frequencies)" />
+      ) },
+      { key: 'memmasses', icon: GripHorizontal, label: 'Member Masses', count: memMassRows.length, render: () => (
+        <Sheet rows={memMassRows} cols={memMassCols} addLabel="Add Member Mass" onChange={setMemMasses} rowLabel={r => r.member} selected={r => sel.members.has(r.member)} onSelect={(r, add) => pickM({ id: r.member }, add)}
+          newRow={() => ({ member: model.members.find(b => !b.mu)?.id ?? model.members[0]?.id ?? 1, mu: 0.1 })} empty="No distributed masses (the section's own mass is always included)" />
       ) },
     ] },
     { key: 'boundary', title: 'Boundary Conditions', flat: true, items: [

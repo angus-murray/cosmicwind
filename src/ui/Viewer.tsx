@@ -342,6 +342,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
         const named = c === PIN ? 'Pinned (Mx, My, Mz released)' : c === 'FFFFRR' ? 'Pinned (My, Mz released)' : '';
         out.push(`Release at end ${end}: ${[named || (rel.length ? `${rel.join(', ')} released` : ''), ...spr].filter(Boolean).join('; ')}`);
       });
+      if (b.mu) out.push(`Added mass: ${Number(uShow('massPerLength', b.mu).toPrecision(3))} ${uLabel('massPerLength')}`);
       if (b.ky || b.kz) out.push(`Continuous support: ${[b.ky ? `ky ${fq('forcePerLength2', b.ky)}` : '', b.kz ? `kz ${fq('forcePerLength2', b.kz)}` : ''].filter(Boolean).join(', ')} ${uLabel('forcePerLength2')}`);
       const loads = model.distLoads.filter(l => l.member === b.id).length + model.pointLoads.filter(l => l.member === b.id).length; if (loads) out.push(`Member loads: ${loads}`);
       return out;
@@ -869,6 +870,16 @@ export const Viewer = React.forwardRef<ViewerHandle, {
           return <g pointerEvents="none">{[...tot].map(([id, m]) => { const n = nodeMap.get(id); if (!n) return null; const p = P([n.x, n.y, n.z]), r = 3.5 + 3 * Math.sqrt(m / mmax);
             return <g key={`ms${id}`}><circle cx={p[0]} cy={p[1]} r={r} fill="#334155" stroke="#ffffff" strokeWidth={1.5} />
               {text([p[0] + r + 4, p[1] - r + 2], `${Number(uShow('mass', m).toPrecision(3))} ${uLabel('mass')}`, `mt${id}`, '#334155', 'start', true)}</g>; })}</g>;
+        })()}
+        {opts.masses && (() => { // a distributed mass: a row of small solid balls along the member, labelled with the mass per length
+          const items = geo.filter(g => g.m.mu).map(g => {
+            const pts = axisPts(g), seg: number[] = [0]; for (let k = 1; k < pts.length; k++) seg.push(seg[k - 1] + Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]));
+            const total = seg[seg.length - 1], n = Math.max(2, Math.round(total / 22)), at = (t: number): [number, number] => { const d = t * total; let k = 1; while (k < seg.length - 1 && seg[k] < d) k++; const f = seg[k] > seg[k - 1] ? (d - seg[k - 1]) / (seg[k] - seg[k - 1]) : 0; return [pts[k - 1][0] + (pts[k][0] - pts[k - 1][0]) * f, pts[k - 1][1] + (pts[k][1] - pts[k - 1][1]) * f]; };
+            const mid = at(0.5), a = at(0.45), b = at(0.55), l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, nx = -(b[1] - a[1]) / l, ny = (b[0] - a[0]) / l, sg = ny > 0.01 || (Math.abs(ny) <= 0.01 && nx > 0) ? -1 : 1;
+            return <g key={`mm${g.m.id}`}>{Array.from({ length: n }, (_, k) => { const p = at((k + 0.5) / n); return <circle key={k} cx={p[0]} cy={p[1]} r={2.6} fill="#334155" stroke="#ffffff" strokeWidth={1} />; })}
+              {text([mid[0] + nx * sg * 14, mid[1] + ny * sg * 14 + 4], `${Number(uShow('massPerLength', g.m.mu!).toPrecision(3))} ${uLabel('massPerLength')}`, `mmt${g.m.id}`, '#334155', 'middle', true)}</g>;
+          });
+          return <g pointerEvents="none">{items}</g>;
         })()}
         {viewNodes.map(n => {
           const p = P([n.x, n.y, n.z]), r = opts.restraints ? restraintCode(n.r) : 'RRRRRR', t = r.slice(0, 3), on = sel.nodes.has(n.id);

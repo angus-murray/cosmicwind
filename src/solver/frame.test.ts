@@ -220,3 +220,22 @@ test('node masses are loaded by gravity: a mass at the tip of a cantilever defle
   expect(Math.abs(r.cases.find(x => x.id === 2)!.disp.get(2)![1])).toBe(0); // a case without gravity does not weigh the mass
   close(r.cases.find(x => x.id === 10)!.disp.get(2)![1], 2 * -W * 64 / (3 * EI)); // a combination scales it
 });
+
+test('consistent mass: a cantilever with one element is within 1.5 % of the exact first frequency, from above, and four elements are within 0.1 %', () => {
+  const L = 4, mass = 7850 * A * 1e-6 / 1000, exact = (1.8751040687 ** 2 / (2 * Math.PI)) * Math.sqrt((EI / 4) / (mass * L ** 4)); // the weak axis (Iy = I / 4) governs
+  const f = (n: number) => { const m = beam(L, n, 'FFFFFF', 'RRRRRR'); m.settings.modalModes = 1; return analyse(m).modal!.values[0]; };
+  const f1 = f(1), f4 = f(4);
+  expect(f1).toBeGreaterThan(exact); expect(f1).toBeLessThan(exact * 1.015);
+  expect(f4).toBeGreaterThan(exact); expect(f4).toBeLessThan(exact * 1.001);
+});
+
+test('a distributed mass adds to the mass of the member: it lowers the frequency by the square root of the mass ratio, and weighs under gravity', () => {
+  const mass = 7850 * A * 1e-6 / 1000, L = 6;
+  const pin = (mu: number) => { const m = beam(L, 2, 'FFFFFR', 'RFFFFR'); m.nodes.forEach(nd => { if (nd.r === 'RRRRRR') nd.r = 'RRFFFR'; }); m.members.forEach(b => { b.mu = mu; }); m.settings.modalModes = 1; return analyse(m).modal!.values[0]; };
+  close(pin(mass), pin(0) / Math.SQRT2, 1e-9); // the added mass equals the section's own, so the mass doubles
+  // gravity: a cantilever with a distributed mass and no self-weight deflects by μ g L⁴ / 8EI
+  const c = beam(4, 4, 'FFFFFF', 'RRRRRR'); c.materials[0].rho = 0; c.members.forEach(b => { b.mu = 0.5; });
+  c.loadCases = [{ id: 1, name: 'G', gx: 0, gy: -1, gz: 0 }];
+  const r = analyse(c); expect(r.errors).toEqual([]);
+  close(r.cases[0].disp.get(5)![1], -0.5 * 9.80665 * 4 ** 4 / (8 * EI));
+});
