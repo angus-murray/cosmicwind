@@ -85,7 +85,7 @@ export function Sheet<T extends object>({ rows, cols, onChange, newRow, selected
   };
   return (
     <div className="space-y-1.5">
-      <div className="overflow-auto max-h-[calc(100vh-250px)] scroll-thin border border-slate-200 rounded">
+      <div className="overflow-auto max-h-[300px] scroll-thin border border-slate-200 rounded">
         <table className="sheet" ref={ref} style={{ minWidth: 56 + cols.length * 48 }}>
           {/* Fixed layout: the columns share the width equally (text columns, such as a name, take double and a colour swatch is fixed), so the same kind of column is the same width in every datasheet */}
           <colgroup><col style={{ width: 34 }} />{cols.map(c => <col key={c.key} style={{ width: c.type === 'colour' ? 28 : `${(weight(c) / total) * 86}%` }} />)}<col style={{ width: 22 }} /></colgroup>
