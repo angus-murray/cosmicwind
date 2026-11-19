@@ -78,6 +78,8 @@ export type PromptState = {
   title: string;
   fields: { label: React.ReactNode; value: number; /** Choices for the field, which is then a list of these instead of a box; the value is the number of the choice. */ options?: { value: number; label: string }[] }[];
   onSubmit: (values: number[]) => void;
+  /** A button that closes the form so that a point can be picked on the canvas; it gets the values as they stand, to put the form back with the point filled in. */
+  pick?: { label: string; onPick: (values: number[]) => void };
 };
 
 /** Small numeric form shown at the cursor for the menu actions that need values (an offset, a size). */
@@ -137,6 +139,7 @@ export const PromptBox: React.FC<{ prompt: PromptState; W: number; H: number; on
           )}
         </label>
       ))}
+      {prompt.pick && <button type="button" className="btn w-full !h-7" onClick={() => { const cur = nums.map((n, i) => (Number.isFinite(n) ? n : prompt.fields[i].value)); onClose(); prompt.pick!.onPick(cur); }}>{prompt.pick.label}</button>}
       <div className="flex justify-end gap-2">
         <button type="button" className="btn" onClick={onClose}>
           Cancel

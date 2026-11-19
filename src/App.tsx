@@ -77,7 +77,7 @@ export default function App() {
   const [fitRev, setFitRev] = useState(0);
   const [prompt, setPrompt] = useState<PromptState | null>(null);
   const [textPrompt, setTextPrompt] = useState<TextPromptState | null>(null);
-  const [pickMove, setPickMove] = useState<{ base: [number, number, number]; nodes: number[]; members?: number[]; repeat: boolean; apply: (d: [number, number, number]) => void } | null>(null);
+  const [pickMove, setPickMove] = useState<{ base: [number, number, number]; nodes: number[]; members?: number[]; repeat: boolean; point?: boolean; apply: (d: [number, number, number]) => void } | null>(null);
   const [cvRef, cvSize] = useElementSize<HTMLDivElement>();
   const [ctx, setCtx] = useState<{ x: number; y: number; node: number | null; member: number | null; note?: number | null; endNode: number | null } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -236,21 +236,28 @@ export default function App() {
         if (copyMode) copyWith(q => tf(q)); else moveWith(tf);
       }),
     }));
-    const rotation = (copyMode: boolean): MenuItem => ({
-      label: 'By Rotation…',
-      onClick: () => ask(copyMode ? 'Copy By Rotation' : 'Move By Rotation', [
-        { label: 'Axis (global)', value: 3, options: [{ value: 1, label: 'X' }, { value: 2, label: 'Y' }, { value: 3, label: 'Z' }] },
-        { label: 'Angle (°), right-hand rule', value: 90 },
-        { label: <>Centre <i>X</i> ({ul('length')})</>, value: sh('length', baseNode?.x ?? 0) },
-        { label: <>Centre <i>Y</i> ({ul('length')})</>, value: sh('length', baseNode?.y ?? 0) },
-        { label: <>Centre <i>Z</i> ({ul('length')})</>, value: sh('length', baseNode?.z ?? 0) },
-        ...(copyMode ? [{ label: 'Number of copies', value: 1 }] : [])],
-      ([ax, ang, cx, cy, cz, n]) => {
-        const c = [rd('length', cx), rd('length', cy), rd('length', cz)], e = [0, 0, 0]; e[Math.round(ax) - 1] = 1;
-        const turn = (q: Node, k: number) => rotatePoint([q.x, q.y, q.z], c, e, ang * k * Math.PI / 180); // each copy is turned a further angle
-        if (copyMode) copyWith((q, k) => turn(q, k), n); else moveWith(q => turn(q, 1));
-      }),
-    });
+    /** The By Rotation form: the values as they stand (axis, angle, centre X, Y, Z in the units shown, copies); the centre can be picked on the canvas, which brings the form back with it filled in. */
+    const rotateDialog = (copyMode: boolean, v: number[]) => {
+      const fields: PromptState['fields'] = [
+        { label: 'Axis (global)', value: v[0], options: [{ value: 1, label: 'X' }, { value: 2, label: 'Y' }, { value: 3, label: 'Z' }] },
+        { label: 'Angle (°), right-hand rule', value: v[1] },
+        { label: <>Centre <i>X</i> ({ul('length')})</>, value: v[2] },
+        { label: <>Centre <i>Y</i> ({ul('length')})</>, value: v[3] },
+        { label: <>Centre <i>Z</i> ({ul('length')})</>, value: v[4] },
+        ...(copyMode ? [{ label: 'Number of copies', value: v[5] }] : [])];
+      setCtx(null);
+      setPrompt({ ...at, title: copyMode ? 'Copy By Rotation' : 'Move By Rotation', fields,
+        pick: { label: 'Pick Centre on Canvas', onPick: cur => {
+          const base = [...cur]; while (base.length < 6) base.push(v[base.length]);
+          setPickMove({ base: [0, 0, 0], nodes: [], repeat: false, point: true, apply: p => rotateDialog(copyMode, [base[0], base[1], sh('length', p[0]), sh('length', p[1]), sh('length', p[2]), base[5]]) });
+        } },
+        onSubmit: ([ax, ang, cx, cy, cz, n]) => {
+          const c = [rd('length', cx), rd('length', cy), rd('length', cz)], e = [0, 0, 0]; e[Math.round(ax) - 1] = 1;
+          const turn = (q: Node, k: number) => rotatePoint([q.x, q.y, q.z], c, e, ang * k * Math.PI / 180); // each copy is turned a further angle
+          if (copyMode) copyWith((q, k) => turn(q, k), n); else moveWith(q => turn(q, 1));
+        } });
+    };
+    const rotation = (copyMode: boolean): MenuItem => ({ label: 'By Rotation…', onClick: () => rotateDialog(copyMode, [3, 90, sh('length', baseNode?.x ?? 0), sh('length', baseNode?.y ?? 0), sh('length', baseNode?.z ?? 0), 1]) });
     const moveCopy: MenuItem[] = [
       { label: 'Move', sub: [{ label: 'To a Point', onClick: () => startPick(false) }, { label: 'By Increment…', onClick: inc(false) }, rotation(false), ...mirror(false)] },
       { label: 'Copy', sub: [{ label: 'To a Point', onClick: () => startPick(true) }, { label: 'By Increment…', onClick: inc(true) }, rotation(true), ...mirror(true)] },

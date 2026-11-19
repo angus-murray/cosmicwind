@@ -116,7 +116,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   /** A node placed on the midpoint of a member splits it there: returns the number of the new node. */
   onSplitMember?: (memberId: number) => number;
   /** Move or copy to a point: the point to pick the offset from, the nodes that travel, and what to do with the offset. */
-  pick?: { base: V3; nodes: number[]; /** Members drawn moving; when absent, those touching a moving node. */ members?: number[]; repeat: boolean; apply: (d: V3) => void } | null; onPickEnd?: () => void;
+  pick?: { base: V3; nodes: number[]; /** Members drawn moving; when absent, those touching a moving node. */ members?: number[]; repeat: boolean; /** Picking a single point (the point is passed to `apply` as `d`, with `base` the origin): no moving outline is drawn, only the coordinates. */ point?: boolean; apply: (d: V3) => void } | null; onPickEnd?: () => void;
   /** Notes drawn as call-outs; a box can be dragged, and double-clicked to edit. */
   notes?: Note[]; onNoteMove?: (id: number, dx: number, dy: number) => void; onNoteEdit?: (id: number, x: number, y: number) => void;
   onContext?: (c: { x: number; y: number; node: number | null; member: number | null; note?: number | null; /** Node at the end of the member that was clicked near, if any. */ endNode: number | null }) => void;
@@ -870,6 +870,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
           const d: V3 = [pickLive[0] - pick.base[0], pickLive[1] - pick.base[1], pickLive[2] - pick.base[2]], set = new Set(pick.nodes);
           const at = (id: number): [number, number] | null => { const n = nodeMap.get(id); return n ? P(set.has(id) ? [n.x + d[0], n.y + d[1], n.z + d[2]] : [n.x, n.y, n.z]) : null; };
           const pb = P(pick.base), pt = P(pickLive), fm = (v: number) => len3(v);
+          if (pick.point) return <g pointerEvents="none">{text([pt[0] + 14, pt[1] - 12], `X ${fm(pickLive[0])}  Y ${fm(pickLive[1])}  Z ${fm(pickLive[2])} ${uLabel('length')}`, 'pklbl', '#b45309', 'start', true)}</g>;
           return <g pointerEvents="none" stroke={AMBER} strokeWidth={1.75} strokeDasharray="5 3" fill="none">
             {model.members.filter(m => (pick.members ? pick.members.includes(m.id) : set.has(m.a) || set.has(m.b))).map(m => { const p = at(m.a), q = at(m.b); return p && q ? <line key={m.id} x1={p[0]} y1={p[1]} x2={q[0]} y2={q[1]} /> : null; })}
             {pick.nodes.map(id => { const q = at(id); return q ? <rect key={id} x={q[0] - 3} y={q[1] - 3} width={6} height={6} fill={AMBER} stroke="none" /> : null; })}
