@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppHeader, Banner, Segmented, useElementSize, Check, NumberField, ReportDialog, SelectField, StatusChip, today } from 'engineering-ui';
-import { Axis3d, Box, Eye, Ruler, FilePlus, FolderOpen, Hash, Maximize, MousePointer2, Redo2, Save, Spline, Trash2, Type, Undo2, Weight, Dot, Shapes, Cuboid, Waypoints, StickyNote, Anchor, Unlink, Crosshair, Layers, Activity, TrendingDown, ChevronsDown, Minimize2, LineChart, Calculator, Thermometer, ArrowUpFromLine, MoveDown, Combine, ListOrdered, Waves, ArrowDownToDot } from 'lucide-react';
+import { Axis3d, Box, Eye, Ruler, FilePlus, FolderOpen, Hash, Maximize, MousePointer2, Redo2, Save, Spline, Trash2, Type, Undo2, Weight, Dot, Shapes, Cuboid, Waypoints, StickyNote, Anchor, Unlink, Crosshair, Layers, Activity, TrendingDown, ChevronsDown, Minimize2, LineChart, Calculator, Thermometer, ArrowUpFromLine, MoveDown, Combine, ListOrdered, Waves, ArrowDownToDot, Circle } from 'lucide-react';
 import {
   deleteMembersAndFreeNodes, deleteNodes, DASH, emptyModel, FREE, PIN, MATERIAL_PRESETS, nextId, normalise, RELEASES, RESTRAINTS,
   type Combo, type DistLoad, type LoadCase, type Material, type Member, type Model, type Node, type NodeLoad, type NodeMass, type PointLoad, type Section, type Settlement, type ThermalLoad, mergeMembers, intersectMembers, moveSelection, expandCombo, comboIncludes, rotatePoint,
@@ -58,7 +58,7 @@ export default function App() {
   const [tab, setTab] = useState<Tab>('structure');
   const [sel, setSel] = useState<Sel>(noSel);
   const [tool, setTool] = useState<Tool>('select');
-  const [opts, setOpts] = useState<ViewOpts>({ notes: true, nodeNo: false, memberNo: false, secNames: false, loads: true, localAxes: false, diagrams: { N: false, T: false, Vy: false, Vz: false, Vres: false, Mz: false, My: false, Mres: false }, stress: 'none', geometry: 'undeformed', defLabels: 'none', origin: true, restraints: true, releases: true, reactions: false, scale: 1, defScale: 1, solid: false });
+  const [opts, setOpts] = useState<ViewOpts>({ notes: true, nodeNo: false, memberNo: false, secNames: false, loads: true, localAxes: false, diagrams: { N: false, T: false, Vy: false, Vz: false, Vres: false, Mz: false, My: false, Mres: false }, stress: 'none', geometry: 'undeformed', defLabels: 'none', origin: true, restraints: true, releases: true, masses: true, reactions: false, scale: 1, defScale: 1, solid: false });
   const o = <K extends keyof ViewOpts>(k: K) => (v: ViewOpts[K]) => setOpts(p => ({ ...p, [k]: v }));
   const [caseId, setCaseId] = useState(1);
   const [modeIx, setModeIx] = useState<{ kind: 'buckling' | 'modal'; i: number } | null>(null);
@@ -671,6 +671,7 @@ export default function App() {
                 <button className={`tool-btn ${opts.origin ? '!text-blue-700' : ''}`} title="Marks the global origin (0, 0, 0), which then snaps" onClick={() => o('origin')(!opts.origin)}><Crosshair className="w-3.5 h-3.5" />Origin</button>
                 <button className={`tool-btn ${opts.restraints ? '!text-blue-700' : ''}`} title="Restraints and spring supports at the nodes" onClick={() => o('restraints')(!opts.restraints)}><Anchor className="w-3.5 h-3.5" />Restraints</button>
                 <button className={`tool-btn ${opts.releases ? '!text-blue-700' : ''}`} title="Member end releases and springs" onClick={() => o('releases')(!opts.releases)}><Unlink className="w-3.5 h-3.5" />Releases</button>
+                <button className={`tool-btn ${opts.masses ? '!text-blue-700' : ''}`} title="Node masses, as solid balls" onClick={() => o('masses')(!opts.masses)}><Circle className="w-3.5 h-3.5" />Masses</button>
                 <button className={`tool-btn ${opts.loads ? '!text-blue-700' : ''}`} title="Loads of the case shown" onClick={() => o('loads')(!opts.loads)}><Weight className="w-3.5 h-3.5" />Loads</button>
                 <button className={`tool-btn ${opts.notes ? '!text-blue-700' : ''}`} title="Notes on nodes and members" onClick={() => o('notes')(!opts.notes)}><StickyNote className="w-3.5 h-3.5" />Notes</button>
                 </div>

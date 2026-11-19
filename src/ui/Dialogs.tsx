@@ -66,7 +66,7 @@ export function About({ onClose }: { onClose: () => void }) {
           direction, so a downward load is negative in Y. Moments follow the right-hand rule and are drawn as double-headed arrows.</P>
         <P>The Gravity columns of a load case are multipliers of <i>g</i>, where <i>g</i> = {G0} m/s², the standard gravitational acceleration. The self-weight
           of a member is its density times its cross-sectional area times <i>g</i>, applied along its length. A node mass is loaded in the same way, with a force of its mass times <i>g</i> at the node in the
-          gravity direction of the case, and it also adds mass to the vibration modes, together with the mass of the members. Masses are in the mass unit chosen.</P>
+          gravity direction of the case, and it also adds mass to the vibration modes, together with the mass of the members. Masses are in the mass unit chosen, and a node with a mass is marked by a solid ball (the Masses button at the right of the graphics window switches them on and off).</P>
       </CollapsePanel>
       <CollapsePanel title="Using the Program">
         <P>The input column has two tabs. The Model tab lists Structure, which holds the datasheets for nodes, members, sections, materials and node masses. Boundary Conditions
@@ -80,7 +80,7 @@ export function About({ onClose }: { onClose: () => void }) {
         <P>In the graphics window, drag with the left button to rotate, click twice to draw a selection box, use the wheel to zoom, and drag with the right
           button to pan. Dragging with the middle button scales the deformed shape up and down on the Analysis and Results tab. Right-clicking a
           node, a member or empty space gives the actions that apply, such as loads, restraints, releases, section, angle, subdivide, move and copy. The
-          buttons at the right of the graphics window switch on the node and member numbers, section names, local axes, the origin, restraints, releases,
+          buttons at the right of the graphics window switch on the node and member numbers, section names, local axes, the origin, restraints, releases, masses,
           loads and notes. The origin is a snap point while it is switched on.</P>
         <P>Nodes and members are drawn with the Node and Member tools on the XY plane at Z = 0. The pointer snaps to nodes, to member midpoints and to the
           origin, and a member being drawn is held to a global axis when it is within 8 degrees of one (the Z axis only in a view where it can be seen) or when X, Y or Z is typed. A length can be typed for

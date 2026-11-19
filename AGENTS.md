@@ -22,7 +22,7 @@ Structural analysis app; follows the `engineering-ui` house style (`node_modules
 - Display units (`src/model/units.ts`, chosen in the bar at the bottom of the canvas) only change what is shown and typed. Any new number field, label or report column needs a `Quantity` (for a datasheet column, `q` in `Col`) so that it converts; never hard-code a unit in the UI.
 - A member may carry a continuous support (`ky`, `kz`, kN/m per m, local y and z). The solver lumps it to the end nodes of each member (k L / 2 each), so subdivide members for a close match to a bed of springs.
 - A combination may include load cases and other combinations (`expandCombo` in `src/model/types.ts` flattens them; a combination cannot include itself or one that includes it). Load cases and combinations share one set of numbers, and clicking a number in their datasheets renumbers it everywhere it is used.
-- Node masses (`model.masses`, tonnes) are loaded by gravity as well as adding mass to the vibration modes: in a load case with gravity multipliers each gives a force of mass × g × multiplier at its node, so combinations scale it with the case. The canvas draws that force with the other loads.
+- Node masses (`model.masses`, tonnes) are loaded by gravity as well as adding mass to the vibration modes: in a load case with gravity multipliers each gives a force of mass × g × multiplier at its node, so combinations scale it with the case. The canvas marks a node with a mass by a solid ball (`opts.masses`, the Masses button of the view toolbar), not by a force arrow.
 - The solver works in kN, m and t. Every solver change needs a test in `src/solver/frame.test.ts` against a
   closed-form or refined-model result.
 - Run `bun run check`, `bun test` and `bun run build` before committing.
