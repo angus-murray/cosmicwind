@@ -866,7 +866,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
         {opts.masses && (() => { // a solid ball at each node with a mass, larger for a larger mass
           const tot = new Map<number, number>(); for (const ms of model.masses) if (ms.m > 0) tot.set(ms.node, (tot.get(ms.node) ?? 0) + ms.m);
           const mmax = Math.max(1e-12, ...tot.values());
-          return <g pointerEvents="none">{[...tot].map(([id, m]) => { const n = nodeMap.get(id); if (!n) return null; const p = P([n.x, n.y, n.z]), r = 5 + 6 * Math.sqrt(m / mmax);
+          return <g pointerEvents="none">{[...tot].map(([id, m]) => { const n = nodeMap.get(id); if (!n) return null; const p = P([n.x, n.y, n.z]), r = 3.5 + 3 * Math.sqrt(m / mmax);
             return <g key={`ms${id}`}><circle cx={p[0]} cy={p[1]} r={r} fill="#334155" stroke="#ffffff" strokeWidth={1.5} />
               {text([p[0] + r + 4, p[1] - r + 2], `${Number(uShow('mass', m).toPrecision(3))} ${uLabel('mass')}`, `mt${id}`, '#334155', 'start', true)}</g>; })}</g>;
         })()}
