@@ -65,8 +65,8 @@ export function About({ onClose }: { onClose: () => void }) {
           two shear forces. Restraints and releases can also be set from the right-click menu of a node or member. Loads are positive in the positive axis
           direction, so a downward load is negative in Y. Moments follow the right-hand rule and are drawn as double-headed arrows.</P>
         <P>The Gravity columns of a load case are multipliers of <i>g</i>, where <i>g</i> = {G0} m/s², the standard gravitational acceleration. The self-weight
-          of a member is its density times its cross-sectional area times <i>g</i>, applied along its length, and node masses and member masses for vibration
-          modes are in the mass unit chosen.</P>
+          of a member is its density times its cross-sectional area times <i>g</i>, applied along its length. A node mass is loaded in the same way, with a force of its mass times <i>g</i> at the node in the
+          gravity direction of the case, and it also adds mass to the vibration modes, together with the mass of the members. Masses are in the mass unit chosen.</P>
       </CollapsePanel>
       <CollapsePanel title="Using the Program">
         <P>The input column has two tabs. The Model tab lists Structure, which holds the datasheets for nodes, members, sections, materials and node masses. Boundary Conditions

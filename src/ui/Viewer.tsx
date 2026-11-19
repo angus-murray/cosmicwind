@@ -4,7 +4,7 @@ import { useElementSize } from 'engineering-ui';
 import { sym } from './Sym';
 import { releaseCode, restraintCode, FIXED, PIN, type Model, type Note } from '../model/types';
 import { outlineLoops, outlineOf } from '../model/sections';
-import { memberAxes, type CaseResult, type Vec6 } from '../solver/frame';
+import { G0, memberAxes, type CaseResult, type Vec6 } from '../solver/frame';
 
 export type StressKey = 'none' | 'normal' | 'axial' | 'mz' | 'my';
 /** Stress results coloured on the rendered members: tension positive, from the axial force and the bending moments at each point of the section. */
@@ -672,7 +672,11 @@ export const Viewer = React.forwardRef<ViewerHandle, {
     const AX: Record<string, V3> = { X: [1, 0, 0], Y: [0, 1, 0], Z: [0, 0, 1] };
     const gById = new Map(geo.map(g => [g.m.id, g]));
     const wDir = (g: (typeof geo)[number], axes: string, dir: string): V3 => (axes === 'L' ? g.R[{ X: 0, Y: 1, Z: 2 }[dir.slice(-1)]!] as V3 : AX[dir.slice(-1)]);
-    const dl = model.distLoads.filter(l => fac.has(l.lc) && gById.has(l.member)), pl = model.pointLoads.filter(l => fac.has(l.lc) && gById.has(l.member)), nls = model.nodeLoads.filter(l => fac.has(l.lc) && nodeMap.has(l.node));
+    // The weight of the node masses is a load too: mass × g along the gravity of the case or combination shown (tonnes × m/s² is kN)
+    const grav = [0, 0, 0]; fac.forEach((f, id) => { const c = model.loadCases.find(x => x.id === id); if (c) { grav[0] += f * (c.gx || 0); grav[1] += f * (c.gy || 0); grav[2] += f * (c.gz || 0); } });
+    const massLoads = grav.some(v => Math.abs(v) > 1e-12) ? model.masses.filter(ms => ms.m && nodeMap.has(ms.node)).map(ms => ({ lc: -1, node: ms.node, fx: ms.m * G0 * grav[0], fy: ms.m * G0 * grav[1], fz: ms.m * G0 * grav[2], mx: 0, my: 0, mz: 0 })) : [];
+    if (massLoads.length) fac.set(-1, 1);
+    const dl = model.distLoads.filter(l => fac.has(l.lc) && gById.has(l.member)), pl = model.pointLoads.filter(l => fac.has(l.lc) && gById.has(l.member)), nls = [...model.nodeLoads.filter(l => fac.has(l.lc) && nodeMap.has(l.node)), ...massLoads];
     const wMax = Math.max(1e-9, ...dl.flatMap(l => [Math.abs(l.w1 * fac.get(l.lc)!), Math.abs(l.w2 * fac.get(l.lc)!)]));
     const fMax = Math.max(1e-9, ...pl.filter(l => l.dir.length === 1).map(l => Math.abs(l.p * fac.get(l.lc)!)), ...nls.flatMap(l => [l.fx, l.fy, l.fz].map(v => Math.abs(v * fac.get(l.lc)!))));
     dl.forEach((l, i) => {

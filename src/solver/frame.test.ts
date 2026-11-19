@@ -204,3 +204,19 @@ test('rotations along a member: a cantilever turns through PL²/2EI at its tip, 
   expect(k).toBeGreaterThan(0);
   close(r.rz[k], mid);
 });
+
+test('node masses are loaded by gravity: a mass at the tip of a cantilever deflects it by mg L³/3EI and the support carries its weight', () => {
+  const m = beam(4, 1, 'FFFFFF', 'RRRRRR');
+  m.materials[0].rho = 0; // no self-weight, so that the mass is the whole load
+  m.loadCases = [{ id: 1, name: 'G', gx: 0, gy: -1, gz: 0 }, { id: 2, name: 'No gravity', gx: 0, gy: 0, gz: 0 }];
+  m.masses = [{ node: 2, m: 3 }]; // tonnes
+  m.combos = [{ id: 10, name: 'Twice', f: { 1: 2 } }];
+  const r = analyse(m); expect(r.errors).toEqual([]);
+  const W = 3 * 9.80665; // kN
+  const c = r.cases.find(x => x.id === 1)!;
+  close(c.disp.get(2)![1], -W * 64 / (3 * EI));
+  close(c.reactions.get(1)![1], W);
+  close(c.reactions.get(1)![5], W * 4);
+  expect(Math.abs(r.cases.find(x => x.id === 2)!.disp.get(2)![1])).toBe(0); // a case without gravity does not weigh the mass
+  close(r.cases.find(x => x.id === 10)!.disp.get(2)![1], 2 * -W * 64 / (3 * EI)); // a combination scales it
+});

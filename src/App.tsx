@@ -454,7 +454,7 @@ export default function App() {
                 </>
       ) },
       { key: 'masses', icon: Weight, label: 'Masses', count: model.masses.length, render: () => (
-                <Sheet rows={model.masses} addLabel="Add Mass" cols={massCols} onChange={set('masses')} newRow={() => ({ node: firstNode, m: 1 })} empty="No node masses (used for natural frequencies)" />
+                <Sheet rows={model.masses} addLabel="Add Mass" cols={massCols} onChange={set('masses')} newRow={() => ({ node: firstNode, m: 1 })} empty="No node masses (they weigh under gravity and add to the natural frequencies)" />
       ) },
     ] },
     { key: 'boundary', title: 'Boundary Conditions', flat: true, items: [

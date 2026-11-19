@@ -414,6 +414,8 @@ export function analyse(model: Model): Analysis {
         t.strain += l.strain * f;
       });
       for (const l of model.nodeLoads) if (l.lc === lc) { const i = nodeIx.get(l.node); if (i !== undefined) [l.fx, l.fy, l.fz, l.mx, l.my, l.mz].forEach((v, d) => { P[i * 6 + d] += (v || 0) * f; }); }
+      const gc = lcs.get(lc); // the weight of the node masses: mass × g in the gravity direction of the case (tonnes × m/s² is kN)
+      if (gc && (gc.gx || gc.gy || gc.gz)) for (const ms of model.masses) { const i = nodeIx.get(ms.node); if (i !== undefined) [gc.gx, gc.gy, gc.gz].forEach((g, d) => { P[i * 6 + d] += (ms.m || 0) * G0 * (g || 0) * f; }); }
       for (const l of model.settlements) if (l.lc === lc) { const i = nodeIx.get(l.node); if (i !== undefined) [l.dx, l.dy, l.dz].forEach((v, d) => { if (eq[i * 6 + d] < 0) up[i * 6 + d] += (v || 0) * f / 1000; }); }
     }
     const fef = els.map((e, i) => fixedEnd(e, loads[i]));
