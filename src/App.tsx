@@ -481,7 +481,7 @@ export default function App() {
         {analysis.warnings.length > 0 && <Banner kind="warning" title="Warnings" items={analysis.warnings} />}
       </div> : null,
       items: [
-      { key: 'analysis', icon: Calculator, label: 'Analysis', render: () => (
+      { key: 'analysis', icon: Calculator, label: 'Analysis Options', render: () => (
 <div className="space-y-2.5">
                 <Check checked={model.settings.nonlinear} onChange={v => setModel(m => ({ ...m, settings: { ...m.settings, nonlinear: v } }))} title="Iterates with the geometric stiffness from the member axial forces">Second-Order (P-Δ) Analysis</Check>
                 {analysis && (analysis.errors.length ? <StatusChip kind="fail">Not Solved</StatusChip> : res?.error ? <StatusChip kind="fail">Case Not Solved</StatusChip>
