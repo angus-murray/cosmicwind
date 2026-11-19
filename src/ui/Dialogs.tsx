@@ -69,8 +69,8 @@ export function About({ onClose }: { onClose: () => void }) {
           modes are in the mass unit chosen.</P>
       </CollapsePanel>
       <CollapsePanel title="Using the Program">
-        <P>The input column has two tabs. The Model tab is a tree: the Structure folder holds the datasheets for nodes, members, sections, materials and node masses. Boundary Conditions
-          holds node restraints, member releases and continuous member supports, each listing only the nodes or members that have one. The Loads folder holds
+        <P>The input column has two tabs. The Model tab lists Structure, which holds the datasheets for nodes, members, sections, materials and node masses. Boundary Conditions
+          holds node restraints, member releases and continuous member supports, each listing only the nodes or members that have one. Loads holds
           load cases, combinations, node loads, distributed and point member loads, support settlements and temperature loads. Clicking an item opens its
           datasheet or options in place, and several can stay open together. Selecting a row in the Nodes or Members datasheet selects the same node or
           member in the graphics window, and selecting in the graphics window opens the datasheet at its row. The number of a section or material can be

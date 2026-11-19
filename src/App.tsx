@@ -52,9 +52,8 @@ export default function App() {
   useEffect(() => saveUnits(units), [units]);
   /** A stored value in the units shown, a typed value back in the stored units, and the unit text. */
   const sh = (q: Quantity, v: number) => toShown(q, units, v), rd = (q: Quantity, v: number) => fromShown(q, units, v), ul = (q: Quantity) => unitLabel(q, units);
-  /** Which items of the tree are open (each drops down in place), and which groups are folded. */
+  /** Which items of the tree are open (each drops down in place). */
   const [openKeys, setOpenKeys] = useState<Record<string, boolean>>({});
-  const [closedGroups, setClosedGroups] = useState<Record<string, boolean>>({});
   /** The tab of the left-hand menu: Model, or Analysis and Results (the analysis runs and the drawing tools are hidden while it is shown). */
   const [tab, setTab] = useState<Tab>('structure');
   const [sel, setSel] = useState<Sel>(noSel);
@@ -400,7 +399,7 @@ export default function App() {
   }
   useEffect(() => { document.querySelector('.input-column .sheet tr.sel')?.scrollIntoView({ block: 'nearest' }); }, [sel]);
   const modelGroups: TreeGroup[] = [
-    { key: 'structure', title: 'Structure', items: [
+    { key: 'structure', title: 'Structure', flat: true, items: [
       { key: 'nodes', icon: Dot, label: 'Nodes', count: model.nodes.length, render: () => (
                 <Sheet rows={model.nodes} addLabel="Add Node" cols={nodeCols} onChange={set('nodes')} rowLabel={idLabel} selected={r => sel.nodes.has(r.id)} onSelect={pickN}
                   newRow={() => { const l = model.nodes[model.nodes.length - 1]; return { id: nextId(model.nodes), x: l?.x ?? 0, y: l?.y ?? 0, z: l?.z ?? 0, r: FREE }; }}
@@ -431,7 +430,7 @@ export default function App() {
                 <Sheet rows={model.masses} addLabel="Add Mass" cols={massCols} onChange={set('masses')} newRow={() => ({ node: firstNode, m: 1 })} empty="No node masses (used for natural frequencies)" />
       ) },
     ] },
-    { key: 'boundary', title: 'Boundary Conditions', items: [
+    { key: 'boundary', title: 'Boundary Conditions', flat: true, items: [
       { key: 'restraints', icon: Anchor, label: 'Node Restraints', count: restraintRows.length, render: () => (
         <Sheet rows={restraintRows} cols={restraintCols} addLabel="Add Restraint" onChange={setRestraints} rowLabel={r => r.node} selected={r => sel.nodes.has(r.node)} onSelect={(r, add) => pickN({ id: r.node }, add)}
           newRow={() => ({ node: model.nodes.find(n => nodeFree(n.r))?.id ?? model.nodes[0]?.id ?? 1, r: PIN })} empty="No restraints: every node is free" />
@@ -445,7 +444,7 @@ export default function App() {
           newRow={() => ({ member: model.members.find(b => !b.ky && !b.kz)?.id ?? model.members[0]?.id ?? 1, ky: 1000, kz: 0 })} empty="No continuous supports along members" />
       ) },
     ] },
-    { key: 'loads', title: 'Loads', items: [
+    { key: 'loads', title: 'Loads', flat: true, items: [
       { key: 'cases', icon: ListOrdered, label: 'Cases', count: model.loadCases.length, render: () => (
                 <Sheet rows={model.loadCases} addLabel="Add Case" onRenumber={renumberCase} isTaken={caseNumberTaken} cols={lcCols} onChange={set('loadCases')} rowLabel={idLabel} newRow={() => ({ id: nextId(cases), name: 'Load Case', gx: 0, gy: 0, gz: 0 })}
                   onDelete={r => setModel(m => {
@@ -598,7 +597,7 @@ export default function App() {
                 </div>
               </div>;
             })()}
-            <Tree groups={tab === 'results' ? [resultsGroup, staticGroup, modalGroup] : modelGroups} open={openKeys} onToggle={k => setOpenKeys(o => ({ ...o, [k]: !o[k] }))} closed={closedGroups} onToggleGroup={k => setClosedGroups(c => ({ ...c, [k]: !c[k] }))}
+            <Tree groups={tab === 'results' ? [resultsGroup, staticGroup, modalGroup] : modelGroups} open={openKeys} onToggle={k => setOpenKeys(o => ({ ...o, [k]: !o[k] }))}
               tabs={[{ key: 'structure', label: 'Model', icon: Box }, { key: 'results', label: 'Analysis and Results', icon: LineChart }]} tab={tab} onTab={k => setTab(k as Tab)} />
           </div>
 

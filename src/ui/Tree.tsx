@@ -29,7 +29,7 @@ export interface TreeTab { key: string; label: string; icon: Icon }
  * Any number of items can be open at once. The classes (`tree-*`) are in `index.css` and use only the house-style tokens, so the dark theme applies.
  */
 export function Tree({ groups, open, onToggle, closed, onToggleGroup, tabs, tab, onTab }: {
-  groups: TreeGroup[]; open: Record<string, boolean>; onToggle: (key: string) => void; closed: Record<string, boolean>; onToggleGroup: (key: string) => void;
+  groups: TreeGroup[]; open: Record<string, boolean>; onToggle: (key: string) => void; closed?: Record<string, boolean>; onToggleGroup?: (key: string) => void;
   /** Tabs along the top of the panel (the groups shown are those of the active tab). */
   tabs?: TreeTab[]; tab?: string; onTab?: (key: string) => void;
 }) {
@@ -57,10 +57,10 @@ export function Tree({ groups, open, onToggle, closed, onToggleGroup, tabs, tab,
             <div className="space-y-0.5">{items(g)}</div>
           </div>
         );
-        const folded = !!closed[g.key], FolderIcon = folded ? Folder : FolderOpen;
+        const folded = !!closed?.[g.key], FolderIcon = folded ? Folder : FolderOpen;
         return (
           <div key={g.key}>
-            <button type="button" className="tree-group" aria-expanded={!folded} onClick={() => onToggleGroup(g.key)}>
+            <button type="button" className="tree-group" aria-expanded={!folded} onClick={() => onToggleGroup?.(g.key)}>
               <ChevronDown className={`w-4 h-4 shrink-0 text-slate-500 transition-transform ${folded ? '-rotate-90' : ''}`} />
               <FolderIcon className="w-4 h-4 shrink-0 text-slate-500" />{g.title}
             </button>
