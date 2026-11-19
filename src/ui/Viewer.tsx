@@ -508,16 +508,19 @@ export const Viewer = React.forwardRef<ViewerHandle, {
     const a = nodeMap.get(m.a), b = nodeMap.get(m.b); if (!a || !b) return [];
     const c = memberAxes(a, b, m.angle || 0); if (c.L < 1e-9) return [];
     const r = result.members.get(m.id), n = r ? r.x.length : 0;
+    const relCache = new Map<number, V3>(), frameCache = new Map<number, V3[]>(); // a section is asked for many times at the same station
     const rel: Rel = r && n > 1 ? (x: number): V3 => {
+      const hit = relCache.get(x); if (hit) return hit;
       let k = 0; while (k < n - 2 && r.x[k + 1] < x) k++;
       const t = r.x[k + 1] > r.x[k] ? Math.min(1, Math.max(0, (x - r.x[k]) / (r.x[k + 1] - r.x[k]))) : 0, f = x / u.L, d3 = [r.dx, r.dy, r.dz];
       const rl = d3.map(v => (v[k] + (v[k + 1] - v[k]) * t - ((1 - f) * v[0] + f * v[n - 1])) * dsc);
-      return [0, 1, 2].map(i => u.R[0][i] * rl[0] + u.R[1][i] * rl[1] + u.R[2][i] * rl[2]) as V3;
+      const out = [0, 1, 2].map(i => u.R[0][i] * rl[0] + u.R[1][i] * rl[1] + u.R[2][i] * rl[2]) as V3; relCache.set(x, out); return out;
     } : undefined;
     // The cross section turns with the member: at a station its axes are the undeformed axes turned by the rotations there, so a section stays square to the drawn
     // axis, does not turn where the member is fixed, and turns with the node at a rigid joint (the two members that meet there turn alike, and no gap opens).
     // The bending rotations are drawn as the angle of the exaggerated shape, so the section stays normal to the curve that is drawn.
     const frame: Frame = r && n > 1 ? (x: number): V3[] => {
+      const hit = frameCache.get(x); if (hit) return hit;
       let k = 0; while (k < n - 2 && r.x[k + 1] < x) k++;
       const t = r.x[k + 1] > r.x[k] ? Math.min(1, Math.max(0, (x - r.x[k]) / (r.x[k + 1] - r.x[k]))) : 0, lp = (v: number[]) => v[k] + (v[k + 1] - v[k]) * t;
       const w = [lp(r.rx) * dsc, Math.atan(lp(r.ry) * dsc), Math.atan(lp(r.rz) * dsc)], ang = Math.hypot(w[0], w[1], w[2]);
@@ -526,7 +529,8 @@ export const Viewer = React.forwardRef<ViewerHandle, {
         const cr = [e[1] * v[2] - e[2] * v[1], e[2] * v[0] - e[0] * v[2], e[0] * v[1] - e[1] * v[0]], d = e[0] * v[0] + e[1] * v[1] + e[2] * v[2];
         return [0, 1, 2].map(i => v[i] * cs + cr[i] * sn + e[i] * d * (1 - cs));
       };
-      return [[1, 0, 0], [0, 1, 0], [0, 0, 1]].map(ax => { const q = rot(ax); return [0, 1, 2].map(c => u.R[0][c] * q[0] + u.R[1][c] * q[1] + u.R[2][c] * q[2]) as V3; });
+      const out = [[1, 0, 0], [0, 1, 0], [0, 0, 1]].map(ax => { const q = rot(ax); return [0, 1, 2].map(c => u.R[0][c] * q[0] + u.R[1][c] * q[1] + u.R[2][c] * q[2]) as V3; });
+      frameCache.set(x, out); return out;
     } : undefined;
     return [{ m, A: as(a), B: as(b), L: u.L, R: c.R, sx: c.L / u.L, rel, frame }];
   }), [model.members, nodeMap0, nodeMap, deformedOn, result, dsc]);
@@ -548,6 +552,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
     <text key={key} x={p[0]} y={p[1]} fontSize={11} fontWeight={bold ? 600 : 400} textAnchor={anchor} fill={colour} style={halo}>{s}</text>;
 
   // ---- Rendered view: each member is its cross section extruded along its length
+  const zoomTier = Math.round(2 * Math.log2(Math.max(cam.zoom, 1e-6)));
   const mesh = useMemo(() => {
     if (!opts.solid) return [];
     const secs = new Map(model.sections.map(x => [x.id, x]));
@@ -562,7 +567,14 @@ export const Viewer = React.forwardRef<ViewerHandle, {
       const loops = loopsOf(g.m.sec), at = (x: number, y: number, z: number): V3 => along(g, x, [0, y / 1000, z / 1000]);
       const rowsAt = (x: number) => (g.frame ? g.frame(x) : g.R); // the axes of the section at x
       const dirAt = (x: number, y: number, z: number): V3 => { const F = rowsAt(x); return [0, 1, 2].map(i => F[1][i] * y + F[2][i] * z) as V3; };
-      const xs = g.rel ? Array.from({ length: 25 }, (_, k) => g.L * k / 24) : [0, g.L]; // a bent member is cut along its length
+      // A bent member is cut along its length into as many pieces as its bend needs: the error of a straight piece of a curve grows with the square of its length, so a member
+      // that is hardly bent gets two pieces and a strongly bent one up to 40, so that the error stays under about half a pixel at the zoom (in half-octave steps, so that zooming does not rebuild the faces at every step); fewer pieces is a faster redraw.
+      let cuts = 1;
+      if (g.rel) { // the largest curvature, from second differences of the bend along the member: a straight piece of length l is off the curve by about curvature × l² / 8
+        const h = g.L / 8, at = (k: number) => (k <= 0 || k >= 8 ? [0, 0, 0] : g.rel!(h * k)); let kmax = 0;
+        for (let k = 1; k < 8; k++) { const a = at(k - 1), b = at(k), c = at(k + 1); kmax = Math.max(kmax, Math.hypot(a[0] - 2 * b[0] + c[0], a[1] - 2 * b[1] + c[1], a[2] - 2 * b[2] + c[2]) / (h * h)); }
+        cuts = Math.max(2, Math.min(40, Math.ceil(g.L * Math.sqrt(kmax / (8 * (0.4 / 2 ** (zoomTier / 2))))))); }
+      const xs = Array.from({ length: cuts + 1 }, (_, k) => g.L * k / cuts);
       for (const l of loops) l.forEach((p, i) => {
         const q = l[(i + 1) % l.length], ny = q[1] - p[1], nz = -(q[0] - p[0]), len = Math.hypot(ny, nz) || 1;
         for (let k = 0; k + 1 < xs.length; k++) faces.push({ id: g.m.id, pts: [at(xs[k], p[0], p[1]), at(xs[k], q[0], q[1]), at(xs[k + 1], q[0], q[1]), at(xs[k + 1], p[0], p[1])], n: dirAt((xs[k] + xs[k + 1]) / 2, ny / len, nz / len) });
@@ -571,7 +583,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
         faces.push({ id: g.m.id, pts: [], n: rowsAt(x)[0].map(v => v * sg) as V3, caps: loops.map(l => l.map(p => at(x, p[0], p[1]))) });
     }
     return faces;
-  }, [opts.solid, geo, model.sections]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [opts.solid, geo, model.sections, zoomTier]); // eslint-disable-line react-hooks/exhaustive-deps
   const stressOn = !!result && !mode && opts.stress !== 'none' && opts.solid;
   /** The members cut into small faces along their length and around the section, each carrying the stress at its centre. */
   const stressMesh = useMemo(() => {
