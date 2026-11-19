@@ -12,6 +12,9 @@
   .sheet input, .sheet select { @apply w-full h-6 px-1 bg-transparent text-center outline-none focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-500; }
   /* Tree (src/ui/Tree.tsx): folders for the groups, items that open as drop-downs in place, thin grey guide lines for the levels. Built from the house-style tokens only. */
   .tree-group { @apply flex items-center gap-2 w-full h-8 px-1 text-left text-sm font-bold text-slate-800 rounded-md hover:bg-slate-100; }
+  /* The tabs along the top of the tree panel: the active one is the colour of the panel and joined to it. */
+  .tree-tab { @apply h-9 px-4 flex items-center gap-2 text-xs font-semibold rounded-t-lg border border-slate-200 bg-slate-50 text-slate-600 hover:text-slate-900; }
+  .tree-tab-active { @apply relative z-10 -mb-px bg-white text-blue-600 border-b-white hover:text-blue-600; }
   .tree-children { @apply ml-3 pl-2 border-l border-slate-200 space-y-0.5; }
   .tree-item { @apply h-8 w-full px-1.5 flex items-center gap-2 rounded-md text-[13px] text-slate-700 hover:bg-slate-100; }
   .tree-item-open { @apply font-semibold text-blue-700 bg-blue-50 hover:bg-blue-50; }

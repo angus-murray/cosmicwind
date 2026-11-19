@@ -69,23 +69,23 @@ export function About({ onClose }: { onClose: () => void }) {
           modes are in the mass unit chosen.</P>
       </CollapsePanel>
       <CollapsePanel title="Using the Program">
-        <P>The input column is a tree. The Structure folder holds the datasheets for nodes, members, sections, materials and node masses. Boundary Conditions
+        <P>The input column has two tabs. The Model tab is a tree: the Structure folder holds the datasheets for nodes, members, sections, materials and node masses. Boundary Conditions
           holds node restraints, member releases and continuous member supports, each listing only the nodes or members that have one. The Loads folder holds
           load cases, combinations, node loads, distributed and point member loads, support settlements and temperature loads. Clicking an item opens its
           datasheet or options in place, and several can stay open together. Selecting a row in the Nodes or Members datasheet selects the same node or
           member in the graphics window, and selecting in the graphics window opens the datasheet at its row. The number of a section or material can be
-          changed by clicking it, to any number that is not already used. The Analysis and Results folder solves the model while any of its items is open and
+          changed by clicking it, to any number that is not already used. The Analysis and Results tab solves the model while it is shown and
           controls what is drawn. The load case or combination shown is chosen in the graphics window, which also shows its gravity load under the selector
           when Loads is on.</P>
         <P>In the graphics window, drag with the left button to rotate, click twice to draw a selection box, use the wheel to zoom, and drag with the right
-          button to pan. Dragging with the middle button scales the deflected shape up and down while an Analysis and Results item is open. Right-clicking a
+          button to pan. Dragging with the middle button scales the deflected shape up and down on the Analysis and Results tab. Right-clicking a
           node, a member or empty space gives the actions that apply, such as loads, restraints, releases, section, angle, subdivide, move and copy. The
           buttons at the right of the graphics window switch on the node and member numbers, section names, local axes, the origin, restraints, releases,
           loads and notes. The origin is a snap point while it is switched on.</P>
         <P>Nodes and members are drawn with the Node and Member tools on the XY plane at Z = 0. The pointer snaps to nodes, to member midpoints and to the
           origin, and a member being drawn is held to a global axis when it is within 8 degrees of one (the Z axis only in a view where it can be seen) or when X, Y or Z is typed. A length can be typed for
           the member. The section and material of new members are chosen in the panel that appears when the Member tool is selected.</P>
-        <P>In the Analysis and Results folder, Deflections can show the global displacements at the nodes (X, Y, Z or XYZ, in the length unit) and the deflected shape
+        <P>On the Analysis and Results tab, Deflections can show the global displacements at the nodes (X, Y, Z or XYZ, in the length unit) and the deflected shape
           with its nodes. Diagrams draws the member actions, and hovering over a member or its diagram gives the values at that point, joined to the
           diagram by a line. Reactions and Stresses are switched on in their own items, and the stress scale is at the top left of the graphics window.
           Buckling and Vibration give the number of modes to calculate; clicking a mode in the list shows its shape, and vibration modes are animated.</P>

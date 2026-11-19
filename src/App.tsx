@@ -24,8 +24,6 @@ interface ReleaseRow { member: number; relA: string; relB: string; kA?: number[]
 interface SupportRow { member: number; ky: number; kz: number }
 const nodeFree = (c: string | undefined) => !c || c === DASH || c === 'RRRRRR';
 const memberFree = (c: string | undefined) => !c || c === DASH || c === 'FFFFFF';
-/** The items of the Analysis and Results group of the tree: while any of them is open the analysis runs and the model is shown with its results. */
-const RESULT_KEYS = ['analysis', 'defl', 'diag', 'react', 'stress', 'buck', 'vib'];
 const STORE = 'moonrock-model';
 const load = (): Model => { try { const s = localStorage.getItem(STORE); if (s) return normalise(JSON.parse(s)); } catch { /* fall through */ } return defaultModel(); };
 const code = (v: string | number, old: string) => { const s = String(v).toUpperCase().trim(); return /^[-–—]?$/.test(s) ? DASH : /^[FRS]{6}$/.test(s) ? s : old; };
@@ -57,7 +55,8 @@ export default function App() {
   /** Which items of the tree are open (each drops down in place), and which groups are folded. */
   const [openKeys, setOpenKeys] = useState<Record<string, boolean>>({});
   const [closedGroups, setClosedGroups] = useState<Record<string, boolean>>({});
-  const tab: Tab = RESULT_KEYS.some(k => openKeys[k]) ? 'results' : 'structure';
+  /** The tab of the left-hand menu: Model, or Analysis and Results (the analysis runs and the drawing tools are hidden while it is shown). */
+  const [tab, setTab] = useState<Tab>('structure');
   const [sel, setSel] = useState<Sel>(noSel);
   const [tool, setTool] = useState<Tool>('select');
   const [opts, setOpts] = useState<ViewOpts>({ notes: true, nodeNo: false, memberNo: false, secNames: false, loads: true, localAxes: false, diagrams: { N: false, T: false, Vy: false, Vz: false, Vres: false, Mz: false, My: false, Mres: false }, stress: 'none', deflected: false, defLabels: 'none', origin: true, restraints: true, releases: true, reactions: false, scale: 1, defScale: 1, solid: false });
@@ -115,7 +114,7 @@ export default function App() {
     return { ...m, members: [...m.members, { id: nextId(m.members), a, b, sec: m.sections.some(s => s.id === drawSec) ? drawSec! : last?.sec ?? m.sections[0].id, mat: m.materials.some(s => s.id === drawMat) ? drawMat! : last?.mat ?? m.materials[0]?.id ?? 1, angle: 0, type: 'N', relA: DASH, relB: DASH }] };
   });
   /** A blank model: no nodes or members, steel, and a dead load case. Undo brings the previous model back. */
-  const newModel = () => { setModel(() => emptyModel()); setFitRev(r => r + 1); setSel(noSel()); setCaseId(1); setModeIx(null); setDialog(null); setOpenKeys({}); };
+  const newModel = () => { setModel(() => emptyModel()); setFitRev(r => r + 1); setSel(noSel()); setCaseId(1); setModeIx(null); setDialog(null); setOpenKeys({}); setTab('structure'); };
   const delSel = useCallback(() => { setModel(m => deleteNodes(deleteMembersAndFreeNodes(m, sel.members), sel.nodes)); setSel(noSel()); }, [sel, setModel]);
   const patchMembers = (p: Partial<Member>) => setModel(m => ({ ...m, members: m.members.map(x => (sel.members.has(x.id) ? { ...x, ...p } : x)) }));
   const subdivide = (np: number = 4, which: Set<number> = sel.members) => setModel(m => {
@@ -400,7 +399,7 @@ export default function App() {
     if (s.nodes.size || s.members.size) setOpenKeys(o => ({ ...o, ...(s.nodes.size ? { nodes: true } : {}), ...(s.members.size ? { members: true } : {}) }));
   }
   useEffect(() => { document.querySelector('.input-column .sheet tr.sel')?.scrollIntoView({ block: 'nearest' }); }, [sel]);
-  const treeGroups: TreeGroup[] = [
+  const modelGroups: TreeGroup[] = [
     { key: 'structure', title: 'Structure', items: [
       { key: 'nodes', icon: Dot, label: 'Nodes', count: model.nodes.length, render: () => (
                 <Sheet rows={model.nodes} addLabel="Add Node" cols={nodeCols} onChange={set('nodes')} rowLabel={idLabel} selected={r => sel.nodes.has(r.id)} onSelect={pickN}
@@ -474,7 +473,10 @@ export default function App() {
                 <Sheet rows={model.thermal} addLabel="Add Temperature Load" cols={thCols} onChange={set('thermal')} newRow={() => ({ lc: lcOnly, member: firstMem, dT: 20 })} empty="No temperature loads" />
       ) },
     ] },
-    { key: 'results', title: 'Analysis and Results',
+  ];
+  const resultsGroup: TreeGroup = { key: 'results', title: 'Analysis and Results', flat: true,
+      badge: analysis ? (analysis.errors.length ? <StatusChip kind="fail">Not Solved</StatusChip> : res?.error ? <StatusChip kind="fail">Case Not Solved</StatusChip>
+        : <StatusChip kind="pass">{model.settings.nonlinear ? 'Second-Order' : 'Linear'} Analysis Solved in {analysis.ms < 10 ? analysis.ms.toFixed(1) : analysis.ms.toFixed(0)} ms</StatusChip>) : null,
       notice: tab === 'results' && analysis && (analysis.errors.length > 0 || analysis.warnings.length > 0 || !!res?.error) ? <div className="space-y-2.5">
         {analysis.errors.length > 0 && <Banner kind="error" title="The model could not be analysed" items={analysis.errors} />}
         {res?.error && <Banner kind="error" title="This case could not be solved" items={[res.error]} />}
@@ -484,8 +486,6 @@ export default function App() {
       { key: 'analysis', icon: Calculator, label: 'Analysis Options', render: () => (
 <div className="space-y-2.5">
                 <Check checked={model.settings.nonlinear} onChange={v => setModel(m => ({ ...m, settings: { ...m.settings, nonlinear: v } }))} title="Iterates with the geometric stiffness from the member axial forces">Second-Order (P-Δ) Analysis</Check>
-                {analysis && (analysis.errors.length ? <StatusChip kind="fail">Not Solved</StatusChip> : res?.error ? <StatusChip kind="fail">Case Not Solved</StatusChip>
-                  : <StatusChip kind="pass">{model.settings.nonlinear ? 'Second-Order' : 'Linear'} Analysis Solved in {analysis.ms < 10 ? analysis.ms.toFixed(1) : analysis.ms.toFixed(0)} ms</StatusChip>)}
 </div>
       ) },
       { key: 'defl', icon: MoveDown, label: 'Deflections', render: () => (
@@ -555,8 +555,7 @@ export default function App() {
                 {modeTable('modal', analysis?.modal?.values, 'Frequency (Hz)')}
 </div>
       ) },
-    ] },
-  ];
+    ] };
 
   return (
     <UnitsContext.Provider value={units}>
@@ -587,7 +586,8 @@ export default function App() {
                 </div>
               </div>;
             })()}
-            <Tree groups={treeGroups} open={openKeys} onToggle={k => setOpenKeys(o => ({ ...o, [k]: !o[k] }))} closed={closedGroups} onToggleGroup={k => setClosedGroups(c => ({ ...c, [k]: !c[k] }))} />
+            <Tree groups={tab === 'results' ? [resultsGroup] : modelGroups} open={openKeys} onToggle={k => setOpenKeys(o => ({ ...o, [k]: !o[k] }))} closed={closedGroups} onToggleGroup={k => setClosedGroups(c => ({ ...c, [k]: !c[k] }))}
+              tabs={[{ key: 'structure', label: 'Model', icon: Box }, { key: 'results', label: 'Analysis and Results', icon: LineChart }]} tab={tab} onTab={k => setTab(k as Tab)} />
           </div>
 
           <div className="results-column">
