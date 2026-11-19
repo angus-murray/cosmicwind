@@ -5,6 +5,7 @@ import { sym } from './Sym';
 import { releaseCode, restraintCode, FIXED, PIN, type Model, type Note } from '../model/types';
 import { outlineLoops, outlineOf } from '../model/sections';
 import { memberAxes, type CaseResult, type Vec6 } from '../solver/frame';
+import { fibreStress } from '../solver/stress';
 
 export type StressKey = 'none' | 'normal' | 'axial' | 'mz' | 'my';
 /** Stress results coloured on the rendered members: tension positive, from the axial force and the bending moments at each point of the section. */
@@ -628,10 +629,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
       const at = (x: number, y: number, z: number): V3 => along(g, x, [0, y / 1000, z / 1000]);
       const rowsAt = (x: number) => (g.frame ? g.frame(x) : g.R); // the axes of the section at x
       const dirAt = (x: number, y: number, z: number): V3 => { const F = rowsAt(x); return [0, 1, 2].map(i => F[1][i] * y + F[2][i] * z) as V3; };
-      const sigma = (i: number, y: number, z: number) => { // MPa: N in kN, M in kNm, section in mm
-        const n = r.N[i] * 1000 / A, bz = -r.Mz[i] * 1e6 * y / Iz, by = r.My[i] * 1e6 * z / Iy;
-        return opts.stress === 'axial' ? n : opts.stress === 'mz' ? bz : opts.stress === 'my' ? by : n + bz + by;
-      };
+      const sigma = (i: number, y: number, z: number) => fibreStress(opts.stress, r.N[i], r.Mz[i], r.My[i], y, z, A, Iy, Iz); // MPa
       const size = Math.max(...loops[0].flatMap(p => [Math.abs(p[0]), Math.abs(p[1])])) * 2;
       for (const l of loops) l.forEach((p, e) => {
         const q = l[(e + 1) % l.length], ny = q[1] - p[1], nz = -(q[0] - p[0]), len = Math.hypot(ny, nz) || 1, nSeg = Math.max(1, Math.min(6, Math.ceil(len / (size * 0.18))));

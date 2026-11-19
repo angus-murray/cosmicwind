@@ -26,4 +26,5 @@ Structural analysis app; follows the `engineering-ui` house style (`node_modules
 - A member may carry a distributed mass `mu` (t/m) on top of its section's mass. It weighs under gravity as a distributed load (like the self-weight), and every member's mass, the section's and the added, is spread along it by a consistent mass matrix in the vibration analysis (`consistentMass` in `src/solver/frame.ts`: cubic in bending, linear axially and in twist, condensed with the member's releases), assembled into a matrix with the profile of the stiffness matrix. Node masses are added on the diagonal. Mass never gives rotary inertia to bending.
 - The solver works in kN, m and t. Every solver change needs a test in `src/solver/frame.test.ts` against a
   closed-form or refined-model result.
+- `src/solver/benchmarks.test.ts` (see `BENCHMARKS.md`) checks the solver against closed-form results. A failure is a defect to explain, not a tolerance to widen; add a benchmark for any new analysis feature.
 - Run `bun run check`, `bun test` and `bun run build` before committing.

@@ -181,7 +181,24 @@ function fixedEnd(el: El, ld: Load): number[] {
 const STATIONS = 21;
 
 /** Internal actions and deflections along a member from its end forces, end displacements and loads. */
-function stations(el: El, ld: Load, end: number[], u: number[], nStations: number, active: boolean): MemberResult {
+function stations(el: El, ld: Load, end: number[], u: number[], nStations: number, active: boolean, second = false): MemberResult {
+  let r = stationPass(el, ld, end, u, nStations, active, null);
+  // Second-order analysis: the axial force at end A acts through the lateral deflection of the member, which adds N (v(x) − v(A)) to the bending moment
+  // at x (the P-δ and chord-rotation terms). The deflection depends on the moment, so it is found by fixed-point iteration; it converges geometrically
+  // because the axial force of an element is far below its own Euler load. Without it the moment at the far end would differ from the element end
+  // moment by N × (the lateral displacement of one end relative to the other).
+  if (second && end[0] !== 0 && r.x.length > 1) {
+    for (let it = 0; it < 12; it++) {
+      const prev = r, lerp = (arr: number[], x: number) => { let k = 1; while (k < prev.x.length - 1 && prev.x[k] < x) k++; const x0 = prev.x[k - 1], x1 = prev.x[k], t = x1 > x0 ? (x - x0) / (x1 - x0) : 0; return arr[k - 1] + (arr[k] - arr[k - 1]) * t - arr[0]; };
+      r = stationPass(el, ld, end, u, nStations, active, x => [lerp(prev.dy, x), lerp(prev.dz, x)]);
+      let dm = 0, mm = 0; for (let i = 0; i < r.x.length; i++) { dm = Math.max(dm, Math.abs(r.Mz[i] - prev.Mz[i]), Math.abs(r.My[i] - prev.My[i])); mm = Math.max(mm, Math.abs(r.Mz[i]), Math.abs(r.My[i])); }
+      if (dm <= 1e-12 * mm + 1e-15) break;
+    }
+  }
+  return r;
+}
+
+function stationPass(el: El, ld: Load, end: number[], u: number[], nStations: number, active: boolean, off: ((x: number) => number[]) | null): MemberResult {
   const L = el.L, xs: [number, boolean][] = [];
   for (let i = 0; i < nStations; i++) xs.push([L * i / (nStations - 1), true]);
   for (const p of ld.point) if (p.x > 1e-9 && p.x < L - 1e-9) xs.push([p.x, false], [p.x, true]);
@@ -190,6 +207,7 @@ function stations(el: El, ld: Load, end: number[], u: number[], nStations: numbe
   const pts = xs.filter((p, i) => i === 0 || p[0] - xs[i - 1][0] > 1e-9 || p[1] !== xs[i - 1][1]);
   const at = (x: number, incl: boolean) => {
     const S = [end[0], end[1], end[2]]; let Mx = end[3], My = end[4] + x * end[2], Mz = end[5] - x * end[1];
+    if (off) { const o = off(x); Mz += end[0] * o[0]; My -= end[0] * o[1]; } // the axial force at A acts at the deflected position (second order)
     for (const d of ld.dist) {
       const c = Math.min(x, d.e) - d.s, len = d.e - d.s; if (c <= 0 || len <= 0) continue;
       for (let i = 0; i < 3; i++) {
@@ -497,7 +515,7 @@ export function analyse(model: Model): Analysis {
     const react = new Float64Array(nodes.length * 6);
     els.forEach((e, i) => {
       rot12(e.R, ends[i], true).forEach((v, a) => { react[e.dofs[a]] += v; });
-      res.members.set(e.m.id, stations(e, loads[i], ends[i], uloc[i], nStations, active[i]));
+      res.members.set(e.m.id, stations(e, loads[i], ends[i], uloc[i], nStations, active[i], model.settings.nonlinear));
     });
     for (const s of springs) react[s.dof] = -s.k * u[eq[s.dof]] + P[s.dof];
     const sprung = new Set(springs.map(s => s.dof));
