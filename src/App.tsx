@@ -3,7 +3,7 @@ import { AppHeader, Banner, Segmented, useElementSize, Check, NumberField, Repor
 import { Axis3d, Box, Eye, Ruler, FilePlus, FolderOpen, Hash, Maximize, MousePointer2, Redo2, Save, Spline, Trash2, Type, Undo2, Weight, Dot, Shapes, Cuboid, Waypoints, StickyNote, Anchor, Unlink, Crosshair, Layers, Activity, TrendingDown, ChevronsDown, Minimize2, LineChart, Calculator, Thermometer, ArrowUpFromLine, MoveDown, Combine, ListOrdered, Waves, ArrowDownToDot } from 'lucide-react';
 import {
   deleteMembersAndFreeNodes, deleteNodes, DASH, emptyModel, FREE, PIN, MATERIAL_PRESETS, nextId, normalise, RELEASES, RESTRAINTS,
-  type Combo, type DistLoad, type LoadCase, type Material, type Member, type Model, type Node, type NodeLoad, type NodeMass, type PointLoad, type Section, type Settlement, type ThermalLoad, mergeMembers, intersectMembers, moveSelection, expandCombo, comboIncludes,
+  type Combo, type DistLoad, type LoadCase, type Material, type Member, type Model, type Node, type NodeLoad, type NodeMass, type PointLoad, type Section, type Settlement, type ThermalLoad, mergeMembers, intersectMembers, moveSelection, expandCombo, comboIncludes, rotatePoint,
 } from './model/types';
 import { defaultModel } from './model/templates';
 import { analyse } from './solver/frame';
@@ -236,9 +236,24 @@ export default function App() {
         if (copyMode) copyWith(q => tf(q)); else moveWith(tf);
       }),
     }));
+    const rotation = (copyMode: boolean): MenuItem => ({
+      label: 'By Rotation…',
+      onClick: () => ask(copyMode ? 'Copy By Rotation' : 'Move By Rotation', [
+        { label: 'Axis (global)', value: 3, options: [{ value: 1, label: 'X' }, { value: 2, label: 'Y' }, { value: 3, label: 'Z' }] },
+        { label: 'Angle (°), right-hand rule', value: 90 },
+        { label: <>Centre <i>X</i> ({ul('length')})</>, value: sh('length', baseNode?.x ?? 0) },
+        { label: <>Centre <i>Y</i> ({ul('length')})</>, value: sh('length', baseNode?.y ?? 0) },
+        { label: <>Centre <i>Z</i> ({ul('length')})</>, value: sh('length', baseNode?.z ?? 0) },
+        ...(copyMode ? [{ label: 'Number of copies', value: 1 }] : [])],
+      ([ax, ang, cx, cy, cz, n]) => {
+        const c = [rd('length', cx), rd('length', cy), rd('length', cz)], e = [0, 0, 0]; e[Math.round(ax) - 1] = 1;
+        const turn = (q: Node, k: number) => rotatePoint([q.x, q.y, q.z], c, e, ang * k * Math.PI / 180); // each copy is turned a further angle
+        if (copyMode) copyWith((q, k) => turn(q, k), n); else moveWith(q => turn(q, 1));
+      }),
+    });
     const moveCopy: MenuItem[] = [
-      { label: 'Move', sub: [{ label: 'To a Point', onClick: () => startPick(false) }, { label: 'By Increment…', onClick: inc(false) }, ...mirror(false)] },
-      { label: 'Copy', sub: [{ label: 'To a Point', onClick: () => startPick(true) }, { label: 'By Increment…', onClick: inc(true) }, ...mirror(true)] },
+      { label: 'Move', sub: [{ label: 'To a Point', onClick: () => startPick(false) }, { label: 'By Increment…', onClick: inc(false) }, rotation(false), ...mirror(false)] },
+      { label: 'Copy', sub: [{ label: 'To a Point', onClick: () => startPick(true) }, { label: 'By Increment…', onClick: inc(true) }, rotation(true), ...mirror(true)] },
     ];
     const noteItems = (kind: 'node' | 'member', ref: number | null): MenuItem[] => {
       if (ref === null) return [];

@@ -319,3 +319,11 @@ export function comboIncludes(m: Model, a: number, b: number): boolean {
   };
   return walk(a);
 }
+
+/** A point turned by `angle` (radians, right-hand rule) about the axis through `centre` in the direction `axis` (a unit vector). */
+export function rotatePoint(p: [number, number, number], centre: number[], axis: number[], angle: number): [number, number, number] {
+  const l = Math.hypot(axis[0], axis[1], axis[2]) || 1, e = axis.map(v => v / l), c = Math.cos(angle), s = Math.sin(angle);
+  const v = [p[0] - centre[0], p[1] - centre[1], p[2] - centre[2]];
+  const cross = [e[1] * v[2] - e[2] * v[1], e[2] * v[0] - e[0] * v[2], e[0] * v[1] - e[1] * v[0]], dot = e[0] * v[0] + e[1] * v[1] + e[2] * v[2];
+  return [0, 1, 2].map(i => centre[i] + v[i] * c + cross[i] * s + e[i] * dot * (1 - c)) as [number, number, number];
+}

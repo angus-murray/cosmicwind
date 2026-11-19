@@ -76,7 +76,7 @@ export type PromptState = {
   x: number;
   y: number;
   title: string;
-  fields: { label: React.ReactNode; value: number }[];
+  fields: { label: React.ReactNode; value: number; /** Choices for the field, which is then a list of these instead of a box; the value is the number of the choice. */ options?: { value: number; label: string }[] }[];
   onSubmit: (values: number[]) => void;
 };
 
@@ -115,7 +115,13 @@ export const PromptBox: React.FC<{ prompt: PromptState; W: number; H: number; on
       {prompt.fields.map((f, i) => (
         <label key={i} className="block">
           <span className="label">{f.label}</span>
-          <input
+          {f.options ? (
+            <select className="control-sm w-full" value={vals[i]} onChange={(e) => setVals(vals.map((v, k) => (k === i ? e.target.value : v)))}
+              onKeyDown={(e) => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') onClose(); e.stopPropagation(); }}>
+              {f.options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          ) : (
+                    <input
             ref={i === 0 ? first : undefined}
             type="text"
             inputMode="decimal"
@@ -128,6 +134,7 @@ export const PromptBox: React.FC<{ prompt: PromptState; W: number; H: number; on
               e.stopPropagation();
             }}
           />
+          )}
         </label>
       ))}
       <div className="flex justify-end gap-2">

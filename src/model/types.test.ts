@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { deleteMembersAndFreeNodes, intersectMembers, mergeMembers, moveSelection, expandCombo, comboIncludes, emptyModel, normalise, releaseCode, restraintCode, type Member, type Model } from './types';
+import { deleteMembersAndFreeNodes, intersectMembers, mergeMembers, moveSelection, expandCombo, comboIncludes, rotatePoint, emptyModel, normalise, releaseCode, restraintCode, type Member, type Model } from './types';
 
 const mem = (id: number, a: number, b: number): Member => ({ id, a, b, sec: 1, mat: 1, angle: 0, type: 'N', relA: 'FFFFFF', relB: 'FFFFFF' });
 const frame = (): Model => ({
@@ -122,4 +122,13 @@ test('a combination can include other combinations, and a loop is not allowed', 
   // a loop in a file is cut where it comes back to a combination being expanded
   const loop: Model = { ...m, combos: [{ id: 10, name: 'C10', f: { 1: 1, 12: 1 } }, ...m.combos.slice(1)] };
   const eloop = expandCombo(loop, 10); expect(eloop.get(1)).toBeCloseTo(2); expect(eloop.get(2)).toBeCloseTo(-1);
+});
+
+test('a point is turned about an axis by the right-hand rule', () => {
+  const near = (a: number[], b: number[]) => a.forEach((v, i) => expect(v).toBeCloseTo(b[i], 9));
+  near(rotatePoint([1, 0, 0], [0, 0, 0], [0, 0, 1], Math.PI / 2), [0, 1, 0]);       // X to Y about Z
+  near(rotatePoint([0, 1, 0], [0, 0, 0], [1, 0, 0], Math.PI / 2), [0, 0, 1]);       // Y to Z about X
+  near(rotatePoint([0, 0, 1], [0, 0, 0], [0, 1, 0], Math.PI / 2), [1, 0, 0]);       // Z to X about Y
+  near(rotatePoint([3, 1, 0], [2, 1, 0], [0, 0, 1], Math.PI), [1, 1, 0]);           // about a centre that is not the origin
+  near(rotatePoint([5, 5, 5], [0, 0, 0], [1, 1, 1], 1.234), rotatePoint([5, 5, 5], [0, 0, 0], [2, 2, 2], 1.234)); // the axis is normalised
 });
