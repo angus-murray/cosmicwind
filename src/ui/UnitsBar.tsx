@@ -26,7 +26,7 @@ export function UnitsBar({ units, onChange }: { units: Units; onChange: (u: Unit
         <div className="w-[210px] min-h-0 overflow-y-auto scroll-thin bg-white border border-slate-200 rounded-lg shadow-lg p-2.5 text-xs text-slate-700 space-y-1.5" role="dialog" aria-label="Units">
           <div className="text-[11px] font-semibold text-slate-500">Presets</div>
           <div className="flex gap-1" role="group" aria-label="Unit presets">
-            {PRESETS.map(p => <button key={p.name} type="button" title={`${p.units.length}, ${p.units.mass}, ${p.units.force}, ${p.units.stress}, ${TEMP[p.units.temp]}, s`}
+            {PRESETS.map(p => <button key={p.name} type="button" title={`${p.units.length}, ${p.units.force}, ${p.units.mass}, ${p.units.stress}, ${TEMP[p.units.temp]}`}
               className={`btn flex-1 !h-6 !px-1 !text-[11px] ${active === p.name ? '!bg-blue-50 !border-blue-600 !text-blue-700' : ''}`} onClick={() => onChange(p.units)}>{p.name}</button>)}
           </div>
           {FIELDS.map(f => (
