@@ -278,7 +278,12 @@ export default function App() {
       items.push(...noteItems('node', ctx.node));
       if (edit) items.push(
         { label: 'Apply Load…', onClick: run(() => { setLoadKind('node'); setDialog('load'); }) },
-        { label: 'Restraint…', onClick: () => openDof('node', 'A') }, 'sep', ...moveCopy, 'sep');
+        { label: 'Restraint…', onClick: () => openDof('node', 'A') },
+        { label: 'Add Mass…', onClick: () => ask(`Add Mass to ${nodes.length > 1 ? `${nodes.length} Nodes` : `Node ${nodes[0]}`}`, [{ label: <>Mass ({ul('mass')})</>, value: 0 }], ([v]) => {
+          const mass = rd('mass', v); if (!(mass > 0)) return; // added to the mass the node has, or a new row in the Masses datasheet
+          setModel(m => { const ms = m.masses.slice(); for (const node of nodes) { const i = ms.findIndex(x => x.node === node); if (i >= 0) ms[i] = { ...ms[i], m: ms[i].m + mass }; else ms.push({ node, m: mass }); } return { ...m, masses: ms }; });
+          setOpenKeys(o => ({ ...o, masses: true }));
+        }) }, 'sep', ...moveCopy, 'sep');
       items.push({ label: 'Select Connected Members', onClick: run(() => pick(sel.nodes, [...sel.members, ...model.members.filter(m => sel.nodes.has(m.a) || sel.nodes.has(m.b)).map(m => m.id)])) });
       if (edit) items.push('sep', { label: nodes.length > 1 ? 'Delete Nodes' : 'Delete Node', danger: true, onClick: run(delSel) });
     } else if (ctx.member !== null && mems.length) {
