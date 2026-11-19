@@ -175,7 +175,7 @@ export const TextPromptBox: React.FC<{ prompt: TextPromptState; W: number; H: nu
     <div data-ui className="absolute z-20 bg-white border border-slate-200 rounded-lg shadow-lg p-2.5 text-xs text-slate-700 space-y-2" style={{ left, top, width: w }}
       onPointerDown={(e) => e.stopPropagation()} onContextMenu={(e) => (e.preventDefault(), onClose())}>
       <div className="text-[11px] font-semibold text-slate-500">{prompt.title}</div>
-      <textarea ref={area} rows={4} className="control w-full select-text resize-none" value={text} onChange={(e) => setText(e.target.value)}
+      <textarea ref={area} rows={4} className="control !h-auto py-2 w-full select-text resize-none leading-snug" value={text} onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) submit(); if (e.key === 'Escape') onClose(); e.stopPropagation(); }} />
       <div className="flex justify-end gap-2">
         <button type="button" className="btn" onClick={onClose}>Cancel</button>
