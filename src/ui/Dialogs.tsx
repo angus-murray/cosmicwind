@@ -154,34 +154,35 @@ export type LoadSpec =
 export function LoadDialog({ kind, count, cases, lc0, onClose, onApply }: {
   kind: 'node' | 'member'; count: number; cases: { id: number; name: string }[]; lc0: number; onClose: () => void; onApply: (lc: number, spec: LoadSpec) => void;
 }) {
-  const { show, read, label } = useUnits();
+  const { read, label } = useUnits();
   const [lc, setLc] = useState(lc0);
   const [mode, setMode] = useState<'dist' | 'point'>('dist');
   const [axes, setAxes] = useState<Axes>('G');
   const [dir, setDir] = useState<PointDir>('Y');
-  const [w1, setW1] = useState(() => show('forcePerLength', -5)), [w2, setW2] = useState(() => show('forcePerLength', -5)), [s0, setS0] = useState(0), [e0, setE0] = useState(100);
-  const [p, setP] = useState(() => show('force', -10)), [pos, setPos] = useState(50);
-  const [f, setF] = useState(() => [0, show('force', -10), 0, 0, 0, 0]);
+  // The boxes start empty. A blank load is zero, a blank Start is the start of the member and a blank End is its end; a point load needs its position.
+  const [w1, setW1] = useState<number | undefined>(), [w2, setW2] = useState<number | undefined>(), [s0, setS0] = useState<number | undefined>(), [e0, setE0] = useState<number | undefined>();
+  const [p, setP] = useState<number | undefined>(), [pos, setPos] = useState<number | undefined>();
+  const [f, setF] = useState<(number | undefined)[]>([undefined, undefined, undefined, undefined, undefined, undefined]);
   const dirOpts = (moments: boolean) => { const c = (v: string) => (axes === 'L' ? v.toLowerCase() : v); return [...(['X', 'Y', 'Z'] as const).map(d => ({ value: d, label: moments ? `Force ${c(d)}` : c(d) })), ...(moments ? (['MX', 'MY', 'MZ'] as const).map(d => ({ value: d, label: `Moment ${c(d.slice(1))}` })) : [])]; };
-  const ok = kind === 'node' ? f.some(v => v !== 0) : mode === 'dist' ? e0 > s0 && s0 >= 0 && e0 <= 100 && (w1 !== 0 || w2 !== 0) : p !== 0 && pos >= 0 && pos <= 100;
-  const apply = () => onApply(lc, kind === 'node' ? { type: 'node', f: f.map((v, i) => read(i < 3 ? 'force' : 'moment', v)) }
-    : mode === 'dist' ? { type: 'dist', axes, dir: (['X', 'Y', 'Z'].includes(dir) ? dir : 'Y') as Dir, w1: read('forcePerLength', w1), w2: read('forcePerLength', w2), s: s0, e: e0 } : { type: 'point', axes, dir, p: read(dir.length === 2 ? 'moment' : 'force', p), pos });
+  const ok = kind === 'node' ? f.some(v => !!v) : mode === 'dist' ? (e0 ?? 100) > (s0 ?? 0) && (s0 ?? 0) >= 0 && (e0 ?? 100) <= 100 && (!!w1 || !!w2) : !!p && pos !== undefined && pos >= 0 && pos <= 100;
+  const apply = () => onApply(lc, kind === 'node' ? { type: 'node', f: f.map((v, i) => read(i < 3 ? 'force' : 'moment', v ?? 0)) }
+    : mode === 'dist' ? { type: 'dist', axes, dir: (['X', 'Y', 'Z'].includes(dir) ? dir : 'Y') as Dir, w1: read('forcePerLength', w1 ?? 0), w2: read('forcePerLength', w2 ?? 0), s: s0 ?? 0, e: e0 ?? 100 } : { type: 'point', axes, dir, p: read(dir.length === 2 ? 'moment' : 'force', p ?? 0), pos: pos ?? 50 });
   return (
     <Modal title={kind === 'node' ? 'Apply Node Load' : 'Apply Member Load'} onClose={onClose} variant="dialog">
       <div className="space-y-3">
         <SelectField label="Load Case" value={String(lc)} onChange={v => setLc(Number(v))} options={cases.map(c => ({ value: String(c.id), label: `${c.id}: ${c.name}` }))} />
         {kind === 'node' ? <div className="grid grid-cols-3 gap-2">
-          {['FX', 'FY', 'FZ', 'MX', 'MY', 'MZ'].map((n, i) => `${n} (${label(i < 3 ? 'force' : 'moment')})`).map((l, i) => <NumberField key={l} label={sym(l)} value={f[i]} step={1} onChange={v => setF(f.map((x, k) => (k === i ? v : x)))} />)}
+          {['FX', 'FY', 'FZ', 'MX', 'MY', 'MZ'].map((n, i) => `${n} (${label(i < 3 ? 'force' : 'moment')})`).map((l, i) => <NumberField key={l} label={sym(l)} value={f[i]} step={1} onChange={v => setF(f.map((x, k) => (k === i ? v : x)))} onClear={() => setF(f.map((x, k) => (k === i ? undefined : x)))} />)}
         </div> : <>
           <Segmented value={mode} onChange={v => { setMode(v); if (v === 'dist' && ['MX', 'MY', 'MZ'].includes(dir)) setDir('Y'); }} options={[{ value: 'dist', label: 'Distributed' }, { value: 'point', label: 'Point' }]} />
           <div className="grid grid-cols-2 gap-2">
             <SelectField label="Axes" value={axes} onChange={v => setAxes(v as Axes)} options={[{ value: 'G', label: 'Global' }, { value: 'L', label: 'Local' }]} />
             <SelectField label="Direction" value={dir} onChange={v => setDir(v as PointDir)} options={dirOpts(mode === 'point')} />
             {mode === 'dist' ? <>
-              <NumberField label={`Start Load (${label('forcePerLength')})`} value={w1} step={1} onChange={setW1} /><NumberField label={`End Load (${label('forcePerLength')})`} value={w2} step={1} onChange={setW2} />
-              <NumberField label="Start (%)" value={s0} min={0} max={100} step={10} onChange={setS0} /><NumberField label="End (%)" value={e0} min={0} max={100} step={10} onChange={setE0} />
+              <NumberField label={`Start Load (${label('forcePerLength')})`} value={w1} step={1} onChange={setW1} onClear={() => setW1(undefined)} /><NumberField label={`End Load (${label('forcePerLength')})`} value={w2} step={1} onChange={setW2} onClear={() => setW2(undefined)} />
+              <NumberField label="Start (%)" value={s0} placeholder="0" min={0} max={100} step={10} onChange={setS0} onClear={() => setS0(undefined)} /><NumberField label="End (%)" value={e0} placeholder="100" min={0} max={100} step={10} onChange={setE0} onClear={() => setE0(undefined)} />
             </> : <>
-              <NumberField label={dir.length === 2 ? `Moment (${label('moment')})` : `Force (${label('force')})`} value={p} step={1} onChange={setP} /><NumberField label="Position (%)" value={pos} min={0} max={100} step={10} onChange={setPos} />
+              <NumberField label={dir.length === 2 ? `Moment (${label('moment')})` : `Force (${label('force')})`} value={p} step={1} onChange={setP} onClear={() => setP(undefined)} /><NumberField label="Position (%)" value={pos} min={0} max={100} step={10} onChange={setPos} onClear={() => setPos(undefined)} />
             </>}
           </div>
         </>}
