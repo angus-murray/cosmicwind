@@ -59,7 +59,7 @@ export default function App() {
   const [tab, setTab] = useState<Tab>('structure');
   const [sel, setSel] = useState<Sel>(noSel);
   const [tool, setTool] = useState<Tool>('select');
-  const [opts, setOpts] = useState<ViewOpts>({ notes: true, nodeNo: false, memberNo: false, secNames: false, loads: true, localAxes: false, diagrams: { N: false, T: false, Vy: false, Vz: false, Vres: false, Mz: false, My: false, Mres: false }, stress: 'none', deflected: false, defLabels: 'none', origin: true, restraints: true, releases: true, reactions: false, scale: 1, defScale: 1, solid: false });
+  const [opts, setOpts] = useState<ViewOpts>({ notes: true, nodeNo: false, memberNo: false, secNames: false, loads: true, localAxes: false, diagrams: { N: false, T: false, Vy: false, Vz: false, Vres: false, Mz: false, My: false, Mres: false }, stress: 'none', geometry: 'undeformed', defLabels: 'none', origin: true, restraints: true, releases: true, reactions: false, scale: 1, defScale: 1, solid: false });
   const o = <K extends keyof ViewOpts>(k: K) => (v: ViewOpts[K]) => setOpts(p => ({ ...p, [k]: v }));
   const [caseId, setCaseId] = useState(1);
   const [modeIx, setModeIx] = useState<{ kind: 'buckling' | 'modal'; i: number } | null>(null);
@@ -488,6 +488,17 @@ export default function App() {
                 <Check checked={model.settings.nonlinear} onChange={v => setModel(m => ({ ...m, settings: { ...m.settings, nonlinear: v } }))} title="Iterates with the geometric stiffness from the member axial forces">Second-Order (P-Δ) Analysis</Check>
 </div>
       ) },
+    ] };
+  /** Static results are drawn on the geometry chosen here (undeformed or deformed, never both); buckling and vibration draw their own shapes. */
+  const staticGroup: TreeGroup = { key: 'static', title: 'Static Results', flat: true,
+      notice: <div className="space-y-2.5 px-1 pb-1">
+        <div>
+          <span className="label">Geometry</span>
+          <Segmented value={opts.geometry} onChange={v => o('geometry')(v)} options={[{ value: 'undeformed', label: 'Undeformed' }, { value: 'deformed', label: 'Deformed' }]} />
+        </div>
+        {opts.geometry === 'deformed' && <NumberField label="Deflection Scale" value={opts.defScale} min={0.1} max={20} step={0.25} onChange={o('defScale')} />}
+      </div>,
+      items: [
       { key: 'defl', icon: MoveDown, label: 'Deflections', render: () => (
 <div className="space-y-2.5">
                 <div className="space-y-2.5">
@@ -495,8 +506,6 @@ export default function App() {
                     <span className="label">Global Deflection at Nodes</span>
                     <Segmented value={opts.defLabels} onChange={v => o('defLabels')(v)} options={[{ value: 'none', label: 'None' }, { value: 'X', label: 'X' }, { value: 'Y', label: 'Y' }, { value: 'Z', label: 'Z' }, { value: 'XYZ', label: 'XYZ' }]} />
                   </div>
-                  <Check checked={opts.deflected} onChange={o('deflected')}>Deflected Shape</Check>
-                  <NumberField label="Deflection Scale" value={opts.defScale} min={0.1} max={20} step={0.25} onChange={o('defScale')} />
                 </div>
 </div>
       ) },
@@ -543,6 +552,9 @@ export default function App() {
                 <SelectField hint="Colours the rendered members; switches to the rendered view" label="Normal Stress" value={opts.stress} onChange={v => setOpts(q => ({ ...q, stress: v as StressKey, solid: v !== 'none' ? true : q.solid }))} options={STRESSES.map(t => ({ value: t.key, label: t.label }))} />
 </div>
       ) },
+    ] };
+  const modalGroup: TreeGroup = { key: 'modal', title: 'Modal Results', flat: true,
+      items: [
       { key: 'buck', icon: Minimize2, label: 'Buckling', render: () => (
 <div className="space-y-2.5">
                 <NumberField label="Modes" value={model.settings.bucklingModes} min={0} max={20} onChange={v => setModel(m => ({ ...m, settings: { ...m.settings, bucklingModes: Math.round(v) } }))} />
@@ -586,7 +598,7 @@ export default function App() {
                 </div>
               </div>;
             })()}
-            <Tree groups={tab === 'results' ? [resultsGroup] : modelGroups} open={openKeys} onToggle={k => setOpenKeys(o => ({ ...o, [k]: !o[k] }))} closed={closedGroups} onToggleGroup={k => setClosedGroups(c => ({ ...c, [k]: !c[k] }))}
+            <Tree groups={tab === 'results' ? [resultsGroup, staticGroup, modalGroup] : modelGroups} open={openKeys} onToggle={k => setOpenKeys(o => ({ ...o, [k]: !o[k] }))} closed={closedGroups} onToggleGroup={k => setClosedGroups(c => ({ ...c, [k]: !c[k] }))}
               tabs={[{ key: 'structure', label: 'Model', icon: Box }, { key: 'results', label: 'Analysis and Results', icon: LineChart }]} tab={tab} onTab={k => setTab(k as Tab)} />
           </div>
 

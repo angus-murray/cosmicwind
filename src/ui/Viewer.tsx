@@ -58,7 +58,7 @@ export type Tool = 'select' | 'node' | 'member' | 'measure';
 /** Points clicked in empty space lie on the global XY plane (Z = 0), to the nearest millimetre. */
 export interface ViewOpts {
   notes: boolean; nodeNo: boolean; memberNo: boolean; secNames: boolean; loads: boolean; localAxes: boolean;
-  diagrams: Record<DiagramKey, boolean>; stress: StressKey; deflected: boolean; /** A marker at the global origin (0, 0, 0). */ origin: boolean; /** Support symbols at the nodes. */ restraints: boolean; /** Symbols for the member end releases. */ releases: boolean; /** Global displacement components written beside each node. */ defLabels: DefLabels; reactions: boolean; scale: number; defScale: number;
+  diagrams: Record<DiagramKey, boolean>; stress: StressKey; /** The geometry the static results are drawn on: the model as drawn, or displaced by the analysis (never both). */ geometry: 'undeformed' | 'deformed'; /** A marker at the global origin (0, 0, 0). */ origin: boolean; /** Support symbols at the nodes. */ restraints: boolean; /** Symbols for the member end releases. */ releases: boolean; /** Global displacement components written beside each node. */ defLabels: DefLabels; reactions: boolean; scale: number; defScale: number;
   /** Rendered 3D view of the member cross sections instead of the wireframe. */
   solid: boolean;
 }
@@ -136,13 +136,23 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   const [marq, setMarq] = useState<{ w: V3; x1: number; y1: number } | null>(null);
   const W = size.width || 800, H = size.height || 600;
 
-  const nodeMap = useMemo(() => new Map(model.nodes.map(n => [n.id, n])), [model.nodes]);
+  const nodeMap0 = useMemo(() => new Map(model.nodes.map(n => [n.id, n])), [model.nodes]);
   const bounds = useMemo(() => {
     const lo: V3 = [Infinity, Infinity, Infinity], hi: V3 = [-Infinity, -Infinity, -Infinity];
     for (const n of model.nodes) [n.x, n.y, n.z].forEach((v, i) => { lo[i] = Math.min(lo[i], v); hi[i] = Math.max(hi[i], v); });
     if (!model.nodes.length) return { lo: [0, 0, 0] as V3, hi: [10, 6, 0] as V3, S: 10 };
     return { lo, hi, S: Math.max(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2], 1) };
   }, [model.nodes]);
+  /** The static results are drawn on the deformed geometry: every node, member, load, diagram and reaction at its displaced position. */
+  const deformedOn = !!result && !mode && opts.geometry === 'deformed';
+  const dsc = useMemo(() => { // the scale of the displacements: the largest is 7 % of the size of the model times the deflection scale
+    if (!result) return 0;
+    let dmax = 1e-12; result.disp.forEach(d => { dmax = Math.max(dmax, Math.hypot(d[0], d[1], d[2])); });
+    result.members.forEach(r => r.dy.forEach((v, i) => { dmax = Math.max(dmax, Math.hypot(r.dx[i], v, r.dz[i])); }));
+    return 0.07 * bounds.S * opts.defScale / dmax;
+  }, [result, bounds.S, opts.defScale]);
+  const nodeMap = useMemo(() => (!deformedOn || !result ? nodeMap0 : new Map(model.nodes.map(n => { const d = result.disp.get(n.id); return [n.id, d ? { ...n, x: n.x + d[0] * dsc, y: n.y + d[1] * dsc, z: n.z + d[2] * dsc } : n]; }))), [nodeMap0, deformedOn, result, dsc, model.nodes]);
+  const viewNodes = useMemo(() => [...nodeMap.values()], [nodeMap]);
 
   /** The screen axes in model coordinates: rx points right and ry up. */
   const basis = useMemo(() => ({ rx: cam.rx, ry: cam.ry }), [cam.rx, cam.ry]);
@@ -283,7 +293,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
     const u = uLabel('length');
     const code = (c: string) => (c === FIXED ? 'Fixed' : c === PIN ? 'Pinned' : c);
     if (nodeId !== null) {
-      const n = nodeMap.get(nodeId); if (!n) return null;
+      const n = nodeMap0.get(nodeId); if (!n) return null;
       const out = [`Node ${n.id}`, `X: ${len3(n.x)} ${u}`, `Y: ${len3(n.y)} ${u}`, `Z: ${len3(n.z)} ${u}`], r = restraintCode(n.r);
       if (r !== 'RRRRRR') out.push(`Restraint: ${code(r)}${r !== FIXED && r !== PIN ? ' (DX DY DZ RX RY RZ)' : ''}`);
       const k = model.members.filter(b => b.a === n.id || b.b === n.id).length; out.push(`Members: ${k}`);
@@ -292,7 +302,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
       return out;
     }
     if (memberId !== null) {
-      const b = model.members.find(x => x.id === memberId), a = b && nodeMap.get(b.a), c = b && nodeMap.get(b.b); if (!b || !a || !c) return null;
+      const b = model.members.find(x => x.id === memberId), a = b && nodeMap0.get(b.a), c = b && nodeMap0.get(b.b); if (!b || !a || !c) return null;
       const sec = model.sections.find(x => x.id === b.sec), mat = model.materials.find(x => x.id === b.mat);
       const out = [`Member ${b.id}`, `Nodes: ${b.a} – ${b.b}`, `Length: ${len3(Math.hypot(c.x - a.x, c.y - a.y, c.z - a.z))} ${u}`, `Section: ${sec ? `${sec.id}: ${sec.name}` : b.sec}`, `Material: ${mat ? `${mat.id}: ${mat.name}` : b.mat}`];
       if (b.angle) out.push(`Angle: ${+b.angle.toFixed(3)}°`);
@@ -341,7 +351,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
     if (!d.moved && Math.hypot(dx, dy) < 4) return;
     d.moved = true; d.x = e.clientX; d.y = e.clientY;
     if (d.mode === 'note' && noteDrag.current) { const nd = noteDrag.current; nd.dx += dx; nd.dy += dy; setNoteOff({ [nd.id]: [nd.dx, nd.dy] }); }
-    else if (d.mode === 'zoom') { if (onDefScale && (mode || (opts.deflected && result))) onDefScale(Math.exp(-dy * 0.01)); } // middle drag only scales the deflected shape
+    else if (d.mode === 'zoom') { if (onDefScale && (mode || (opts.geometry === 'deformed' && result))) onDefScale(Math.exp(-dy * 0.01)); } // middle drag only scales the deflected shape
     else if (d.mode === 'pan') setCam(c => ({ ...c, px: c.px + dx, py: c.py + dy }));
     else if (d.mode === 'orbit') setCam(c => ({ ...c, ...turn(c.rx, c.ry, dx * 0.008, dy * 0.008) }));
   };
@@ -356,7 +366,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   };
   const hitAt = (sx: number, sy: number): { hitN: number | null; hitM: number | null } => {
     let hitN: number | null = null, best = 9;
-    for (const n of model.nodes) { const q = P([n.x, n.y, n.z]), dist = Math.hypot(q[0] - sx, q[1] - sy); if (dist < best) { best = dist; hitN = n.id; } }
+    for (const n of viewNodes) { const q = P([n.x, n.y, n.z]), dist = Math.hypot(q[0] - sx, q[1] - sy); if (dist < best) { best = dist; hitN = n.id; } }
     let hitM: number | null = null;
     if (hitN === null && opts.solid) { // rendered view: any point on a visible face of a member picks it (nearest face first)
       const inside = (polys: [number, number][][]) => { let c = false; for (const l of polys) for (let i = 0, j = l.length - 1; i < l.length; j = i++) if ((l[i][1] > sy) !== (l[j][1] > sy) && sx < (l[j][0] - l[i][0]) * (sy - l[i][1]) / (l[j][1] - l[i][1]) + l[i][0]) c = !c; return c; };
@@ -387,7 +397,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
       return true;
     };
     const s: Sel = add ? { nodes: new Set(sel.nodes), members: new Set(sel.members) } : { nodes: new Set(), members: new Set() };
-    const pos = new Map(model.nodes.map(n => [n.id, P([n.x, n.y, n.z])]));
+    const pos = new Map(viewNodes.map(n => [n.id, P([n.x, n.y, n.z])]));
     pos.forEach((q, id) => { if (inside(q)) s.nodes.add(id); });
     for (const mb of model.members) {
       const p = pos.get(mb.a), q = pos.get(mb.b); if (!p || !q) continue;
@@ -488,12 +498,27 @@ export const Viewer = React.forwardRef<ViewerHandle, {
 
   // ---- Geometry of the members
   const geo = useMemo(() => model.members.flatMap(m => {
+    const a0 = nodeMap0.get(m.a), b0 = nodeMap0.get(m.b); if (!a0 || !b0) return [];
+    const u = memberAxes(a0, b0, m.angle || 0); if (u.L < 1e-9) return [];
+    type Rel = ((x: number) => V3) | undefined;
+    const as = (a: { x: number; y: number; z: number }) => [a.x, a.y, a.z] as V3;
+    if (!deformedOn || !result) return [{ m, A: as(a0), B: as(b0), L: u.L, R: u.R, sx: 1, rel: undefined as Rel }];
+    // Deformed: the member runs between its displaced end nodes, bent by what the displacements along it add to the straight line between them
     const a = nodeMap.get(m.a), b = nodeMap.get(m.b); if (!a || !b) return [];
-    const { L, R } = memberAxes(a, b, m.angle || 0); if (L < 1e-9) return [];
-    return [{ m, A: [a.x, a.y, a.z] as V3, B: [b.x, b.y, b.z] as V3, L, R }];
-  }), [model.members, nodeMap]);
-  const along = (g: (typeof geo)[number], x: number, off: number[] = [0, 0, 0], s = 1): V3 =>
-    [0, 1, 2].map(i => g.A[i] + g.R[0][i] * x + s * (g.R[0][i] * off[0] + g.R[1][i] * off[1] + g.R[2][i] * off[2])) as V3;
+    const c = memberAxes(a, b, m.angle || 0); if (c.L < 1e-9) return [];
+    const r = result.members.get(m.id), n = r ? r.x.length : 0;
+    const rel: Rel = r && n > 1 ? (x: number): V3 => {
+      let k = 0; while (k < n - 2 && r.x[k + 1] < x) k++;
+      const t = r.x[k + 1] > r.x[k] ? Math.min(1, Math.max(0, (x - r.x[k]) / (r.x[k + 1] - r.x[k]))) : 0, f = x / u.L, d3 = [r.dx, r.dy, r.dz];
+      const rl = d3.map(v => (v[k] + (v[k + 1] - v[k]) * t - ((1 - f) * v[0] + f * v[n - 1])) * dsc);
+      return [0, 1, 2].map(i => u.R[0][i] * rl[0] + u.R[1][i] * rl[1] + u.R[2][i] * rl[2]) as V3;
+    } : undefined;
+    return [{ m, A: as(a), B: as(b), L: u.L, R: c.R, sx: c.L / u.L, rel }];
+  }), [model.members, nodeMap0, nodeMap, deformedOn, result, dsc]);
+  const along = (g: (typeof geo)[number], x: number, off: number[] = [0, 0, 0], s = 1): V3 => {
+    const rl = g.rel ? g.rel(x) : null;
+    return [0, 1, 2].map(i => g.A[i] + g.R[0][i] * x * g.sx + (rl ? rl[i] : 0) + s * (g.R[0][i] * off[0] + g.R[1][i] * off[1] + g.R[2][i] * off[2])) as V3;
+  };
   const path = (pts: [number, number][]) => pts.map((p, i) => `${i ? 'L' : 'M'}${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join('');
   const arrow = (tail: [number, number], tip: [number, number], colour: string, key: string, w = 1.5) => {
     const dx = tip[0] - tail[0], dy = tip[1] - tail[1], l = Math.hypot(dx, dy) || 1, ux = dx / l, uy = dy / l, h = Math.min(7, l * 0.45);
@@ -663,7 +688,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   }
   curvesRef.current = curves;
   const defl: React.ReactNode[] = [];
-  const shape = mode ?? (opts.deflected && result ? result.disp : null);
+  const shape = mode ?? null; // only a buckling or vibration shape is drawn on top of the model; the deformed geometry replaces it
   if (shape) {
     let dmax = 1e-12; shape.forEach(d => { dmax = Math.max(dmax, Math.hypot(d[0], d[1], d[2])); });
     if (!mode && result) result.members.forEach(r => r.dy.forEach((v, i) => { dmax = Math.max(dmax, Math.hypot(r.dx[i], v, r.dz[i])); }));
@@ -752,7 +777,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   const colourOf = (id: number) => { const c = secColours.get(id); return c && /^#[0-9a-f]{6}$/i.test(c) ? c : sectionColour(id); };
   const secName = new Map(model.sections.map(s => [s.id, s.name]));
   const chainNode = chain !== null ? nodeMap.get(chain) : null;
-  const faded = !stressOn && !!(result || mode) && (active.length > 0 || opts.deflected || !!mode);
+  const faded = !stressOn && !!(result || mode) && (active.length > 0 || !!mode);
   return (
     <div ref={box} className="absolute inset-0 overflow-hidden">
       <svg ref={svgRef} width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="block touch-none select-none" style={{ cursor: tool === 'select' && !pick ? 'default' : snapAt ? 'none' : 'crosshair' }}
@@ -805,7 +830,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
         </g>; })()}
         {opts.localAxes && geo.map(g => { const c = along(g, g.L / 2), p = P(c); return <g key={`ax${g.m.id}`}>{[RED, GREEN, BLUE].map((col, i) => { const d = dirS(g.R[i] as V3); return d && <g key={i} strokeLinecap="round"><line x1={p[0]} y1={p[1]} x2={p[0] + d[0] * 20} y2={p[1] + d[1] * 20} stroke="#fff" strokeWidth={6} strokeOpacity={0.9} /><line x1={p[0]} y1={p[1]} x2={p[0] + d[0] * 20} y2={p[1] + d[1] * 20} stroke={col} strokeWidth={3.5} /></g>; })}</g>; })}
         {diag}{defl}{loads}
-        {model.nodes.map(n => {
+        {viewNodes.map(n => {
           const p = P([n.x, n.y, n.z]), r = opts.restraints ? restraintCode(n.r) : 'RRRRRR', t = r.slice(0, 3), on = sel.nodes.has(n.id);
           return <g key={n.id}>
             {r === 'FFFFFF' ? <path d={`M${p[0] - 8} ${p[1] + 3}h16v6h-16z`} fill="#64748b" />
