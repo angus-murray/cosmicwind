@@ -519,6 +519,8 @@ export const Viewer = React.forwardRef<ViewerHandle, {
     const rl = g.rel ? g.rel(x) : null;
     return [0, 1, 2].map(i => g.A[i] + g.R[0][i] * x * g.sx + (rl ? rl[i] : 0) + s * (g.R[0][i] * off[0] + g.R[1][i] * off[1] + g.R[2][i] * off[2])) as V3;
   };
+  /** The axis of a member on the screen: straight, or, on the deformed geometry, through the points along its deflected shape. */
+  const axisPts = (g: (typeof geo)[number]): [number, number][] => (g.rel ? Array.from({ length: 13 }, (_, i) => P(along(g, g.L * i / 12))) : [P(g.A), P(g.B)]);
   const path = (pts: [number, number][]) => pts.map((p, i) => `${i ? 'L' : 'M'}${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join('');
   const arrow = (tail: [number, number], tip: [number, number], colour: string, key: string, w = 1.5) => {
     const dx = tip[0] - tail[0], dy = tip[1] - tail[1], l = Math.hypot(dx, dy) || 1, ux = dx / l, uy = dy / l, h = Math.min(7, l * 0.45);
@@ -544,9 +546,10 @@ export const Viewer = React.forwardRef<ViewerHandle, {
     for (const g of geo) {
       const loops = loopsOf(g.m.sec), at = (x: number, y: number, z: number): V3 => along(g, x, [0, y / 1000, z / 1000]);
       const dir = (y: number, z: number): V3 => [0, 1, 2].map(i => g.R[1][i] * y + g.R[2][i] * z) as V3;
+      const xs = g.rel ? Array.from({ length: 13 }, (_, k) => g.L * k / 12) : [0, g.L]; // a bent member is cut along its length
       for (const l of loops) l.forEach((p, i) => {
         const q = l[(i + 1) % l.length], ny = q[1] - p[1], nz = -(q[0] - p[0]), len = Math.hypot(ny, nz) || 1;
-        faces.push({ id: g.m.id, pts: [at(0, p[0], p[1]), at(0, q[0], q[1]), at(g.L, q[0], q[1]), at(g.L, p[0], p[1])], n: dir(ny / len, nz / len) });
+        for (let k = 0; k + 1 < xs.length; k++) faces.push({ id: g.m.id, pts: [at(xs[k], p[0], p[1]), at(xs[k], q[0], q[1]), at(xs[k + 1], q[0], q[1]), at(xs[k + 1], p[0], p[1])], n: dir(ny / len, nz / len) });
       });
       for (const [x, sg] of [[0, -1], [g.L, 1]] as const)
         faces.push({ id: g.m.id, pts: [], n: g.R[0].map(v => v * sg) as V3, caps: loops.map(l => l.map(p => at(x, p[0], p[1]))) });
@@ -624,7 +627,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
       const n = Math.max(1, Math.round(len / 26)), tails: [number, number][] = [];
       for (let k = 0; k <= n; k++) {
         const t = k / n, w = (l.w1 + (l.w2 - l.w1) * t) * f, h = Math.abs(w) < 1e-12 ? 0 : 8 + 26 * Math.abs(w) / wMax, sg = Math.sign(w);
-        const tip: [number, number] = [p0[0] + (p1[0] - p0[0]) * t, p0[1] + (p1[1] - p0[1]) * t], tail: [number, number] = [tip[0] - sg * d[0] * h, tip[1] - sg * d[1] * h];
+        const tip: [number, number] = g.rel ? P(along(g, s0 + (s1 - s0) * t)) : [p0[0] + (p1[0] - p0[0]) * t, p0[1] + (p1[1] - p0[1]) * t], tail: [number, number] = [tip[0] - sg * d[0] * h, tip[1] - sg * d[1] * h];
         tails.push(tail); if (h > 0) loads.push(arrow(tail, tip, RED, `d${i}-${k}`, 1));
       }
       loads.push(<path key={`de${i}`} d={path(tails)} fill="none" stroke={RED} strokeWidth={1} />);
@@ -785,11 +788,11 @@ export const Viewer = React.forwardRef<ViewerHandle, {
         onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerLeave={() => { setHover({ n: null, m: null }); setSnapAt(null); setTip(null); }} onMouseDown={e => { if (e.button === 1) e.preventDefault(); }} onContextMenu={e => e.preventDefault()}>
         <rect width={W} height={H} fill="#f8fafc" />
         {geo.map(g => {
-          const p = P(g.A), q = P(g.B), on = sel.members.has(g.m.id), off = result?.members.get(g.m.id)?.active === false;
+          const d = path(axisPts(g)), on = sel.members.has(g.m.id), off = result?.members.get(g.m.id)?.active === false;
           const base = rgb(colourOf(g.m.sec)), col = toHex(faded ? mixRgb(base, [148, 163, 184], 0.55) : base);
-          return <g key={g.m.id}>
-            {on && <line x1={p[0]} y1={p[1]} x2={q[0]} y2={q[1]} stroke={BLUE} strokeWidth={opts.solid ? 7 : 8} strokeOpacity={0.35} strokeLinecap="round" />}
-            <line x1={p[0]} y1={p[1]} x2={q[0]} y2={q[1]} stroke={col} strokeWidth={opts.solid ? 1.25 : faded ? 1.75 : 2.75} strokeLinecap="round"
+          return <g key={g.m.id} fill="none" strokeLinejoin="round">
+            {on && <path d={d} stroke={BLUE} strokeWidth={opts.solid ? 7 : 8} strokeOpacity={0.35} strokeLinecap="round" />}
+            <path d={d} stroke={col} strokeWidth={opts.solid ? 1.25 : faded ? 1.75 : 2.75} strokeLinecap="round"
               strokeDasharray={!opts.solid && (off || g.m.type !== 'N') ? '6 4' : undefined} opacity={off ? 0.5 : 1} />
           </g>;
         })}
@@ -803,7 +806,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
           }
           return <path key={i} d={f.d} fill={col} stroke={col} fillRule="evenodd" opacity={off ? 0.5 : 1} />;
         })}</g>}
-        {hover.m !== null && (() => { const g = geo.find(x => x.m.id === hover.m); if (!g) return null; const p = P(g.A), q = P(g.B); return <line x1={p[0]} y1={p[1]} x2={q[0]} y2={q[1]} stroke={AMBER} strokeWidth={9} strokeOpacity={0.4} strokeLinecap="round" pointerEvents="none" />; })()}
+        {hover.m !== null && (() => { const g = geo.find(x => x.m.id === hover.m); if (!g) return null; return <path d={path(axisPts(g))} fill="none" stroke={AMBER} strokeWidth={9} strokeOpacity={0.4} strokeLinecap="round" strokeLinejoin="round" pointerEvents="none" />; })()}
         {geo.flatMap(g => ([['A', g.m.relA, g.A, g.B, g.m.kA], ['B', g.m.relB, g.B, g.A, g.m.kB]] as const).map(([end, relRaw, at, from, kk]) => {
           if (!opts.releases) return null; const code6 = releaseCode(relRaw), rel = code6.replace(/S/g, 'F'), sp = [...code6].map((c, i) => c === 'S' && ![1, 2].includes(i) && (kk?.[i] ?? 0) > 0);
           if (!rel.includes('R') && !sp.some(Boolean)) return null;
