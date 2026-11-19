@@ -48,7 +48,7 @@ export function Tree({ groups, open, onToggle, closed, onToggleGroup, tabs, tab,
     );
   });
   const panel = (
-    <section className={`panel !space-y-1 lg:flex-1 ${tabs ? '!rounded-tl-none' : ''}`}>
+    <section className="panel !space-y-1 lg:flex-1">
       {groups.map(g => {
         if (g.flat) return (
           <div key={g.key} className="space-y-1 pt-2 first:pt-0">
