@@ -664,6 +664,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
       const sc = 0.14 * bounds.S * opts.scale / vmax, res = key === 'Vres' || key === 'Mres';
       for (const g of geo) {
         const r = result.members.get(g.m.id); if (!r) continue;
+        if (!r.x.some((_, i) => { const c = comp(r, i); return c[0] !== 0 || c[1] !== 0; })) continue; // nothing to draw: this action is zero along the member
         const top = r.x.map((x, i) => { const c = comp(r, i); return P(along(g, x, [0, c[0] * sc, c[1] * sc])); });
         const k = `${key}${g.m.id}`;
         diag.push(<path key={`g${k}`} d={`${path([P(g.A), ...top, P(g.B)])}Z`} fill={colour} fillOpacity={res ? 0.08 : 0.14} stroke={colour} strokeWidth={1.25} strokeLinejoin="round" />);

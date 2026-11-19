@@ -179,3 +179,13 @@ test('a combination of combinations gives the same results as its load cases com
   close(get(11).reactions.get(1)![5], get(12).reactions.get(1)![5]);
   expect(Math.abs(get(11).disp.get(2)![5])).toBeGreaterThan(0);
 });
+
+test('rounding noise is not reported: an axially loaded bar has exactly no bending, shear or torsion', () => {
+  const m = beam(5, 4, 'FFFFFF', 'RFFFRR');
+  m.nodeLoads.push({ lc: 1, node: 5, fx: 120, fy: 0, fz: 0, mx: 0, my: 0, mz: 0 });
+  const c = analyse(m).cases[0];
+  for (const r of c.members.values()) for (const k of ['Vy', 'Vz', 'T', 'My', 'Mz', 'dy', 'dz'] as const) for (const v of r[k]) expect(v).toBe(0);
+  close(c.members.get(1)!.N[0], 120);
+  for (const d of c.disp.values()) { expect(d[1]).toBe(0); expect(d[2]).toBe(0); expect(d[5]).toBe(0); }
+  for (const r of c.reactions.values()) { expect(r[1]).toBe(0); expect(r[5]).toBe(0); }
+});

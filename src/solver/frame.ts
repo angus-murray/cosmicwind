@@ -202,6 +202,29 @@ function stations(el: El, ld: Load, end: number[], u: number[], nStations: numbe
   return r;
 }
 
+/**
+ * Rounding noise (a bending moment of 1e-18 in a model that has none) is set to zero: a result smaller than 1e-8 of the largest of its kind in the case
+ * (forces, moments, displacements, rotations), or smaller than 1e-9 in absolute terms (kN, kNm, m, rad), is not a result.
+ */
+function dropNoise(res: CaseResult) {
+  const REL = 1e-8, ABS = 1e-9;
+  const big = (a: number[][]) => a.reduce((m, v) => v.reduce((q, x) => Math.max(q, Math.abs(x)), m), 0);
+  const F: number[][] = [], M: number[][] = [], D: number[][] = [], A: number[][] = [];
+  res.members.forEach(r => { F.push(r.N, r.Vy, r.Vz); M.push(r.T, r.My, r.Mz); D.push(r.dx, r.dy, r.dz); });
+  res.reactions.forEach(r => { F.push(r.slice(0, 3)); M.push(r.slice(3)); });
+  res.disp.forEach(d => { D.push(d.slice(0, 3)); A.push(d.slice(3)); });
+  const tolF = Math.max(ABS, REL * big(F)), tolM = Math.max(ABS, REL * big(M)), tolD = Math.max(ABS, REL * big(D)), tolA = Math.max(ABS, REL * big(A));
+  const z = (v: number, t: number) => (Math.abs(v) < t ? 0 : v);
+  res.members.forEach(r => {
+    for (const k of ['N', 'Vy', 'Vz'] as const) r[k] = r[k].map(v => z(v, tolF));
+    for (const k of ['T', 'My', 'Mz'] as const) r[k] = r[k].map(v => z(v, tolM));
+    for (const k of ['dx', 'dy', 'dz'] as const) r[k] = r[k].map(v => z(v, tolD));
+    r.end = r.end.map((v, i) => z(v, i % 6 < 3 ? tolF : tolM));
+  });
+  res.reactions.forEach((r, id) => res.reactions.set(id, r.map((v, i) => z(v, i < 3 ? tolF : tolM))));
+  res.disp.forEach((d, id) => res.disp.set(id, d.map((v, i) => z(v, i < 3 ? tolD : tolA))));
+}
+
 export function analyse(model: Model): Analysis {
   const t0 = performance.now();
   const out: Analysis = { errors: [], warnings: [], cases: [], ms: 0 };
@@ -453,6 +476,8 @@ export function analyse(model: Model): Analysis {
       if (f) for (let a = 0; a < 3; a++) if (eq[i * 6 + a] >= 0) for (let b = 0; b < 3; b++) if (eq[i * 6 + b] >= 0) r[a] -= f[a][b] * full(i * 6 + b);
       if (adj[i].length && (f || Array.from({ length: 6 }, (_, d) => eq[i * 6 + d] < 0 || sprung.has(i * 6 + d)).some(Boolean))) res.reactions.set(n.id, r);
     });
+
+    dropNoise(res);
 
     // elastic critical buckling of this case
     if (model.settings.bucklingModes > 0) {
