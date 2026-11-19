@@ -18,6 +18,8 @@ export interface MemberResult {
   x: number[]; N: number[]; Vy: number[]; Vz: number[]; T: number[]; My: number[]; Mz: number[];
   /** Local deflections along the member (m), including the end displacements. */
   dx: number[]; dy: number[]; dz: number[];
+  /** Rotations of the cross section about the local x (twist), y and z axes at the same stations (rad); at the ends they are the end rotations. */
+  rx: number[]; ry: number[]; rz: number[];
   active: boolean;
 }
 export interface ModeSet { values: number[]; shapes: Map<number, Vec6>[] }
@@ -183,7 +185,7 @@ function stations(el: El, ld: Load, end: number[], u: number[], nStations: numbe
     }
     return { N: -S[0], Vy: S[1], Vz: S[2], T: -Mx, My: -My, Mz: -Mz };
   };
-  const r: MemberResult = { L, end, x: [], N: [], Vy: [], Vz: [], T: [], My: [], Mz: [], dx: [], dy: [], dz: [], active };
+  const r: MemberResult = { L, end, x: [], N: [], Vy: [], Vz: [], T: [], My: [], Mz: [], dx: [], dy: [], dz: [], rx: [], ry: [], rz: [], active };
   const EA = el.EA, cur = (x: number, incl: boolean) => { const f = at(x, incl); return [f.N / EA + ld.strain, el.EIz > 0 ? f.Mz / el.EIz : 0, el.EIy > 0 ? -f.My / el.EIy : 0]; };
   let ax = 0; const th = [0, 0], v = [0, 0];
   pts.forEach(([x, incl], i) => {
@@ -195,10 +197,15 @@ function stations(el: El, ld: Load, end: number[], u: number[], nStations: numbe
     const f = at(x, incl);
     r.x.push(x); r.N.push(f.N); r.Vy.push(f.Vy); r.Vz.push(f.Vz); r.T.push(f.T); r.My.push(f.My); r.Mz.push(f.Mz);
     r.dx.push(ax); r.dy.push(v[0]); r.dz.push(v[1]);
+    r.rz.push(th[0]); r.ry.push(-th[1]); // the slopes: rotation about z is dy/dx and about y is −dz/dx
   });
   // Fit the end displacements: a linear correction closes the chord (this supplies the unknown start slope).
   const fit = (arr: number[], u0: number, u1: number) => { const e = u1 - u0 - arr[arr.length - 1]; return arr.map((d, i) => u0 + d + e * r.x[i] / L); };
+  const eY = u[7] - u[1] - r.dy[r.dy.length - 1], eZ = u[8] - u[2] - r.dz[r.dz.length - 1]; // what the correction adds to each deflection at the far end
   r.dx = fit(r.dx, u[0], u[6]); r.dy = fit(r.dy, u[1], u[7]); r.dz = fit(r.dz, u[2], u[8]);
+  // The correction is linear, so it adds a constant to the slopes: the start slope that the integration did not know. The twist runs between the end twists.
+  r.rz = r.rz.map(t => t + eY / L); r.ry = r.ry.map(t => t - eZ / L);
+  r.rx = r.x.map(x => u[3] + (u[9] - u[3]) * x / L);
   return r;
 }
 
@@ -210,7 +217,7 @@ function dropNoise(res: CaseResult) {
   const REL = 1e-8, ABS = 1e-9;
   const big = (a: number[][]) => a.reduce((m, v) => v.reduce((q, x) => Math.max(q, Math.abs(x)), m), 0);
   const F: number[][] = [], M: number[][] = [], D: number[][] = [], A: number[][] = [];
-  res.members.forEach(r => { F.push(r.N, r.Vy, r.Vz); M.push(r.T, r.My, r.Mz); D.push(r.dx, r.dy, r.dz); });
+  res.members.forEach(r => { F.push(r.N, r.Vy, r.Vz); M.push(r.T, r.My, r.Mz); D.push(r.dx, r.dy, r.dz); A.push(r.rx, r.ry, r.rz); });
   res.reactions.forEach(r => { F.push(r.slice(0, 3)); M.push(r.slice(3)); });
   res.disp.forEach(d => { D.push(d.slice(0, 3)); A.push(d.slice(3)); });
   const tolF = Math.max(ABS, REL * big(F)), tolM = Math.max(ABS, REL * big(M)), tolD = Math.max(ABS, REL * big(D)), tolA = Math.max(ABS, REL * big(A));
@@ -219,6 +226,7 @@ function dropNoise(res: CaseResult) {
     for (const k of ['N', 'Vy', 'Vz'] as const) r[k] = r[k].map(v => z(v, tolF));
     for (const k of ['T', 'My', 'Mz'] as const) r[k] = r[k].map(v => z(v, tolM));
     for (const k of ['dx', 'dy', 'dz'] as const) r[k] = r[k].map(v => z(v, tolD));
+    for (const k of ['rx', 'ry', 'rz'] as const) r[k] = r[k].map(v => z(v, tolA));
     r.end = r.end.map((v, i) => z(v, i % 6 < 3 ? tolF : tolM));
   });
   res.reactions.forEach((r, id) => res.reactions.set(id, r.map((v, i) => z(v, i < 3 ? tolF : tolM))));

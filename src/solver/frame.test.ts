@@ -189,3 +189,18 @@ test('rounding noise is not reported: an axially loaded bar has exactly no bendi
   for (const d of c.disp.values()) { expect(d[1]).toBe(0); expect(d[2]).toBe(0); expect(d[5]).toBe(0); }
   for (const r of c.reactions.values()) { expect(r[1]).toBe(0); expect(r[5]).toBe(0); }
 });
+
+test('rotations along a member: a cantilever turns through PL²/2EI at its tip, the fixed end does not turn, and a joint turns both members equally', () => {
+  const m = beam(4, 1, 'FFFFFF', 'RRRRRR');
+  m.nodeLoads.push({ lc: 1, node: 2, fx: 0, fy: -10, fz: 0, mx: 0, my: 0, mz: 0 });
+  const c = analyse(m).cases[0], r = c.members.get(1)!;
+  close(r.rz[r.rz.length - 1], -10 * 16 / (2 * EI)); // P L² / 2EI, downward
+  expect(Math.abs(r.rz[0])).toBeLessThan(1e-12);
+  close(r.rz[r.rz.length - 1], c.disp.get(2)![5]);   // the end rotation is the node's
+  for (let i = 1; i < r.x.length; i++) expect(r.rz[i]).toBeLessThanOrEqual(r.rz[i - 1] + 1e-15); // and the slope is steepening steadily towards the tip
+  // refined model: the rotation half way along equals that of a node placed there
+  const f = beam(4, 2, 'FFFFFF', 'RRRRRR'); f.nodeLoads.push({ lc: 1, node: 3, fx: 0, fy: -10, fz: 0, mx: 0, my: 0, mz: 0 });
+  const cf = analyse(f).cases[0], mid = cf.disp.get(2)![5], k = r.x.findIndex(x => Math.abs(x - 2) < 1e-9);
+  expect(k).toBeGreaterThan(0);
+  close(r.rz[k], mid);
+});

@@ -501,8 +501,9 @@ export const Viewer = React.forwardRef<ViewerHandle, {
     const a0 = nodeMap0.get(m.a), b0 = nodeMap0.get(m.b); if (!a0 || !b0) return [];
     const u = memberAxes(a0, b0, m.angle || 0); if (u.L < 1e-9) return [];
     type Rel = ((x: number) => V3) | undefined;
+    type Frame = ((x: number) => V3[]) | undefined;
     const as = (a: { x: number; y: number; z: number }) => [a.x, a.y, a.z] as V3;
-    if (!deformedOn || !result) return [{ m, A: as(a0), B: as(b0), L: u.L, R: u.R, sx: 1, rel: undefined as Rel }];
+    if (!deformedOn || !result) return [{ m, A: as(a0), B: as(b0), L: u.L, R: u.R, sx: 1, rel: undefined as Rel, frame: undefined as Frame }];
     // Deformed: the member runs between its displaced end nodes, bent by what the displacements along it add to the straight line between them
     const a = nodeMap.get(m.a), b = nodeMap.get(m.b); if (!a || !b) return [];
     const c = memberAxes(a, b, m.angle || 0); if (c.L < 1e-9) return [];
@@ -513,14 +514,28 @@ export const Viewer = React.forwardRef<ViewerHandle, {
       const rl = d3.map(v => (v[k] + (v[k + 1] - v[k]) * t - ((1 - f) * v[0] + f * v[n - 1])) * dsc);
       return [0, 1, 2].map(i => u.R[0][i] * rl[0] + u.R[1][i] * rl[1] + u.R[2][i] * rl[2]) as V3;
     } : undefined;
-    return [{ m, A: as(a), B: as(b), L: u.L, R: c.R, sx: c.L / u.L, rel }];
+    // The cross section turns with the member: at a station its axes are the undeformed axes turned by the rotations there, so a section stays square to the drawn
+    // axis, does not turn where the member is fixed, and turns with the node at a rigid joint (the two members that meet there turn alike, and no gap opens).
+    // The bending rotations are drawn as the angle of the exaggerated shape, so the section stays normal to the curve that is drawn.
+    const frame: Frame = r && n > 1 ? (x: number): V3[] => {
+      let k = 0; while (k < n - 2 && r.x[k + 1] < x) k++;
+      const t = r.x[k + 1] > r.x[k] ? Math.min(1, Math.max(0, (x - r.x[k]) / (r.x[k + 1] - r.x[k]))) : 0, lp = (v: number[]) => v[k] + (v[k + 1] - v[k]) * t;
+      const w = [lp(r.rx) * dsc, Math.atan(lp(r.ry) * dsc), Math.atan(lp(r.rz) * dsc)], ang = Math.hypot(w[0], w[1], w[2]);
+      const e = ang < 1e-12 ? [0, 0, 1] : w.map(v => v / ang), cs = Math.cos(ang), sn = Math.sin(ang);
+      const rot = (v: number[]) => { // Rodrigues: v turned by ang about e, in the undeformed local axes
+        const cr = [e[1] * v[2] - e[2] * v[1], e[2] * v[0] - e[0] * v[2], e[0] * v[1] - e[1] * v[0]], d = e[0] * v[0] + e[1] * v[1] + e[2] * v[2];
+        return [0, 1, 2].map(i => v[i] * cs + cr[i] * sn + e[i] * d * (1 - cs));
+      };
+      return [[1, 0, 0], [0, 1, 0], [0, 0, 1]].map(ax => { const q = rot(ax); return [0, 1, 2].map(c => u.R[0][c] * q[0] + u.R[1][c] * q[1] + u.R[2][c] * q[2]) as V3; });
+    } : undefined;
+    return [{ m, A: as(a), B: as(b), L: u.L, R: c.R, sx: c.L / u.L, rel, frame }];
   }), [model.members, nodeMap0, nodeMap, deformedOn, result, dsc]);
   const along = (g: (typeof geo)[number], x: number, off: number[] = [0, 0, 0], s = 1): V3 => {
-    const rl = g.rel ? g.rel(x) : null;
-    return [0, 1, 2].map(i => g.A[i] + g.R[0][i] * x * g.sx + (rl ? rl[i] : 0) + s * (g.R[0][i] * off[0] + g.R[1][i] * off[1] + g.R[2][i] * off[2])) as V3;
+    const rl = g.rel ? g.rel(x) : null, F = g.frame ? g.frame(x) : g.R;
+    return [0, 1, 2].map(i => g.A[i] + g.R[0][i] * x * g.sx + (rl ? rl[i] : 0) + s * (F[0][i] * off[0] + F[1][i] * off[1] + F[2][i] * off[2])) as V3;
   };
   /** The axis of a member on the screen: straight, or, on the deformed geometry, through the points along its deflected shape. */
-  const axisPts = (g: (typeof geo)[number]): [number, number][] => (g.rel ? Array.from({ length: 13 }, (_, i) => P(along(g, g.L * i / 12))) : [P(g.A), P(g.B)]);
+  const axisPts = (g: (typeof geo)[number]): [number, number][] => (g.rel ? Array.from({ length: 25 }, (_, i) => P(along(g, g.L * i / 24))) : [P(g.A), P(g.B)]);
   const path = (pts: [number, number][]) => pts.map((p, i) => `${i ? 'L' : 'M'}${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join('');
   const arrow = (tail: [number, number], tip: [number, number], colour: string, key: string, w = 1.5) => {
     const dx = tip[0] - tail[0], dy = tip[1] - tail[1], l = Math.hypot(dx, dy) || 1, ux = dx / l, uy = dy / l, h = Math.min(7, l * 0.45);
@@ -545,14 +560,15 @@ export const Viewer = React.forwardRef<ViewerHandle, {
     const faces: Face[] = [];
     for (const g of geo) {
       const loops = loopsOf(g.m.sec), at = (x: number, y: number, z: number): V3 => along(g, x, [0, y / 1000, z / 1000]);
-      const dir = (y: number, z: number): V3 => [0, 1, 2].map(i => g.R[1][i] * y + g.R[2][i] * z) as V3;
-      const xs = g.rel ? Array.from({ length: 13 }, (_, k) => g.L * k / 12) : [0, g.L]; // a bent member is cut along its length
+      const rowsAt = (x: number) => (g.frame ? g.frame(x) : g.R); // the axes of the section at x
+      const dirAt = (x: number, y: number, z: number): V3 => { const F = rowsAt(x); return [0, 1, 2].map(i => F[1][i] * y + F[2][i] * z) as V3; };
+      const xs = g.rel ? Array.from({ length: 25 }, (_, k) => g.L * k / 24) : [0, g.L]; // a bent member is cut along its length
       for (const l of loops) l.forEach((p, i) => {
         const q = l[(i + 1) % l.length], ny = q[1] - p[1], nz = -(q[0] - p[0]), len = Math.hypot(ny, nz) || 1;
-        for (let k = 0; k + 1 < xs.length; k++) faces.push({ id: g.m.id, pts: [at(xs[k], p[0], p[1]), at(xs[k], q[0], q[1]), at(xs[k + 1], q[0], q[1]), at(xs[k + 1], p[0], p[1])], n: dir(ny / len, nz / len) });
+        for (let k = 0; k + 1 < xs.length; k++) faces.push({ id: g.m.id, pts: [at(xs[k], p[0], p[1]), at(xs[k], q[0], q[1]), at(xs[k + 1], q[0], q[1]), at(xs[k + 1], p[0], p[1])], n: dirAt((xs[k] + xs[k + 1]) / 2, ny / len, nz / len) });
       });
       for (const [x, sg] of [[0, -1], [g.L, 1]] as const)
-        faces.push({ id: g.m.id, pts: [], n: g.R[0].map(v => v * sg) as V3, caps: loops.map(l => l.map(p => at(x, p[0], p[1]))) });
+        faces.push({ id: g.m.id, pts: [], n: rowsAt(x)[0].map(v => v * sg) as V3, caps: loops.map(l => l.map(p => at(x, p[0], p[1]))) });
     }
     return faces;
   }, [opts.solid, geo, model.sections]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -570,7 +586,8 @@ export const Viewer = React.forwardRef<ViewerHandle, {
       const A = sc?.A || 1, Iy = sc?.Iy || 1, Iz = sc?.Iz || 1, loops = loopsOf(g.m.sec);
       const idx = r.x.map((_, i) => i).filter(i => i % stride === 0 || i === r.x.length - 1);
       const at = (x: number, y: number, z: number): V3 => along(g, x, [0, y / 1000, z / 1000]);
-      const dir = (y: number, z: number): V3 => [0, 1, 2].map(i => g.R[1][i] * y + g.R[2][i] * z) as V3;
+      const rowsAt = (x: number) => (g.frame ? g.frame(x) : g.R); // the axes of the section at x
+      const dirAt = (x: number, y: number, z: number): V3 => { const F = rowsAt(x); return [0, 1, 2].map(i => F[1][i] * y + F[2][i] * z) as V3; };
       const sigma = (i: number, y: number, z: number) => { // MPa: N in kN, M in kNm, section in mm
         const n = r.N[i] * 1000 / A, bz = -r.Mz[i] * 1e6 * y / Iz, by = r.My[i] * 1e6 * z / Iy;
         return opts.stress === 'axial' ? n : opts.stress === 'mz' ? bz : opts.stress === 'my' ? by : n + bz + by;
@@ -578,18 +595,17 @@ export const Viewer = React.forwardRef<ViewerHandle, {
       const size = Math.max(...loops[0].flatMap(p => [Math.abs(p[0]), Math.abs(p[1])])) * 2;
       for (const l of loops) l.forEach((p, e) => {
         const q = l[(e + 1) % l.length], ny = q[1] - p[1], nz = -(q[0] - p[0]), len = Math.hypot(ny, nz) || 1, nSeg = Math.max(1, Math.min(6, Math.ceil(len / (size * 0.18))));
-        const nrm = dir(ny / len, nz / len);
         for (let j = 0; j < nSeg; j++) {
           const p0: [number, number] = [p[0] + (q[0] - p[0]) * j / nSeg, p[1] + (q[1] - p[1]) * j / nSeg], p1: [number, number] = [p[0] + (q[0] - p[0]) * (j + 1) / nSeg, p[1] + (q[1] - p[1]) * (j + 1) / nSeg];
           for (let k = 0; k + 1 < idx.length; k++) {
             const i0 = idx[k], i1 = idx[k + 1], x0 = r.x[i0], x1 = r.x[i1];
             const vs = [sigma(i0, p0[0], p0[1]), sigma(i0, p1[0], p1[1]), sigma(i1, p1[0], p1[1]), sigma(i1, p0[0], p0[1])];
             for (const v of vs) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
-            faces.push({ id: g.m.id, pts: [at(x0, p0[0], p0[1]), at(x0, p1[0], p1[1]), at(x1, p1[0], p1[1]), at(x1, p0[0], p0[1])], n: nrm, v: (vs[0] + vs[1] + vs[2] + vs[3]) / 4 });
+            faces.push({ id: g.m.id, pts: [at(x0, p0[0], p0[1]), at(x0, p1[0], p1[1]), at(x1, p1[0], p1[1]), at(x1, p0[0], p0[1])], n: dirAt((x0 + x1) / 2, ny / len, nz / len), v: (vs[0] + vs[1] + vs[2] + vs[3]) / 4 });
           }
         }
       });
-      for (const [x, sg] of [[0, -1], [g.L, 1]] as const) faces.push({ id: g.m.id, pts: [], n: g.R[0].map(v => v * sg) as V3, caps: loops.map(l => l.map(p => at(x, p[0], p[1]))) });
+      for (const [x, sg] of [[0, -1], [g.L, 1]] as const) faces.push({ id: g.m.id, pts: [], n: rowsAt(x)[0].map(v => v * sg) as V3, caps: loops.map(l => l.map(p => at(x, p[0], p[1]))) });
     }
     const l0 = isFinite(lo) ? lo : 0, h0 = isFinite(hi) ? hi : 0;
     return { faces, lo: l0, hi: h0 - l0 < 1e-9 ? l0 + 1 : h0 };
