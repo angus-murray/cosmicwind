@@ -64,7 +64,14 @@ export const FREE = DASH, FIXED = 'FFFFFF', PIN = 'FFFRRR';
 export const restraintCode = (r: string | undefined) => (!r || r === DASH ? 'RRRRRR' : r.toUpperCase().padEnd(6, 'R'));
 /** The six-letter release code of a member end; an en-dash or blank means rigid. */
 export const releaseCode = (r: string | undefined) => (!r || r === DASH ? 'FFFFFF' : r.toUpperCase().padEnd(6, 'F'));
-export const RESTRAINTS: [string, string][] = [[FREE, 'Free'], [FIXED, 'Fixed'], [PIN, 'Pinned']];
+/**
+ * Symmetry planes, named by the plane (XY, YZ, ZX: the right-handed cyclic order): the translation normal to the plane and the two rotations about axes
+ * in the plane are fixed, as for a node on a plane of symmetry.
+ */
+export const SYM_XY = 'RRFFFR', SYM_YZ = 'FRRRFF', SYM_ZX = 'RFRFRF';
+export const RESTRAINTS: [string, string][] = [[FREE, 'Free'], [FIXED, 'Fixed'], [PIN, 'Pinned'], [SYM_XY, 'XY Symmetry'], [SYM_YZ, 'YZ Symmetry'], [SYM_ZX, 'ZX Symmetry']];
+/** The name of a preset restraint code, or the code itself. */
+export const restraintName = (c: string) => RESTRAINTS.find(([code]) => code === c)?.[1] ?? c;
 export const RELEASES: [string, string][] = [[DASH, 'Rigid'], ['FFFFRR', 'Pinned (My, Mz)'], ['FFFRRR', 'Pinned (All)']];
 
 export const STEEL: Material = { id: 1, name: 'Steel', E: 200000, G: 80000, rho: 7850, alpha: 11.7e-6 };

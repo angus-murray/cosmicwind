@@ -2,7 +2,7 @@ import { useUnits, type Quantity } from '../model/units';
 import React, { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { useElementSize } from 'engineering-ui';
 import { sym } from './Sym';
-import { releaseCode, restraintCode, FIXED, PIN, type Model, type Note } from '../model/types';
+import { releaseCode, restraintCode, restraintName, RESTRAINTS, FIXED, PIN, type Model, type Note } from '../model/types';
 import { outlineLoops, outlineOf } from '../model/sections';
 import { memberAxes, type CaseResult, type Vec6 } from '../solver/frame';
 import { fibreStress } from '../solver/stress';
@@ -319,11 +319,11 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   /** The lines of basic information shown when the pointer rests on a node or a member. */
   const infoLines = (nodeId: number | null, memberId: number | null): string[] | null => {
     const u = uLabel('length');
-    const code = (c: string) => (c === FIXED ? 'Fixed' : c === PIN ? 'Pinned' : c);
+    const code = (c: string) => (c === FIXED ? 'Fixed' : c === PIN ? 'Pinned' : restraintName(c));
     if (nodeId !== null) {
       const n = nodeMap0.get(nodeId); if (!n) return null;
       const out = [`Node ${n.id}`, `X: ${len3(n.x)} ${u}`, `Y: ${len3(n.y)} ${u}`, `Z: ${len3(n.z)} ${u}`], r = restraintCode(n.r);
-      if (r !== 'RRRRRR') out.push(`Restraint: ${code(r)}${r !== FIXED && r !== PIN ? ' (DX DY DZ RX RY RZ)' : ''}`);
+      if (r !== 'RRRRRR') out.push(`Restraint: ${code(r)}${RESTRAINTS.some(([c]) => c === r) ? '' : ' (DX DY DZ RX RY RZ)'}`);
       const k = model.members.filter(b => b.a === n.id || b.b === n.id).length; out.push(`Members: ${k}`);
       const loads = model.nodeLoads.filter(l => l.node === n.id).length; if (loads) out.push(`Node loads: ${loads}`);
       const ms = model.masses.filter(l => l.node === n.id).reduce((a, l) => a + l.m, 0); if (ms) out.push(`Mass: ${Number(uShow('mass', ms).toPrecision(4))} ${uLabel('mass')}`);

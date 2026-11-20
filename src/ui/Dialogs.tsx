@@ -59,7 +59,7 @@ export function About({ onClose }: { onClose: () => void }) {
           Angle column rotates the y and z axes about the member, and can also be set from the right-click menu of a member. <i>I</i><sub>z</sub> is the second
           moment about the local z axis, the major axis of a beam in its usual orientation. Global axes are always written in upper case (X, Y, Z) and local
           axes in lower case (x, y, z), including in the direction of a member load, which shows x, y, z when the load is in local axes.</P>
-        <P>Restraint codes have six characters for DX, DY, DZ, RX, RY and RZ: F is fixed, R is released and S is a spring. Click the arrow in a Restraint or
+        <P>Restraint codes have six characters for DX, DY, DZ, RX, RY and RZ: F is fixed, R is released and S is a spring. The presets include Free, Fixed, Pinned and the symmetry planes XY, YZ and ZX, each of which fixes the translation normal to the plane and the two rotations about axes in it. Click the arrow in a Restraint or
           Release cell to set each degree of freedom and the stiffness of its spring (force per length for a displacement or axial force, force times length per radian for a rotation or
           moment). Member end releases use the same form for the three local forces and three local moments at each end, but there are no springs on the
           two shear forces. Restraints and releases can also be set from the right-click menu of a node or member. Loads are positive in the positive axis

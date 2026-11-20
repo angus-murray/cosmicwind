@@ -8,7 +8,7 @@
  */
 import { expect, test } from 'bun:test';
 import { analyse } from './frame';
-import { emptyModel, type Model } from '../model/types';
+import { emptyModel, SYM_XY, SYM_YZ, SYM_ZX, type Model } from '../model/types';
 
 const E = 200000, G = 80000, A = 5000, I = 100e6, J = 1e6;
 const EI = E * 1e3 * I * 1e-12, EA = E * 1e3 * A * 1e-6, GJ = G * 1e3 * J * 1e-12;
@@ -687,4 +687,17 @@ test('R5 load combinations are exact linear combinations of their cases, nested 
     const lin = 1.2 * by(1).reactions.get(1)![d] + 1.5 * by(2).reactions.get(1)![d] + 0.4 * by(3).reactions.get(1)![d];
     expect(Math.abs(by(11).reactions.get(1)![d] - lin)).toBeLessThan(1e-9 + 1e-9 * Math.abs(lin));
   }
+});
+
+test('Y1 symmetry-plane restraints: the half of a symmetric model equals the whole', () => {
+  // codes: the translation normal to the plane and the two rotations about axes in the plane are fixed
+  const fixed = (c: string) => [...c].map((v, i) => (v === 'F' ? ['DX', 'DY', 'DZ', 'RX', 'RY', 'RZ'][i] : '')).filter(Boolean).join(' ');
+  expect(fixed(SYM_XY)).toBe('DZ RX RY'); expect(fixed(SYM_YZ)).toBe('DX RY RZ'); expect(fixed(SYM_ZX)).toBe('DY RX RZ');
+  // a pinned beam under UDL and a mid-span point load, in the full and half models (the mid-span plane is YZ, normal X)
+  const L = 8, w = 6, P = 20;
+  const full = line(L, 8, 'FFFFFR', 'RFFFFR'); udlY(full, -w); full.nodeLoads.push(fy(5, -P));
+  const half = line(L / 2, 4, 'FFFFFR', SYM_YZ); udlY(half, -w); half.nodeLoads.push(fy(5, -P / 2));
+  const a = run(full).cases[0], b = run(half).cases[0];
+  for (let i = 1; i <= 5; i++) near(b.disp.get(i)![1], a.disp.get(i)![1], 1e-9, `deflection at node ${i}`);
+  near(b.reactions.get(1)![1], a.reactions.get(1)![1], 1e-9, 'end reaction');
 });
