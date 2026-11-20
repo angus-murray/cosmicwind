@@ -531,9 +531,9 @@ export default function App() {
         </div>
         {opts.geometry === 'deformed' && <div>
           <div className="flex items-baseline justify-between"><span className="label">Deflection Scale</span><span className="text-[11px] tabular-nums text-slate-600">{String(+opts.defScale.toFixed(2))}×</span></div>
-          {/* the slider is square-root scaled, so that the small scales (0 to 5×) have as much room as the large ones up to 20× */}
-          <input type="range" className="w-full accent-blue-600" min={0} max={1} step={0.005} aria-label="Deflection Scale" value={Math.min(1, Math.sqrt(opts.defScale / 20))} onChange={e => o('defScale')(+(20 * Number(e.target.value) ** 2).toFixed(2))} />
-          <Segmented value={String(opts.defScale)} onChange={v => o('defScale')(Number(v))} options={[0, 1, 5, 20].map(v => ({ value: String(v), label: `${v}×` }))} />
+          {/* the slider is square-root scaled, so that the small scales have more room than the large ones up to 100× */}
+          <input type="range" className="w-full accent-blue-600" min={0} max={1} step={0.005} aria-label="Deflection Scale" value={Math.min(1, Math.sqrt(opts.defScale / 100))} onChange={e => o('defScale')(+(100 * Number(e.target.value) ** 2).toFixed(2))} />
+          <Segmented value={String(opts.defScale)} onChange={v => o('defScale')(Number(v))} options={[0, 1, 5, 20, 100].map(v => ({ value: String(v), label: `${v}×` }))} />
         </div>}
       </div>,
       items: [
@@ -642,7 +642,7 @@ export default function App() {
 
           <div className="results-column">
             <div ref={cvRef} className="relative bg-slate-50 rounded-lg border border-slate-200 shadow-2xs overflow-hidden h-[520px] lg:h-auto lg:flex-1 lg:min-h-[240px]">
-              <Viewer ref={viewer} notes={model.notes} onNoteMove={(id, dx, dy) => setModel(m => ({ ...m, notes: m.notes.map(n => (n.id === id ? { ...n, dx, dy } : n)) }))} onNoteEdit={(id, x, y) => { const nt = model.notes.find(n => n.id === id); if (nt) setTextPrompt({ x, y, title: 'Edit Note', text: nt.text, onSubmit: t => setNote(nt.kind, nt.ref, nt.id, t) }); }} fitRev={fitRev} onSplitMember={splitMember} pick={pickMove} onPickEnd={() => setPickMove(null)} model={model} opts={opts} tool={tool} sel={sel} onSelect={selectFromCanvas} loadCases={drawLoads} result={tab === 'results' ? okRes : null} mode={tab === 'results' ? modeShape : null} animateMode={modeIx?.kind === 'modal'} onDefScale={f => setOpts(p => ({ ...p, defScale: Math.min(1000, Math.max(0.1, +(p.defScale * f).toFixed(3))) }))} onAddNode={addNode} onAddMember={addMember}
+              <Viewer ref={viewer} notes={model.notes} onNoteMove={(id, dx, dy) => setModel(m => ({ ...m, notes: m.notes.map(n => (n.id === id ? { ...n, dx, dy } : n)) }))} onNoteEdit={(id, x, y) => { const nt = model.notes.find(n => n.id === id); if (nt) setTextPrompt({ x, y, title: 'Edit Note', text: nt.text, onSubmit: t => setNote(nt.kind, nt.ref, nt.id, t) }); }} fitRev={fitRev} onSplitMember={splitMember} pick={pickMove} onPickEnd={() => setPickMove(null)} model={model} opts={opts} tool={tool} sel={sel} onSelect={selectFromCanvas} loadCases={drawLoads} result={tab === 'results' ? okRes : null} mode={tab === 'results' ? modeShape : null} animateMode={modeIx?.kind === 'modal'} onDefScale={f => setOpts(p => ({ ...p, defScale: Math.min(100, Math.max(0.1, +(p.defScale * f).toFixed(3))) }))} onAddNode={addNode} onAddMember={addMember}
                 onContext={c => { setCtx(c); if (c.node !== null && !sel.nodes.has(c.node)) setSel({ nodes: new Set([c.node]), members: new Set() }); else if (c.node === null && c.member !== null && !sel.members.has(c.member)) setSel({ nodes: new Set(), members: new Set([c.member]) }); }} />
               {ctx && menuOf() && <ContextMenu menu={menuOf()!} W={cvSize.width} H={cvSize.height} onClose={() => setCtx(null)} />}
               {textPrompt && <TextPromptBox prompt={textPrompt} W={cvSize.width} H={cvSize.height} onClose={() => setTextPrompt(null)} />}
