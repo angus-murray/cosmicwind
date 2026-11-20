@@ -817,22 +817,25 @@ export const Viewer = React.forwardRef<ViewerHandle, {
     return Array.from({ length: n + 1 }, (_, i) => { const th = from + (to - from) * i / n; return P([0, 1, 2].map(k => c[k] + rr * (Math.cos(th) * u1[k] + Math.sin(th) * u2[k])) as V3); });
   };
   const pathOf = (q: [number, number][]) => `M${q.map(v => `${v[0]} ${v[1]}`).join('L')}`;
-  /** A fixed translation: a rigid link along the global axis, in model space so that it foreshortens with the view, ending in a plate square to the axis. */
-  const fixedLin = (c: V3, axis: V3, key: string, len = 20) => {
-    const end: V3 = [c[0] - axis[0] * len / cam.zoom, c[1] - axis[1] * len / cam.zoom, c[2] - axis[2] * len / cam.zoom], a = P(c), b = P(end), plate = circle3(end, axis, 5.5);
-    return <g key={key} fill="none" strokeLinecap="round"><line x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} stroke="#fff" strokeWidth={4} strokeOpacity={0.85} />
-      <line x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} stroke={TRANS} strokeWidth={1.5} /><path d={pathOf(plate)} fill={TRANS} fillOpacity={0.35} stroke={TRANS} strokeWidth={1.5} /></g>;
+  /**
+   * The fixed degrees of freedom of a node, one line per global axis (drawn in model space, so it foreshortens with the view): a circle square to the axis at
+   * position 1 for a fixed translation and another at position 2, further along, for the fixed rotation about the same axis. Each is in its own colour,
+   * and one alone keeps its own position.
+   */
+  const nodeFixed = (n: { id: number; x: number; y: number; z: number; r: string }) => {
+    const code = restraintCode(n.r), c: V3 = [n.x, n.y, n.z], P1 = 20, P2 = 34, R = 5;
+    return [0, 1, 2].map(a => {
+      const tr = code[a] === 'F', ro = code[3 + a] === 'F'; if (!tr && !ro) return null;
+      const axis = AXES[a], at = (px: number): V3 => [c[0] - axis[0] * px / cam.zoom, c[1] - axis[1] * px / cam.zoom, c[2] - axis[2] * px / cam.zoom];
+      const a0 = P(c), a1 = P(at(ro ? P2 : P1));
+      return <g key={`fx${n.id}-${a}`} fill="none" strokeLinecap="round">
+        <line x1={a0[0]} y1={a0[1]} x2={a1[0]} y2={a1[1]} stroke="#fff" strokeWidth={4} strokeOpacity={0.85} />
+        <line x1={a0[0]} y1={a0[1]} x2={a1[0]} y2={a1[1]} stroke={ro && !tr ? ROT : TRANS} strokeWidth={1.5} />
+        {tr && <path d={pathOf(circle3(at(P1), axis, R))} fill={TRANS} fillOpacity={0.35} stroke={TRANS} strokeWidth={1.5} />}
+        {ro && <path d={pathOf(circle3(at(P2), axis, R))} fill={ROT} fillOpacity={0.35} stroke={ROT} strokeWidth={1.5} />}
+      </g>;
+    });
   };
-  /** A fixed rotation: a ring around the global axis with a solid clamp on it; the radius grows with the axis so that the three do not overlap. */
-  const fixedRot = (c: V3, axis: V3, k: number, key: string) => {
-    const r = 9 + 3.5 * k, ring = circle3(c, axis, r), clamp = circle3(c, axis, r, -0.3, 0.3, 6);
-    return <g key={key} fill="none" strokeLinecap="round" strokeLinejoin="round"><path d={pathOf(ring)} stroke="#fff" strokeWidth={4} strokeOpacity={0.85} /><path d={pathOf(ring)} stroke={ROT} strokeWidth={1.5} /><path d={pathOf(clamp)} stroke={ROT} strokeWidth={4} /></g>;
-  };
-  /** The fixed degrees of freedom of a node, each drawn along (translation) or around (rotation) the global axis it acts on. */
-  const nodeFixed = (n: { id: number; x: number; y: number; z: number; r: string }) => [...restraintCode(n.r)].map((c, d) => {
-    if (c !== 'F') return null;
-    return d >= 3 ? fixedRot([n.x, n.y, n.z], AXES[d - 3], d - 3, `fx${n.id}-${d}`) : fixedLin([n.x, n.y, n.z], AXES[d], `fx${n.id}-${d}`);
-  });
   /** The springs of a node, each drawn along (translation) or around (rotation) the global axis it acts on. */
   const nodeSprings = (n: { id: number; x: number; y: number; z: number; r: string; k?: number[] }, p: [number, number]) => [...restraintCode(n.r)].map((c, d) => {
     if (c !== 'S' || !((n.k?.[d] ?? 0) > 0)) return null;
