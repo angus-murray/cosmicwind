@@ -17,7 +17,7 @@ export function ColourPicker({ value, auto, at, onChange, onClose }: { value: st
   const drag = useDrag({ x: Math.max(8, Math.min(at.x, window.innerWidth - 236)), y: Math.max(8, Math.min(at.y, window.innerHeight - 250)) });
   const commit = () => { if (HEX.test(hex)) onChange(hex.toLowerCase()); else setHex(value); };
   return (
-    <div data-ui className="fixed z-50 w-[224px] bg-white border border-slate-200 rounded-lg shadow-lg p-3 pt-2 space-y-2" style={{ left: drag.pos.x, top: drag.pos.y }}>
+    <div ref={drag.panel} data-ui className="fixed z-50 w-[224px] bg-white border border-slate-200 rounded-lg shadow-lg p-3 pt-2 space-y-2" style={{ left: drag.pos.x, top: drag.pos.y }}>
       <>
         <div className="flex justify-end -mr-1.5 min-h-6" {...drag.handlers}><button className="w-6 h-6 flex items-center justify-center rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100" aria-label="Close" onClick={onClose}><X className="w-3.5 h-3.5" /></button></div>
         <div className="grid grid-cols-8 gap-1.5">

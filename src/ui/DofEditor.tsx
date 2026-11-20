@@ -49,7 +49,7 @@ export function DofEditor<T>({ spec, row, at, onChange, onClose }: { spec: DofSp
   };
   return (
     // Not modal: the drawing stays live behind it (pan, zoom, select), and the header moves it. It closes with the X or Escape.
-    <div data-ui className="fixed z-50 w-[320px] bg-white border border-slate-200 rounded-lg shadow-lg p-3 space-y-2.5" style={{ left: drag.pos.x, top: drag.pos.y }}>
+    <div ref={drag.panel} data-ui className="fixed z-50 w-[320px] bg-white border border-slate-200 rounded-lg shadow-lg p-3 space-y-2.5" style={{ left: drag.pos.x, top: drag.pos.y }}>
       <>
         <div className="flex items-start justify-between gap-2" {...drag.handlers}>
           <div className="text-xs font-semibold text-slate-700">{spec.title(row)}</div>

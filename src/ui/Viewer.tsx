@@ -836,7 +836,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   const chainNode = chain !== null ? nodeMap.get(chain) : null;
   const faded = !stressOn && !!result && !mode && active.length > 0; // the members are paled so that the diagrams show; a mode is drawn as the shape itself
   return (
-    <div ref={box} className="absolute inset-0 overflow-hidden">
+    <div ref={box} data-canvas className="absolute inset-0 overflow-hidden">
       <svg ref={svgRef} width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="block touch-none select-none" style={{ cursor: tool === 'select' && !pick ? 'default' : snapAt ? 'none' : 'crosshair' }}
         onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerLeave={() => { setHover({ n: null, m: null }); setSnapAt(null); setTip(null); }} onMouseDown={e => { if (e.button === 1) e.preventDefault(); }} onContextMenu={e => e.preventDefault()}>
         <rect width={W} height={H} fill="#f8fafc" />
