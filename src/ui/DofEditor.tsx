@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { sym } from './Sym';
+import { useDrag } from './useDrag';
 import { toShown, fromShown, unitLabel, useUnits, type Quantity } from '../model/units';
 
 /** What a restraint or release editor needs to know about the six degrees of freedom it edits. */
@@ -38,7 +39,7 @@ export function DofEditor<T>({ spec, row, at, onChange, onClose }: { spec: DofSp
     const code = six.slice(); code[i] = n;
     set(code, n === 'S' && !(k[i] > 0) ? k.map((v, j) => (j === i ? DEFAULT_K : v)) : k);
   };
-  const left = Math.max(8, Math.min(at.x, window.innerWidth - 330)), top = Math.min(at.y, window.innerHeight - 330);
+  const drag = useDrag({ x: Math.max(8, Math.min(at.x, window.innerWidth - 330)), y: Math.max(8, Math.min(at.y, window.innerHeight - 330)) });
   const [draft, setDraft] = useState<Record<number, string>>({});
   useEffect(() => { const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); }; window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h); }, [onClose]);
   const commitK = (i: number) => {
@@ -47,9 +48,10 @@ export function DofEditor<T>({ spec, row, at, onChange, onClose }: { spec: DofSp
     if (t.trim() !== '' && isFinite(v) && v >= 0 && v !== k[i]) set(six, k.map((x, j) => (j === i ? v : x)));
   };
   return (
-    <div className="fixed inset-0 z-50" onMouseDown={onClose}>
-      <div className="absolute w-[320px] bg-white border border-slate-200 rounded-lg shadow-lg p-3 space-y-2.5" style={{ left, top }} onMouseDown={e => e.stopPropagation()}>
-        <div className="flex items-start justify-between gap-2">
+    // Not modal: the drawing stays live behind it (pan, zoom, select), and the header moves it. It closes with the X or Escape.
+    <div data-ui className="fixed z-50 w-[320px] bg-white border border-slate-200 rounded-lg shadow-lg p-3 space-y-2.5" style={{ left: drag.pos.x, top: drag.pos.y }}>
+      <>
+        <div className="flex items-start justify-between gap-2" {...drag.handlers}>
           <div className="text-xs font-semibold text-slate-700">{spec.title(row)}</div>
           <button className="-mt-1 -mr-1 w-6 h-6 shrink-0 flex items-center justify-center rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100" aria-label="Close" onClick={onClose}><X className="w-3.5 h-3.5" /></button>
         </div>
@@ -69,7 +71,7 @@ export function DofEditor<T>({ spec, row, at, onChange, onClose }: { spec: DofSp
             </div>
           ))}
         </div>
-      </div>
+      </>
     </div>
   );
 }
