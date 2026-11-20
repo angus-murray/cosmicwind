@@ -73,6 +73,15 @@ export const fmt = (v: number) => { const a = Math.abs(v); return (a >= 100 ? v.
 const SECTION_COLOURS = ['#7c3aed', '#0d9488', '#ea580c', '#db2777', '#0284c7', '#ca8a04', '#4f46e5', '#0891b2', '#c026d3', '#64748b'];
 export const sectionColour = (id: number) => SECTION_COLOURS[(Math.max(1, Math.round(id)) - 1) % SECTION_COLOURS.length];
 const rgb = (h: string) => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+const CAM_KEY = 'cosmicwind.camera';
+/** The orientation of the camera kept from the last session, so that refreshing the page does not turn the view. */
+const storedAxes = (): { rx: V3; ry: V3 } | null => {
+  try {
+    const v = JSON.parse(localStorage.getItem(CAM_KEY) ?? 'null') as { rx?: number[]; ry?: number[] } | null;
+    const ok = (a?: number[]) => Array.isArray(a) && a.length === 3 && a.every(x => typeof x === 'number' && isFinite(x));
+    return v && ok(v.rx) && ok(v.ry) ? { rx: v.rx as V3, ry: v.ry as V3 } : null;
+  } catch { return null; }
+};
 /** The screen axes of a view looking at the model from a direction given by a heading (yaw) and an elevation (pitch). */
 function viewAxes(yaw: number, pitch: number): { rx: V3; ry: V3 } {
   const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
@@ -129,7 +138,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   const [box, size] = useElementSize<HTMLDivElement>();
   const svgRef = useRef<SVGSVGElement>(null);
   // c is the orbit pivot (the model centre at the last fit); px, py are the screen offset of the pivot from the view centre.
-  const [cam, setCam] = useState<{ rx: V3; ry: V3; zoom: number; px: number; py: number; c: V3 }>({ ...viewAxes(-0.5, 0.35), zoom: 40, px: 0, py: 0, c: [0, 0, 0] });
+  const [cam, setCam] = useState<{ rx: V3; ry: V3; zoom: number; px: number; py: number; c: V3 }>({ ...(storedAxes() ?? viewAxes(-0.5, 0.35)), zoom: 40, px: 0, py: 0, c: [0, 0, 0] });
   const [chain, setChain] = useState<number | null>(null);
   const [cursor, setCursor] = useState<[number, number] | null>(null);
   /** Selection box being dragged, in pixels. */
@@ -221,6 +230,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
     view: v => { const a = v === 'iso' ? viewAxes(-0.5, 0.35) : v === 'front' ? viewAxes(0, 0) : v === 'top' ? viewAxes(0, Math.PI / 2) : viewAxes(Math.PI / 2, 0); fitTo(a.rx, a.ry); },
     svg: () => svgRef.current,
   }));
+  useEffect(() => { try { localStorage.setItem(CAM_KEY, JSON.stringify({ rx: cam.rx, ry: cam.ry })); } catch { /* storage unavailable */ } }, [cam.rx, cam.ry]);
   // Fit when the size first becomes known and whenever a different model is loaded (its extents change).
   // Editing (deleting or moving nodes) never moves the camera: only the first display, a resize and a newly loaded model (fitRev) do.
   const fitKey = `${size.width > 0}|${Math.round(size.width / 40)}|${Math.round(size.height / 40)}|${fitRev}`;
@@ -228,7 +238,8 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   useEffect(() => {
     if (!size.width || lastFit.current === fitKey || tool !== 'select') return;
     const first = lastFit.current === '' || lastFit.current.startsWith('false'), loaded = lastRev.current !== fitRev; lastFit.current = fitKey; lastRev.current = fitRev;
-    if (first || loaded) { const a = flat ? viewAxes(0, 0) : viewAxes(-0.5, 0.35); fitTo(a.rx, a.ry); } else fitTo(cam.rx, cam.ry);
+    if (first && !loaded && storedAxes()) fitTo(cam.rx, cam.ry); // after a refresh: the same angle as before, fitted to the window
+    else if (first || loaded) { const a = flat ? viewAxes(0, 0) : viewAxes(-0.5, 0.35); fitTo(a.rx, a.ry); } else fitTo(cam.rx, cam.ry);
   }, [fitKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- Pointer interaction
