@@ -68,7 +68,11 @@ export interface ViewerHandle { fit: () => void; view: (v: 'iso' | 'front' | 'to
 
 type V3 = [number, number, number];
 const RED = '#dc2626', GREEN = '#059669', BLUE = '#2563eb', PINK = '#c026d3', AMBER = '#d97706';
-export const fmt = (v: number) => { const a = Math.abs(v); return (a >= 100 ? v.toFixed(0) : a >= 10 ? v.toFixed(1) : a >= 0.01 || a === 0 ? v.toFixed(2) : v.toExponential(1)).replace('-', '−'); };
+/** A number for a label: three significant places or so, with commas between the thousands (100,000) and a true minus sign. */
+export const fmt = (v: number) => {
+  const a = Math.abs(v), t = a >= 100 ? v.toFixed(0) : a >= 10 ? v.toFixed(1) : a >= 0.01 || a === 0 ? v.toFixed(2) : v.toExponential(1);
+  return t.replace(/^(-?)(\d+)/, (_, sg: string, d: string) => sg + d.replace(/\B(?=(\d{3})+$)/g, ',')).replace('-', '−');
+};
 /** Member colour by section number: bright, well separated, and clear of the red, green and blue used for loads, reactions and selection. */
 const SECTION_COLOURS = ['#7c3aed', '#0d9488', '#ea580c', '#db2777', '#0284c7', '#ca8a04', '#4f46e5', '#0891b2', '#c026d3', '#64748b'];
 export const sectionColour = (id: number) => SECTION_COLOURS[(Math.max(1, Math.round(id)) - 1) % SECTION_COLOURS.length];
