@@ -73,7 +73,8 @@ export function Tree({ groups, open, onToggle, closed, onToggleGroup, tabs, tab,
   if (!tabs) return panel;
   return (
     <div className="lg:flex-1 flex flex-col">
-      <div className="flex gap-1 px-2 pt-1" role="tablist">
+      {/* the tabs stay at the top of the scrolling input column */}
+      <div className="sticky top-0 z-20 flex gap-1 px-2 pt-1 bg-slate-100" role="tablist">
         {tabs.map(t => <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} className={`tree-tab ${tab === t.key ? 'tree-tab-active' : ''}`} onClick={() => onTab?.(t.key)}><t.icon className="w-3.5 h-3.5 shrink-0" /><span>{t.label}</span></button>)}
       </div>
       {panel}
