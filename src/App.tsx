@@ -444,10 +444,8 @@ export default function App() {
       ) },
       { key: 'sections', icon: Shapes, label: 'Sections', count: model.sections.length, render: () => (
                 <>
-                  <Sheet rows={model.sections} addLabel="Add Section" cols={secCols} onChange={set('sections')} rowLabel={idLabel} selected={r => r.id === secSel} onSelect={r => setSecSel(r.id)} onRenumber={(r, id) => { setModel(m => ({ ...m, sections: m.sections.map(x => (x.id === r.id ? { ...x, id } : x)), members: m.members.map(b => (b.sec === r.id ? { ...b, sec: id } : b)) })); setSecSel(id); }} newRow={() => ({ id: nextId(model.sections), name: `Section ${nextId(model.sections)}`, A: 5000, Iy: 1e7, Iz: 5e7, J: 1e5 })}
+                  <Sheet rows={model.sections} addLabel="Add Section…" onAdd={() => { setAssignOnAdd(false); setReplaceSec(null); setDialog('section'); }} rowAction={{ title: 'Change Type…', icon: <Shapes className="w-3 h-3" />, onClick: r => { setAssignOnAdd(false); setReplaceSec(r.id); setDialog('section'); } }} cols={secCols} onChange={set('sections')} rowLabel={idLabel} selected={r => r.id === secSel} onSelect={r => setSecSel(r.id)} onRenumber={(r, id) => { setModel(m => ({ ...m, sections: m.sections.map(x => (x.id === r.id ? { ...x, id } : x)), members: m.members.map(b => (b.sec === r.id ? { ...b, sec: id } : b)) })); setSecSel(id); }} 
                     onDelete={r => (used('sec', r.id) ? alert(`Section ${r.id} is used by members.`) : set('sections')(model.sections.filter(s => s.id !== r.id)))} />
-                  <button className="btn-primary" onClick={() => { setAssignOnAdd(false); setReplaceSec(null); setDialog('section'); }}><Shapes className="w-3.5 h-3.5" /> Add From Library or Shape</button>
-                  <button className="btn" disabled={secSel === null || !model.sections.some(x => x.id === secSel)} title="Select a section row, then choose a new type for its number; members keep the number" onClick={() => { setAssignOnAdd(false); setReplaceSec(secSel); setDialog('section'); }}><Shapes className="w-3.5 h-3.5" /> {secSel !== null && model.sections.some(x => x.id === secSel) ? `Change Type of Section ${secSel}` : 'Change Type of Selected Section'}</button>
                 </>
       ) },
       { key: 'materials', icon: Cuboid, label: 'Materials', count: model.materials.length, render: () => (

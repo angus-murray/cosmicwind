@@ -32,10 +32,14 @@ const show = (v: unknown) => (typeof v === 'number' ? (v !== 0 && (Math.abs(v) <
 const parseNum = (s: string) => { const v = Number(s.trim().replace('−', '-').replace(/,/g, '')); return s.trim() === '' || !isFinite(v) ? null : v; };
 
 /** Editable datasheet. Cells commit on Enter or blur; a block copied from a spreadsheet can be pasted in. */
-export function Sheet<T extends object>({ rows, cols, onChange, newRow, selected, onSelect, onDelete, rowLabel, empty, addLabel = 'Add Row', onRenumber, isTaken }: {
+export function Sheet<T extends object>({ rows, cols, onChange, newRow, selected, onSelect, onDelete, rowLabel, empty, addLabel = 'Add Row', onAdd, rowAction, onRenumber, isTaken }: {
   rows: T[]; cols: Col<T>[]; onChange: (rows: T[]) => void; newRow?: () => T;
   selected?: (row: T) => boolean; onSelect?: (row: T, additive: boolean) => void; onDelete?: (row: T, i: number) => void;
   rowLabel?: (row: T, i: number) => React.ReactNode; empty?: string; /** Text of the button that adds a row, for example Add Node. */ addLabel?: string;
+  /** Replaces adding a blank row: what the add button does instead (for example opening a dialog). The button shows whenever this or `newRow` is given. */
+  onAdd?: () => void;
+  /** An extra button at the end of each row, before the delete button. */
+  rowAction?: { title: string; icon: React.ReactNode; onClick: (row: T, i: number) => void };
   /** Makes the number at the start of a row editable (a click on it): the new number, which is never one that another row has. */
   onRenumber?: (row: T, id: number) => void;
   /** Numbers that are used elsewhere (by another datasheet), in addition to those of the other rows, which a row cannot take. */
@@ -89,11 +93,11 @@ export function Sheet<T extends object>({ rows, cols, onChange, newRow, selected
         <table className="sheet" ref={ref} style={{ minWidth: 56 + cols.length * 48 }}>
           {/* Fixed layout: the columns share the width equally (text columns, such as a name, take double and a colour swatch is fixed), so the same kind of column is the same width in every datasheet */}
           <colgroup><col style={{ width: 34 }} />{cols.map(c => <col key={c.key} style={{ width: c.type === 'colour' ? 28 : `${(weight(c) / total) * 86}%` }} />)}<col style={{ width: 22 }} /></colgroup>
-          <thead><tr><th style={{ width: 34 }}></th>{cols.map(c => <th key={c.key} title={c.title}>{head(c)}</th>)}<th style={{ width: 22 }}></th></tr></thead>
+          <thead><tr><th style={{ width: 34 }}></th>{cols.map(c => <th key={c.key} title={c.title}>{head(c)}</th>)}<th style={{ width: rowAction ? 44 : 22 }}></th></tr></thead>
           <tbody>
             {rows.map((r, i) => (
               <tr key={i} className={selected?.(r) ? 'sel' : ''} onClick={e => { // a click in any cell selects the row (the row number and the delete button have their own actions)
-                if (!onSelect || (e.target as Element).closest('td.rowhead, [title="Delete Row"]')) return;
+                if (!onSelect || (e.target as Element).closest('td.rowhead, [title="Delete Row"], [data-row-action]')) return;
                 onSelect(r, e.shiftKey || e.ctrlKey || e.metaKey);
               }}>
                 <td className="rowhead" title={onRenumber ? 'Click to change the number' : undefined} onClick={e => { onSelect?.(r, e.shiftKey || e.ctrlKey || e.metaKey); if (onRenumber && renum?.i !== i) setRenum({ i, text: String(idOf(r)) }); }}>
@@ -138,7 +142,7 @@ export function Sheet<T extends object>({ rows, cols, onChange, newRow, selected
                     </td>
                   );
                 })}
-                <td><button className="w-full h-6 flex items-center justify-center text-slate-400 hover:text-rose-600" title="Delete Row" onClick={() => (onDelete ? onDelete(r, i) : onChange(rows.filter((_, k) => k !== i)))}><X className="w-3 h-3" /></button></td>
+                <td><div className="flex">{rowAction && <button data-row-action className="w-full h-6 flex items-center justify-center text-slate-400 hover:text-blue-600" title={rowAction.title} onClick={() => { onSelect?.(r, false); rowAction.onClick(r, i); }}>{rowAction.icon}</button>}<button className="w-full h-6 flex items-center justify-center text-slate-400 hover:text-rose-600" title="Delete Row" onClick={() => (onDelete ? onDelete(r, i) : onChange(rows.filter((_, k) => k !== i)))}><X className="w-3 h-3" /></button></div></td>
               </tr>
             ))}
             {!rows.length && <tr><td colSpan={cols.length + 2} className="!p-2 text-center text-[11px] text-slate-400">{empty ?? 'No rows'}</td></tr>}
@@ -152,7 +156,7 @@ export function Sheet<T extends object>({ rows, cols, onChange, newRow, selected
         return <ColourPicker value={cur} auto={!!(c.autoColour?.(row))} at={cpop} onClose={() => setCpop(null)} onChange={h => { const r = c.set ? c.set(row, h ?? '') : row; onChange(rows.map((x, k) => (k === cpop.i ? r : x))); }} />;
       })()}
       {cols.filter(c => c.list).map(c => <datalist key={c.key} id={`dl-${c.key}`}>{c.list!.map(o => <option key={o} value={o} />)}</datalist>)}
-      {newRow && <button className="btn" onClick={() => onChange([...rows, newRow()])}><Plus className="w-3.5 h-3.5" /> {addLabel}</button>}
+      {(newRow || onAdd) && <button className="btn" onClick={() => (onAdd ? onAdd() : onChange([...rows, newRow!()]))}><Plus className="w-3.5 h-3.5" /> {addLabel}</button>}
     </div>
   );
 }

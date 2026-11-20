@@ -2,7 +2,7 @@ import { G0 } from '../solver/frame';
 import { Children, useState } from 'react';
 import { AboutModal, CollapsePanel, Formula, Modal, NumberField, Segmented, SelectField } from 'engineering-ui';
 import { RELEASE_DATE, VERSION } from '../version';
-import { LIB_GROUPS, LIBRARY, SHAPES, shapeName, shapeProps, type Outline, type Props, type Shape } from '../model/sections';
+import { equivalentOutline, LIB_GROUPS, LIBRARY, SHAPES, shapeName, shapeProps, type Outline, type Props, type Shape } from '../model/sections';
 import { sym } from './Sym';
 import type { Axes, Dir, PointDir } from '../model/types';
 import { useUnits } from '../model/units';
@@ -10,7 +10,8 @@ import { useUnits } from '../model/units';
 const sci = (v: number) => (v >= 1e6 ? `${(v / 1e6).toPrecision(4)} × 10⁶` : v.toPrecision(4));
 export function SectionDialog({ onClose, onAdd, assign, replace }: { onClose: () => void; onAdd: (name: string, p: Props, outline: Outline) => void; assign: number; /** Section number whose type is being changed. */ replace?: number }) {
   const { show, read, label } = useUnits();
-  const [mode, setMode] = useState<'lib' | 'shape'>('lib');
+  const [mode, setMode] = useState<'lib' | 'shape' | 'custom'>('lib');
+  const [custom, setCustom] = useState<Props>({ A: 5000, Iz: 5e7, Iy: 1e7, J: 1e5 }); // the properties typed in directly, in mm units
   const [group, setGroup] = useState(LIB_GROUPS[0]);
   const [shape, setShape] = useState<Shape>('rect');
   const [dims, setDims] = useState<number[]>([600, 300, 20, 12]);
@@ -19,7 +20,7 @@ export function SectionDialog({ onClose, onAdd, assign, replace }: { onClose: ()
   return (
     <Modal title={replace ? `Change Type of Section ${replace}` : 'Add Section'} onClose={onClose} variant="dialog">
       <div className="space-y-3">
-        <Segmented value={mode} onChange={setMode} options={[{ value: 'lib', label: 'Library' }, { value: 'shape', label: 'Shape' }]} />
+        <Segmented value={mode} onChange={setMode} options={[{ value: 'lib', label: 'Library' }, { value: 'shape', label: 'Shape' }, { value: 'custom', label: 'Custom' }]} />
         {mode === 'lib' ? <>
           <SelectField label="Group" value={group} onChange={setGroup} options={LIB_GROUPS.map(g => ({ value: g, label: g }))} />
           <div className="max-h-72 overflow-auto scroll-thin border border-slate-200 rounded">
@@ -28,6 +29,13 @@ export function SectionDialog({ onClose, onAdd, assign, replace }: { onClose: ()
               <tbody>{LIBRARY.filter(s => s.group === group).map(s => <tr key={s.name} className="cursor-pointer" onClick={() => onAdd(s.name, s, s.outline)}><td className="font-medium">{s.name}</td><td>{sci(show('area', s.A))}</td><td>{sci(show('inertia', s.Iz))}</td><td>{sci(show('inertia', s.Iy))}</td></tr>)}</tbody>
             </table>
           </div>
+        </> : mode === 'custom' ? <>
+          <div className="grid grid-cols-2 gap-2">
+            {([['Area', 'A', 'area'], ['Iz', 'Iz', 'inertia'], ['Iy', 'Iy', 'inertia'], ['J', 'J', 'inertia']] as const).map(([l, k, u]) =>
+              <NumberField key={k} label={`${l} (${label(u)})`} value={show(u, custom[k])} min={show(u, 1e-6)} onChange={v => setCustom({ ...custom, [k]: read(u, v) })} />)}
+          </div>
+          <p className="text-[11px] text-slate-500">For a section known by its properties only. It is drawn as a rectangle of the same area and second moments.</p>
+          <div className="flex justify-end"><button className="btn-primary" disabled={!Object.values(custom).every(v => isFinite(v) && v > 0)} onClick={() => onAdd('Custom', custom, equivalentOutline(custom))}>{replace ? 'Change Type' : 'Add Section'}</button></div>
         </> : <>
           <SelectField label="Shape" value={shape} onChange={v => setShape(v as Shape)} options={SHAPES.map(s => ({ value: s.value, label: s.label }))} />
           <div className="grid grid-cols-2 gap-2">{sh.dims.map((l, i) => <NumberField key={l} label={`${l} (${label('lengthMm')})`} value={show('lengthMm', dims[i])} min={show('lengthMm', 0.1)} step={show('lengthMm', 10)} onChange={v => setDims(dims.map((x, k) => (k === i ? read('lengthMm', v) : x)))} />)}</div>
