@@ -823,7 +823,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
    * and one alone keeps its own position.
    */
   const nodeFixed = (n: { id: number; x: number; y: number; z: number; r: string }) => {
-    const code = restraintCode(n.r), c: V3 = [n.x, n.y, n.z], P1 = 20, P2 = 34, R = 5;
+    const code = restraintCode(n.r), c: V3 = [n.x, n.y, n.z], P1 = 14, P2 = 24, R = 4.5;
     return [0, 1, 2].map(a => {
       const tr = code[a] === 'F', ro = code[3 + a] === 'F'; if (!tr && !ro) return null;
       const axis = AXES[a], at = (px: number): V3 => [c[0] - axis[0] * px / cam.zoom, c[1] - axis[1] * px / cam.zoom, c[2] - axis[2] * px / cam.zoom];
