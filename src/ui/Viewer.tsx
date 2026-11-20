@@ -799,26 +799,28 @@ export const Viewer = React.forwardRef<ViewerHandle, {
   const AXES: V3[] = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
   /** Fixed translations and fixed rotations each have their own colour, as in Strand7. */
   const TRANS = '#0d9488', ROT = '#9333ea';
-  /** A fixed translation: a rigid link along the global axis to a ground plate, the counterpart of the spring. */
-  const fixedLin = (p: [number, number], d: [number, number], key: string, len = 20) => {
-    const nx = -d[1], ny = d[0], e = [p[0] + d[0] * len, p[1] + d[1] * len];
-    return <g key={key} fill="none" strokeLinecap="round"><line x1={p[0]} y1={p[1]} x2={e[0]} y2={e[1]} stroke="#fff" strokeWidth={4} strokeOpacity={0.85} />
-      <line x1={p[0]} y1={p[1]} x2={e[0]} y2={e[1]} stroke={TRANS} strokeWidth={1.5} /><line x1={e[0] + nx * 6} y1={e[1] + ny * 6} x2={e[0] - nx * 6} y2={e[1] - ny * 6} stroke={TRANS} strokeWidth={3.5} /></g>;
+  /** Points of a circle of radius r (pixels) around a world axis through c. */
+  const circle3 = (c: V3, axis: V3, r: number, from = 0, to = 2 * Math.PI, n = 40): [number, number][] => {
+    const cr = (a: V3, b: V3): V3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+    const h: V3 = Math.abs(axis[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0], e1 = cr(axis, h), l1 = Math.hypot(e1[0], e1[1], e1[2]) || 1, u1: V3 = [e1[0] / l1, e1[1] / l1, e1[2] / l1], u2 = cr(axis, u1), rr = r / cam.zoom;
+    return Array.from({ length: n + 1 }, (_, i) => { const th = from + (to - from) * i / n; return P([0, 1, 2].map(k => c[k] + rr * (Math.cos(th) * u1[k] + Math.sin(th) * u2[k])) as V3); });
+  };
+  const pathOf = (q: [number, number][]) => `M${q.map(v => `${v[0]} ${v[1]}`).join('L')}`;
+  /** A fixed translation: a rigid link along the global axis, in model space so that it foreshortens with the view, ending in a plate square to the axis. */
+  const fixedLin = (c: V3, axis: V3, key: string, len = 20) => {
+    const end: V3 = [c[0] - axis[0] * len / cam.zoom, c[1] - axis[1] * len / cam.zoom, c[2] - axis[2] * len / cam.zoom], a = P(c), b = P(end), plate = circle3(end, axis, 5.5);
+    return <g key={key} fill="none" strokeLinecap="round"><line x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} stroke="#fff" strokeWidth={4} strokeOpacity={0.85} />
+      <line x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} stroke={TRANS} strokeWidth={1.5} /><path d={pathOf(plate)} fill={TRANS} fillOpacity={0.35} stroke={TRANS} strokeWidth={1.5} /></g>;
   };
   /** A fixed rotation: a ring around the global axis with a solid clamp on it; the radius grows with the axis so that the three do not overlap. */
   const fixedRot = (c: V3, axis: V3, k: number, key: string) => {
-    const cr = (a: V3, b: V3): V3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-    const h: V3 = Math.abs(axis[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0], e1 = cr(axis, h), l1 = Math.hypot(e1[0], e1[1], e1[2]) || 1, u1: V3 = [e1[0] / l1, e1[1] / l1, e1[2] / l1], u2 = cr(axis, u1);
-    const r = (8 + 3.5 * k) / cam.zoom, at = (th: number) => P([0, 1, 2].map(i => c[i] + r * (Math.cos(th) * u1[i] + Math.sin(th) * u2[i])) as V3);
-    const ring = Array.from({ length: 41 }, (_, i) => at(i / 40 * 2 * Math.PI)), clamp = Array.from({ length: 7 }, (_, i) => at(-0.3 + 0.6 * i / 6));
-    const d = (q: [number, number][]) => `M${q.map(v => `${v[0]} ${v[1]}`).join('L')}`;
-    return <g key={key} fill="none" strokeLinecap="round" strokeLinejoin="round"><path d={d(ring)} stroke="#fff" strokeWidth={4} strokeOpacity={0.85} /><path d={d(ring)} stroke={ROT} strokeWidth={1.5} /><path d={d(clamp)} stroke={ROT} strokeWidth={4} /></g>;
+    const r = 9 + 3.5 * k, ring = circle3(c, axis, r), clamp = circle3(c, axis, r, -0.3, 0.3, 6);
+    return <g key={key} fill="none" strokeLinecap="round" strokeLinejoin="round"><path d={pathOf(ring)} stroke="#fff" strokeWidth={4} strokeOpacity={0.85} /><path d={pathOf(ring)} stroke={ROT} strokeWidth={1.5} /><path d={pathOf(clamp)} stroke={ROT} strokeWidth={4} /></g>;
   };
   /** The fixed degrees of freedom of a node, each drawn along (translation) or around (rotation) the global axis it acts on. */
-  const nodeFixed = (n: { id: number; x: number; y: number; z: number; r: string }, p: [number, number]) => [...restraintCode(n.r)].map((c, d) => {
+  const nodeFixed = (n: { id: number; x: number; y: number; z: number; r: string }) => [...restraintCode(n.r)].map((c, d) => {
     if (c !== 'F') return null;
-    if (d >= 3) return fixedRot([n.x, n.y, n.z], AXES[d - 3], d - 3, `fx${n.id}-${d}`);
-    const dir = dirS(AXES[d]); return dir ? fixedLin(p, [-dir[0], -dir[1]], `fx${n.id}-${d}`) : <circle key={`fx${n.id}-${d}`} cx={p[0]} cy={p[1]} r={6} fill="none" stroke={TRANS} strokeWidth={3.5} />;
+    return d >= 3 ? fixedRot([n.x, n.y, n.z], AXES[d - 3], d - 3, `fx${n.id}-${d}`) : fixedLin([n.x, n.y, n.z], AXES[d], `fx${n.id}-${d}`);
   });
   /** The springs of a node, each drawn along (translation) or around (rotation) the global axis it acts on. */
   const nodeSprings = (n: { id: number; x: number; y: number; z: number; r: string; k?: number[] }, p: [number, number]) => [...restraintCode(n.r)].map((c, d) => {
@@ -905,7 +907,7 @@ export const Viewer = React.forwardRef<ViewerHandle, {
         {viewNodes.map(n => {
           const p = P([n.x, n.y, n.z]), on = sel.nodes.has(n.id);
           return <g key={n.id}>
-            {opts.restraints && nodeFixed(n, p)}
+            {opts.restraints && nodeFixed(n)}
             {opts.restraints && nodeSprings(n, p)}
             {hover.n === n.id && <circle cx={p[0]} cy={p[1]} r={9} fill={AMBER} fillOpacity={0.3} stroke={AMBER} strokeWidth={2} pointerEvents="none" />}
             <rect x={p[0] - (on ? 4 : 2.5)} y={p[1] - (on ? 4 : 2.5)} width={on ? 8 : 5} height={on ? 8 : 5} fill={on || chain === n.id ? BLUE : '#334155'} />
