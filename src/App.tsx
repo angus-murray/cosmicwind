@@ -529,7 +529,12 @@ export default function App() {
           <span className="label">Geometry</span>
           <Segmented value={opts.geometry} onChange={v => o('geometry')(v)} options={[{ value: 'undeformed', label: 'Undeformed' }, { value: 'deformed', label: 'Deformed' }]} />
         </div>
-        {opts.geometry === 'deformed' && <NumberField label="Deflection Scale" value={opts.defScale} min={0.1} max={20} step={0.25} onChange={o('defScale')} />}
+        {opts.geometry === 'deformed' && <div>
+          <div className="flex items-baseline justify-between"><span className="label">Deflection Scale</span><span className="text-[11px] tabular-nums text-slate-600">{String(+opts.defScale.toFixed(2))}×</span></div>
+          {/* the slider is square-root scaled, so that the small scales (0 to 5×) have as much room as the large ones up to 20× */}
+          <input type="range" className="w-full accent-blue-600" min={0} max={1} step={0.005} aria-label="Deflection Scale" value={Math.sqrt(opts.defScale / 20)} onChange={e => o('defScale')(+(20 * Number(e.target.value) ** 2).toFixed(2))} />
+          <Segmented value={String(opts.defScale)} onChange={v => o('defScale')(Number(v))} options={[0, 1, 5, 20].map(v => ({ value: String(v), label: `${v}×` }))} />
+        </div>}
       </div>,
       items: [
       { key: 'defl', icon: MoveDown, label: 'Deflections', render: () => (
