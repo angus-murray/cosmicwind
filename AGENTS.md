@@ -14,7 +14,7 @@ Structural analysis app; follows the `engineering-ui` house style (`node_modules
 - Datasheets use a fixed layout: columns share the width equally (a text column takes more, or a `weight` on the column), so the same kind of column has the same width everywhere. The input column is a quarter of the width, at least 500 px.
 - On the Analysis and Results tab the Static Results (Deflections, Diagrams, Reactions, Stresses) are drawn on the Undeformed or the Deformed geometry (`opts.geometry`), never both. In the Viewer the deformed geometry is the model with displaced nodes and bent members, so loads, diagrams, reactions and stress colours follow it. Buckling and Vibration (Modal Results) ignore the choice and draw their own shape. A member's cross section in the deformed view is turned by the rotations of the member at that station (`rx`, `ry`, `rz` in `MemberResult`), so it stays square to the drawn axis, stays level where the member is fixed and turns with the node at a rigid joint.
 - There is no Solve button: the analysis runs while the Analysis and Results tab is shown, and the model changes. On that tab the model is shown with its results and the drawing tools are hidden.
-- The PDF report uses the built-in Helvetica font and `jspdf-autotable`, so it avoids symbols outside Latin-1.
+- The PDF Report button is removed from the header for now (`src/report.ts` is kept, not reachable from the UI). The report uses the built-in Helvetica font and `jspdf-autotable`, so it avoids symbols outside Latin-1.
 
 ## Conventions
 

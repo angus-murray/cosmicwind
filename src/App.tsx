@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AppHeader, Banner, Segmented, useElementSize, Check, NumberField, ReportDialog, SelectField, StatusChip, today } from 'engineering-ui';
+import { AppHeader, Banner, Segmented, useElementSize, Check, NumberField, SelectField, StatusChip } from 'engineering-ui';
 import { Axis3d, Box, Eye, Ruler, FilePlus, FolderOpen, Hash, Maximize, MousePointer2, Redo2, Save, Spline, Trash2, Type, Undo2, Weight, Dot, Shapes, Cuboid, Waypoints, StickyNote, Anchor, Unlink, Crosshair, Layers, Activity, TrendingDown, ChevronsDown, Minimize2, LineChart, Calculator, Thermometer, ArrowUpFromLine, MoveDown, Combine, ListOrdered, Waves, ArrowDownToDot, Circle, GripHorizontal } from 'lucide-react';
 import {
   deleteMembersAndFreeNodes, deleteNodes, DASH, emptyModel, FREE, PIN, MATERIAL_PRESETS, nextId, normalise, RELEASES, RESTRAINTS,
@@ -15,7 +15,6 @@ import { ContextMenu, PromptBox, TextPromptBox, ToolFlyout, type MenuItem, type 
 import { About, LoadDialog, SectionDialog, type LoadSpec } from './ui/Dialogs';
 import { UnitsBar } from './ui/UnitsBar';
 import { loadUnits, saveUnits, toShown, fromShown, unitLabel, UnitsContext, type Quantity, type Units } from './model/units';
-import type { ReportInfo } from './report';
 
 type Tab = 'structure' | 'results';
 /** The boundary conditions are kept on the nodes and members; the Boundary Conditions datasheets list them only where they exist, one row each. */
@@ -63,7 +62,7 @@ export default function App() {
   const o = <K extends keyof ViewOpts>(k: K) => (v: ViewOpts[K]) => setOpts(p => ({ ...p, [k]: v }));
   const [caseId, setCaseId] = useState(1);
   const [modeIx, setModeIx] = useState<{ kind: 'buckling' | 'modal'; i: number } | null>(null);
-  const [dialog, setDialog] = useState<'about' | 'report' | 'new' | 'section' | 'load' | null>(null);
+  const [dialog, setDialog] = useState<'about' | 'new' | 'section' | 'load' | null>(null);
   const [assignOnAdd, setAssignOnAdd] = useState(false);
   /** The restraint or release editor opened from the right-click menu, and the nodes or members it changes. */
   const [dofEdit, setDofEdit] = useState<{ kind: 'node' | 'member'; end: 'A' | 'B' | 'both'; ids: number[]; at: { x: number; y: number } } | null>(null);
@@ -73,7 +72,6 @@ export default function App() {
   const [replaceSec, setReplaceSec] = useState<number | null>(null);
   const [secSel, setSecSel] = useState<number | null>(null);
   const [loadKind, setLoadKind] = useState<'node' | 'member'>('node');
-  const [info, setInfo] = useState<ReportInfo>({ project: '', number: '', structure: '', designer: '', date: today() });
   const viewer = useRef<ViewerHandle>(null);
   const [fitRev, setFitRev] = useState(0);
   const [prompt, setPrompt] = useState<PromptState | null>(null);
@@ -609,7 +607,7 @@ export default function App() {
   return (
     <UnitsContext.Provider value={units}>
     <div className="fill-window app-wide min-h-screen bg-slate-100 lg:h-screen lg:overflow-hidden flex flex-col">
-      <AppHeader name="CosmicWind" logoSrc="/favicon.svg" onAbout={() => setDialog('about')} onReport={() => setDialog('report')}
+      <AppHeader name="CosmicWind" logoSrc="/favicon.svg" onAbout={() => setDialog('about')}
         actions={<div className="flex items-center gap-1">
           <button className="btn !px-2" title="Undo (Ctrl+Z)" disabled={!hist.past.length} onClick={undo}><Undo2 className="w-3.5 h-3.5" /></button>
           <button className="btn !px-2" title="Redo (Ctrl+Y)" disabled={!hist.future.length} onClick={redo}><Redo2 className="w-3.5 h-3.5" /></button>
@@ -718,9 +716,6 @@ export default function App() {
         });
         setDialog(null); setAssignDraw(false);
       }} />}
-      {dialog === 'report' && <ReportDialog info={info} setInfo={setInfo} onClose={() => setDialog(null)}
-        fields={[['project', 'Project'], ['number', 'Project Number'], ['structure', 'Structure'], ['designer', 'Designer'], ['date', 'Date']]}
-        onGenerate={async () => { const a = analysis ?? analyse(model); if (a.errors.length) throw new Error(a.errors[0]); const { makeReport } = await import('./report'); await makeReport(model, a, info, viewer.current?.svg() ?? null, units); }} />}
     </div>
     </UnitsContext.Provider>
   );
