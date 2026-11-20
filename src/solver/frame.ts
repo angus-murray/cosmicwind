@@ -84,6 +84,15 @@ function consistentMass(m: number, i: number, L: number): M12 {
   sym(k, 4, 4, 4 * L2 * c); sym(k, 10, 10, 4 * L2 * c); sym(k, 4, 10, -3 * L2 * c);
   return k;
 }
+/**
+ * Stiffness of a continuous elastic support of ky and kz (kN/m per m) along the local y and z axes: the consistent matrix, ∫ k Nᵀ N dx with the cubic
+ * (Hermite) shape functions of the beam, which is the same matrix as the consistent mass in bending with the mass per length replaced by k.
+ */
+function winkler(ky: number, kz: number, L: number): M12 {
+  const c = consistentMass(1, 0, L), k = zeros12();
+  for (const [dofs, kk] of [[[1, 5, 7, 11], ky], [[2, 4, 8, 10], kz]] as [number[], number][]) for (const i of dofs) for (const j of dofs) k[i][j] = c[i][j] * kk;
+  return k;
+}
 /** Geometric stiffness for an axial force P (tension positive). */
 function geometric(P: number, L: number): M12 {
   const k = zeros12(), f = P / (30 * L), a = 36 * f, b = 3 * L * f, c = 4 * L * L * f, d = -L * L * f;
@@ -96,6 +105,7 @@ function geometric(P: number, L: number): M12 {
 
 /** Condensation transform for the end DOFs that are released or sprung: K' = TᵀKT (+ spring term), f' = Tᵀf. rel marks the internal member-end DOFs
  *  and kk their spring stiffness to the node (0 for a plain release). Returns null if the releases leave a mechanism. */
+const rot12T = (T: M12, u: number[]) => T.map(row => row.reduce((t, k, b) => t + k * u[b], 0));
 function condenser(k: M12, rel: boolean[], kk: number[]): M12 | null {
   const r = rel.map((v, i) => (v ? i : -1)).filter(i => i >= 0), T = zeros12();
   for (let i = 0; i < 12; i++) if (!rel[i]) T[i][i] = 1;
@@ -181,8 +191,8 @@ function fixedEnd(el: El, ld: Load): number[] {
 const STATIONS = 21;
 
 /** Internal actions and deflections along a member from its end forces, end displacements and loads. */
-function stations(el: El, ld: Load, end: number[], u: number[], nStations: number, active: boolean, second = false): MemberResult {
-  let r = stationPass(el, ld, end, u, nStations, active, null);
+function stations(el: El, ld: Load, end: number[], u: number[], nStations: number, active: boolean, second = false, ue: number[] | null = null): MemberResult {
+  let r = stationPass(el, ld, end, u, nStations, active, null, ue);
   // Second-order analysis: the axial force at end A acts through the lateral deflection of the member, which adds N (v(x) − v(A)) to the bending moment
   // at x (the P-δ and chord-rotation terms). The deflection depends on the moment, so it is found by fixed-point iteration; it converges geometrically
   // because the axial force of an element is far below its own Euler load. Without it the moment at the far end would differ from the element end
@@ -190,7 +200,7 @@ function stations(el: El, ld: Load, end: number[], u: number[], nStations: numbe
   if (second && end[0] !== 0 && r.x.length > 1) {
     for (let it = 0; it < 12; it++) {
       const prev = r, lerp = (arr: number[], x: number) => { let k = 1; while (k < prev.x.length - 1 && prev.x[k] < x) k++; const x0 = prev.x[k - 1], x1 = prev.x[k], t = x1 > x0 ? (x - x0) / (x1 - x0) : 0; return arr[k - 1] + (arr[k] - arr[k - 1]) * t - arr[0]; };
-      r = stationPass(el, ld, end, u, nStations, active, x => [lerp(prev.dy, x), lerp(prev.dz, x)]);
+      r = stationPass(el, ld, end, u, nStations, active, x => [lerp(prev.dy, x), lerp(prev.dz, x)], ue);
       let dm = 0, mm = 0; for (let i = 0; i < r.x.length; i++) { dm = Math.max(dm, Math.abs(r.Mz[i] - prev.Mz[i]), Math.abs(r.My[i] - prev.My[i])); mm = Math.max(mm, Math.abs(r.Mz[i]), Math.abs(r.My[i])); }
       if (dm <= 1e-12 * mm + 1e-15) break;
     }
@@ -198,7 +208,7 @@ function stations(el: El, ld: Load, end: number[], u: number[], nStations: numbe
   return r;
 }
 
-function stationPass(el: El, ld: Load, end: number[], u: number[], nStations: number, active: boolean, off: ((x: number) => number[]) | null): MemberResult {
+function stationPass(el: El, ld: Load, end: number[], u: number[], nStations: number, active: boolean, off: ((x: number) => number[]) | null, ue: number[] | null): MemberResult {
   const L = el.L, xs: [number, boolean][] = [];
   for (let i = 0; i < nStations; i++) xs.push([L * i / (nStations - 1), true]);
   for (const p of ld.point) if (p.x > 1e-9 && p.x < L - 1e-9) xs.push([p.x, false], [p.x, true]);
@@ -213,6 +223,19 @@ function stationPass(el: El, ld: Load, end: number[], u: number[], nStations: nu
       for (let i = 0; i < 3; i++) {
         const k = (d.q2[i] - d.q1[i]) / len, F = d.q1[i] * c + k * c * c / 2, m1 = (d.s - x) * F + d.q1[i] * c * c / 2 + k * c ** 3 / 3;
         S[i] += F; if (i === 1) Mz += m1; if (i === 2) My -= m1;
+      }
+    }
+    if (ue && x > 0 && (el.m.ky || el.m.kz)) { // the reaction of the continuous support, k × the deflection of the element's own cubic shape, integrated exactly by Gauss points
+      const GP: [number, number][] = [[0.5 - Math.sqrt(0.6) / 2, 5 / 18], [0.5, 8 / 18], [0.5 + Math.sqrt(0.6) / 2, 5 / 18]];
+      for (const i of [1, 2] as const) {
+        const kk = Math.max(0, (i === 1 ? el.m.ky : el.m.kz) || 0); if (!kk) continue;
+        const sg = i === 1 ? 1 : -1, d1 = i === 1 ? 5 : 4, d2 = i === 1 ? 11 : 10; let F = 0, m1 = 0;
+        for (const [t, w] of GP) {
+          const s0 = x * t, xi = s0 / el.L, N1 = 1 - 3 * xi * xi + 2 * xi ** 3, N2 = el.L * (xi - 2 * xi * xi + xi ** 3), N3 = 3 * xi * xi - 2 * xi ** 3, N4 = el.L * (-xi * xi + xi ** 3);
+          const v = N1 * ue[i] + sg * N2 * ue[d1] + N3 * ue[6 + i] + sg * N4 * ue[d2], q = -kk * v;
+          F += w * x * q; m1 += w * x * (s0 - x) * q;
+        }
+        S[i] += F; if (i === 1) Mz += m1; else My -= m1;
       }
     }
     for (const p of ld.point) if (p.x < x - 1e-9 || (incl && p.x <= x + 1e-9)) {
@@ -339,15 +362,9 @@ export function analyse(model: Model): Analysis {
   }
   const springs = nodes.flatMap((n, i) => [...restraintCode(n.r)].map((c, d) => ({ dof: i * 6 + d, k: c === 'S' ? n.k?.[d] ?? 0 : 0 })).filter(v => v.k > 0 && eq[v.dof] >= 0));
 
-  // Continuous supports: each member contributes k L / 2 to each end node, along its local y and z axes, as a 3 × 3 block in global axes
-  const found = new Map<number, number[][]>();
-  for (const e of els) {
-    const ky = Math.max(0, e.m.ky || 0), kz = Math.max(0, e.m.kz || 0); if (!ky && !kz) continue;
-    for (const i of [e.ia, e.ib]) {
-      let f = found.get(i); if (!f) found.set(i, f = [[0, 0, 0], [0, 0, 0], [0, 0, 0]]);
-      for (let a = 0; a < 3; a++) for (let b = 0; b < 3; b++) f[a][b] += e.L / 2 * (ky * e.R[1][a] * e.R[1][b] + kz * e.R[2][a] * e.R[2][b]);
-    }
-  }
+  // Continuous supports: each member carries its own consistent support matrix (see winkler), condensed with its end releases like the beam stiffness
+  const bedOf = (e: El) => { const ky = Math.max(0, e.m.ky || 0), kz = Math.max(0, e.m.kz || 0); return ky || kz ? winkler(ky, kz, e.L) : null; };
+  const stiff = (e: El, ea = e.EA): M12 => { const k = elastic(ea, e.EIy, e.EIz, e.GJ, e.L), w = bedOf(e); return w ? k.map((r, a) => r.map((v, b) => v + w[a][b])) : k; };
 
   // ---- Loads, grouped by load case and member
   const mIx = new Map(els.map((e, i) => [e.m.id, i]));
@@ -378,7 +395,7 @@ export function analyse(model: Model): Analysis {
 
   // ---- Assembly
   const linearOnly = !model.settings.nonlinear && !els.some(e => e.tension || e.compression);
-  interface Built { K: Skyline; kl: M12[]; T: (M12 | null)[]; auto: number[] }
+  interface Built { K: Skyline; kl: M12[]; /** The part of kl that is the continuous support. */ kw: M12[]; T: (M12 | null)[]; auto: number[] }
   /** Adds a 12 × 12 matrix of an element, given in its local axes, to a matrix in the global equations: Λᵀ k Λ, done in 3 × 3 blocks. */
   const scatter = (K: Skyline, k: M12, e: El) => {
     const R = e.R;
@@ -393,24 +410,23 @@ export function analyse(model: Model): Analysis {
     }
   };
   const build = (active: boolean[], axial: number[] | null, geoOnly = false): Built | string => {
-    const K = new Skyline(first), kl: M12[] = [], Ts: (M12 | null)[] = [];
+    const K = new Skyline(first), kl: M12[] = [], kw: M12[] = [], Ts: (M12 | null)[] = [];
     for (let i = 0; i < els.length; i++) {
-      const e = els[i], ke = elastic(e.EA * (active[i] ? 1 : 1e-8), e.EIy, e.EIz, e.GJ, e.L);
+      const e = els[i], ke = stiff(e, e.EA * (active[i] ? 1 : 1e-8)), bw = bedOf(e);
       const T = condenser(ke, e.rel, e.relK);
       if (!T) return `Member ${e.m.id}: the end releases leave the member unstable.`;
       let k = geoOnly ? zeros12() : tKt(T, ke).map((row, a) => row.map((v, b) => v + springK(T, e.relK)[a][b]));
       if (axial && axial[i] !== 0) { const kg = tKt(T, geometric(axial[i], e.L)); k = k.map((r, a) => r.map((v, b) => v + kg[a][b])); }
-      kl.push(k); Ts.push(T);
+      kl.push(k); Ts.push(T); kw.push(bw && !geoOnly ? tKt(T, bw) : zeros12());
       scatter(K, k, e);
     }
     const auto: number[] = [];
     if (!geoOnly) {
       for (const s of springs) K.add(eq[s.dof], eq[s.dof], s.k);
-      for (const [i, f] of found) for (let a = 0; a < 3; a++) for (let b = a; b < 3; b++) if (eq[i * 6 + a] >= 0 && eq[i * 6 + b] >= 0 && f[a][b] !== 0) K.add(eq[i * 6 + a], eq[i * 6 + b], f[a][b]);
       let dmax = 0; for (let i = 0; i < neq; i++) dmax = Math.max(dmax, Math.abs(K.diag(i)));
       for (let i = 0; i < neq; i++) if (Math.abs(K.diag(i)) < 1e-12 * dmax) { K.setDiag(i, 1); auto.push(i); } // unstiffened DOF (e.g. rotation at a truss node)
     }
-    return { K, kl, T: Ts, auto };
+    return { K, kl, kw, T: Ts, auto };
   };
   const unstable = (i: number) => `The structure is unstable at node ${nodes[eqNode[i]].id} (${DOF[eqDof[i]]}). Check the restraints and member end releases.`;
 
@@ -512,17 +528,20 @@ export function analyse(model: Model): Analysis {
     // results
     const full = (d: number) => (eq[d] >= 0 ? u[eq[d]] : up[d]);
     nodes.forEach((n, i) => res.disp.set(n.id, Array.from({ length: 6 }, (_, d) => full(i * 6 + d))));
-    const react = new Float64Array(nodes.length * 6);
+    const react = new Float64Array(nodes.length * 6), bed = new Map<number, number[]>();
     els.forEach((e, i) => {
+      const bw = built.kw[i].map(row => row.reduce((t, k, b) => t + k * uloc[i][b], 0)); // force of the continuous support on this member's nodes, local axes
+      const bg = rot12(e.R, bw, true);
+      [0, 1, 2].forEach(a => { bed.set(e.ia, (bed.get(e.ia) ?? [0, 0, 0]).map((v, q) => v + (q === a ? bg[a] : 0))); bed.set(e.ib, (bed.get(e.ib) ?? [0, 0, 0]).map((v, q) => v + (q === a ? bg[6 + a] : 0))); });
       rot12(e.R, ends[i], true).forEach((v, a) => { react[e.dofs[a]] += v; });
-      res.members.set(e.m.id, stations(e, loads[i], ends[i], uloc[i], nStations, active[i], model.settings.nonlinear));
+      res.members.set(e.m.id, stations(e, loads[i], ends[i], uloc[i], nStations, active[i], model.settings.nonlinear, e.m.ky || e.m.kz ? rot12T(built.T[i]!, uloc[i]) : null));
     });
     for (const s of springs) react[s.dof] = -s.k * u[eq[s.dof]] + P[s.dof];
     const sprung = new Set(springs.map(s => s.dof));
     nodes.forEach((n, i) => {
       const r = Array.from({ length: 6 }, (_, d) => (eq[i * 6 + d] < 0 || sprung.has(i * 6 + d) ? react[i * 6 + d] - P[i * 6 + d] : 0));
-      const f = found.get(i);
-      if (f) for (let a = 0; a < 3; a++) if (eq[i * 6 + a] >= 0) for (let b = 0; b < 3; b++) if (eq[i * 6 + b] >= 0) r[a] -= f[a][b] * full(i * 6 + b);
+      const f = bed.get(i);
+      if (f) for (let a = 0; a < 3; a++) r[a] -= f[a]; // the bed's own reaction, at restrained nodes too, so that the reactions carry the whole load
       if (adj[i].length && (f || Array.from({ length: 6 }, (_, d) => eq[i * 6 + d] < 0 || sprung.has(i * 6 + d)).some(Boolean))) res.reactions.set(n.id, r);
     });
 
@@ -548,7 +567,7 @@ export function analyse(model: Model): Analysis {
     // The mass matrix: the consistent matrix of each member (condensed with the same releases as its stiffness) plus the node masses, stored like the stiffness matrix
     const Mm = new Skyline(first);
     for (const e of els) {
-      const T = condenser(elastic(e.EA, e.EIy, e.EIz, e.GJ, e.L), e.rel, e.relK); if (!T) continue;
+      const T = condenser(stiff(e), e.rel, e.relK); if (!T) continue;
       scatter(Mm, tKt(T, consistentMass(e.mpl, e.ipl, e.L)), e);
     }
     for (const m of model.masses) { const i = nodeIx.get(m.node); if (i !== undefined) for (let d = 0; d < 3; d++) if (eq[i * 6 + d] >= 0) Mm.add(eq[i * 6 + d], eq[i * 6 + d], m.m || 0); }

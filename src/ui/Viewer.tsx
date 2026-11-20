@@ -797,6 +797,29 @@ export const Viewer = React.forwardRef<ViewerHandle, {
     return <g key={key} fill="none" strokeLinecap="round" strokeLinejoin="round"><path d={path} stroke="#fff" strokeWidth={4} strokeOpacity={0.85} /><path d={path} stroke={AMBER} strokeWidth={1.5} /></g>;
   };
   const AXES: V3[] = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+  /** Fixed translations and fixed rotations each have their own colour, as in Strand7. */
+  const TRANS = '#0d9488', ROT = '#9333ea';
+  /** A fixed translation: a rigid link along the global axis to a ground plate, the counterpart of the spring. */
+  const fixedLin = (p: [number, number], d: [number, number], key: string, len = 20) => {
+    const nx = -d[1], ny = d[0], e = [p[0] + d[0] * len, p[1] + d[1] * len];
+    return <g key={key} fill="none" strokeLinecap="round"><line x1={p[0]} y1={p[1]} x2={e[0]} y2={e[1]} stroke="#fff" strokeWidth={4} strokeOpacity={0.85} />
+      <line x1={p[0]} y1={p[1]} x2={e[0]} y2={e[1]} stroke={TRANS} strokeWidth={1.5} /><line x1={e[0] + nx * 6} y1={e[1] + ny * 6} x2={e[0] - nx * 6} y2={e[1] - ny * 6} stroke={TRANS} strokeWidth={3.5} /></g>;
+  };
+  /** A fixed rotation: a ring around the global axis with a solid clamp on it; the radius grows with the axis so that the three do not overlap. */
+  const fixedRot = (c: V3, axis: V3, k: number, key: string) => {
+    const cr = (a: V3, b: V3): V3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+    const h: V3 = Math.abs(axis[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0], e1 = cr(axis, h), l1 = Math.hypot(e1[0], e1[1], e1[2]) || 1, u1: V3 = [e1[0] / l1, e1[1] / l1, e1[2] / l1], u2 = cr(axis, u1);
+    const r = (8 + 3.5 * k) / cam.zoom, at = (th: number) => P([0, 1, 2].map(i => c[i] + r * (Math.cos(th) * u1[i] + Math.sin(th) * u2[i])) as V3);
+    const ring = Array.from({ length: 41 }, (_, i) => at(i / 40 * 2 * Math.PI)), clamp = Array.from({ length: 7 }, (_, i) => at(-0.3 + 0.6 * i / 6));
+    const d = (q: [number, number][]) => `M${q.map(v => `${v[0]} ${v[1]}`).join('L')}`;
+    return <g key={key} fill="none" strokeLinecap="round" strokeLinejoin="round"><path d={d(ring)} stroke="#fff" strokeWidth={4} strokeOpacity={0.85} /><path d={d(ring)} stroke={ROT} strokeWidth={1.5} /><path d={d(clamp)} stroke={ROT} strokeWidth={4} /></g>;
+  };
+  /** The fixed degrees of freedom of a node, each drawn along (translation) or around (rotation) the global axis it acts on. */
+  const nodeFixed = (n: { id: number; x: number; y: number; z: number; r: string }, p: [number, number]) => [...restraintCode(n.r)].map((c, d) => {
+    if (c !== 'F') return null;
+    if (d >= 3) return fixedRot([n.x, n.y, n.z], AXES[d - 3], d - 3, `fx${n.id}-${d}`);
+    const dir = dirS(AXES[d]); return dir ? fixedLin(p, [-dir[0], -dir[1]], `fx${n.id}-${d}`) : <circle key={`fx${n.id}-${d}`} cx={p[0]} cy={p[1]} r={6} fill="none" stroke={TRANS} strokeWidth={3.5} />;
+  });
   /** The springs of a node, each drawn along (translation) or around (rotation) the global axis it acts on. */
   const nodeSprings = (n: { id: number; x: number; y: number; z: number; r: string; k?: number[] }, p: [number, number]) => [...restraintCode(n.r)].map((c, d) => {
     if (c !== 'S' || !((n.k?.[d] ?? 0) > 0)) return null;
@@ -880,12 +903,9 @@ export const Viewer = React.forwardRef<ViewerHandle, {
           return <g pointerEvents="none">{items}</g>;
         })()}
         {viewNodes.map(n => {
-          const p = P([n.x, n.y, n.z]), r = opts.restraints ? restraintCode(n.r) : 'RRRRRR', t = r.slice(0, 3), on = sel.nodes.has(n.id);
+          const p = P([n.x, n.y, n.z]), on = sel.nodes.has(n.id);
           return <g key={n.id}>
-            {r === 'FFFFFF' ? <path d={`M${p[0] - 8} ${p[1] + 3}h16v6h-16z`} fill="#64748b" />
-              : t.startsWith('FF') ? <path d={`M${p[0]} ${p[1] + 2}l7 11h-14z`} style={{ fill: 'var(--color-white)' }} stroke="#64748b" strokeWidth={1.5} />
-                : t[1] === 'F' ? <g stroke="#64748b" strokeWidth={1.5}><path d={`M${p[0]} ${p[1] + 2}l6 9h-12z`} style={{ fill: 'var(--color-white)' }} /><line x1={p[0] - 8} y1={p[1] + 14} x2={p[0] + 8} y2={p[1] + 14} /></g>
-                  : t.includes('F') && r !== 'RRFFFR' ? <path d={`M${p[0]} ${p[1] + 2}l5 5l-5 5l-5 -5z`} style={{ fill: 'var(--color-white)' }} stroke="#64748b" strokeWidth={1.5} /> : null}
+            {opts.restraints && nodeFixed(n, p)}
             {opts.restraints && nodeSprings(n, p)}
             {hover.n === n.id && <circle cx={p[0]} cy={p[1]} r={9} fill={AMBER} fillOpacity={0.3} stroke={AMBER} strokeWidth={2} pointerEvents="none" />}
             <rect x={p[0] - (on ? 4 : 2.5)} y={p[1] - (on ? 4 : 2.5)} width={on ? 8 : 5} height={on ? 8 : 5} fill={on || chain === n.id ? BLUE : '#334155'} />

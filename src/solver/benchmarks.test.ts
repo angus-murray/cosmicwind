@@ -224,22 +224,31 @@ test('F3 end and node springs: spring in series with a bar, and a semi-rigid fix
   near(Math.abs(c.members.get(1)!.Mz[0]), (w * L * L / 12) * kr / (kr + 4 * EI / L), 1e-9, 'moment at the sprung member end');
 });
 
-test('F4 beam on a continuous elastic support (Winkler): uniform load, and a point load on a long beam', () => {
-  // The solver lumps the support to the member ends (k L / 2 each) but loads are consistent, so results converge with
-  // refinement at O(h²) rather than being exact; the test checks the error and its rate of convergence.
+test('F4 beam on a continuous elastic support (Winkler): uniform load, Navier series, and a point load on a long beam', () => {
+  // The support matrix is consistent (∫ k Nᵀ N dx), so a uniform load on a free beam gives exactly q/k with no bending, and the
+  // solution converges at O(h⁴) otherwise.
   const k = 5000, q = 20; // kN/m per m
   const free = (m: Model) => { m.nodes.forEach(nd => { nd.r = 'FRFFFR'; }); m.members.forEach(b => { b.ky = k; }); return m; };
-  const errs = [10, 20, 40].map(n => {
+  for (const n of [1, 4, 20]) {
     const m = free(line(10, n, 'RRRRRR', 'RRRRRR')); udlY(m, -q);
-    return Math.abs(-run(m).cases[0].disp.get(n / 2 + 1)![1] * k / q - 1); // uniform settlement q/k expected
-  });
-  expect(errs[2]).toBeLessThan(1e-3);
-  expect(errs[0] / errs[1]).toBeGreaterThan(3.5); expect(errs[1] / errs[2]).toBeGreaterThan(3.5);
+    const c = run(m).cases[0];
+    near(-c.disp.get(1)![1], q / k, 1e-9, `uniform settlement q/k with ${n} elements`);
+    expect(Math.abs(c.members.get(1)!.Mz[20])).toBeLessThan(1e-6);
+  }
+  // pinned beam on the bed, UDL: Navier series y = Σ 4q/(nπ) sin(nπx/L) / (EI (nπ/L)⁴ + k)
+  const Lp = 10, ys = (x: number) => { let s = 0; for (let j = 1; j < 400; j += 2) s += 4 * q / (j * Math.PI) * Math.sin(j * Math.PI * x / Lp) / (EI * (j * Math.PI / Lp) ** 4 + k); return s; };
+  const err = [4, 8, 16].map(n => { const m = line(Lp, n, 'FFFFFR', 'RFFFFR'); m.members.forEach(b => { b.ky = k; }); udlY(m, -q); return Math.abs(-run(m).cases[0].disp.get(n / 2 + 1)![1] / ys(Lp / 2) - 1); });
+  expect(Math.max(...err)).toBeLessThan(5e-5); expect(err[2]).toBeLessThan(2e-6); // already accurate to a few parts per million with four elements
+  const Ms = (x: number) => { let t = 0; for (let j = 1; j < 400; j += 2) t += 4 * q / (j * Math.PI) * EI * (j * Math.PI / Lp) ** 2 * Math.sin(j * Math.PI * x / Lp) / (EI * (j * Math.PI / Lp) ** 4 + k); return t; };
+  const mm = line(Lp, 16, 'FFFFFR', 'RFFFFR'); mm.members.forEach(b => { b.ky = k; }); udlY(mm, -q);
+  const r16 = run(mm).cases[0].members; // the moment diagram includes the distributed reaction of the support
+  near(r16.get(8)!.Mz[20], Ms(Lp / 2), 2e-4, 'midspan moment against the Navier series');
+  near(r16.get(4)!.Mz[10], Ms(Lp * 3.5 / 16), 2e-4, 'moment at a quarter point');
   // Hetényi: infinite beam, w(0) = Pβ/2k, M(0) = P/4β, β = (k/4EI)^¼
-  const beta = (k / (4 * EI)) ** 0.25, P = 100, n = 400;
+  const beta = (k / (4 * EI)) ** 0.25, P = 100, n = 200;
   const m = free(line(40, n, 'RRRRRR', 'RRRRRR')); m.nodeLoads.push(fy(n / 2 + 1, -P));
   const c = run(m).cases[0];
-  near(-c.disp.get(n / 2 + 1)![1], P * beta / (2 * k), 5e-3, 'deflection under the load Pβ/2k');
+  near(-c.disp.get(n / 2 + 1)![1], P * beta / (2 * k), 5e-4, 'deflection under the load Pβ/2k');
   near(Math.abs(c.members.get(n / 2)!.Mz[20]), P / (4 * beta), 5e-3, 'moment under the load P/4β');
 });
 

@@ -144,19 +144,17 @@ test('an axial spring at a member end is in series with the member', () => { // 
   close(r.cases[0].members.get(1)!.N[0], 100);
 });
 
-test('continuous support: a member on a spring bed equals the same springs applied at the nodes', () => {
-  // Axially loaded in no way: a pinned-pinned beam with a UDL, supported continuously in local y, against equivalent nodal springs on a refined model
-  const kf = 400, n = 8, L = 6;
-  const a = beam(L, n, 'FFFFRR', 'RFFRRR'); udl(a, -5);
+test('continuous support: a pinned beam on a spring bed against the Navier series, with the bed reactions in equilibrium', () => {
+  const kf = 400, n = 8, L = 6, q = 5;
+  const a = beam(L, n, 'FFFFRR', 'RFFRRR'); udl(a, -q);
   a.members.forEach(b => { b.ky = kf; });
-  const b = beam(L, n, 'FFFFRR', 'RFFRRR'); udl(b, -5);
-  b.nodes.forEach((nd, i) => { const trib = (i === 0 || i === n ? 0.5 : 1) * L / n; if (i > 0 && i < n) { nd.r = 'RSRRRR'; nd.k = [0, kf * trib, 0, 0, 0, 0]; } });
-  // the end nodes are restrained in Y, so their share of the bed does nothing in either model
-  const ra = analyse(a), rb = analyse(b); expect(ra.errors).toEqual([]);
-  for (let i = 1; i < n; i++) close(ra.cases[0].disp.get(i + 1)![1], rb.cases[0].disp.get(i + 1)![1], 1e-6);
+  const ra = analyse(a); expect(ra.errors).toEqual([]);
+  // y(x) = Σ (odd n) 4q/(nπ) sin(nπx/L) / (EI (nπ/L)⁴ + k)
+  const y = (x: number) => { let s = 0; for (let k = 1; k < 400; k += 2) s += 4 * q / (k * Math.PI) * Math.sin(k * Math.PI * x / L) / (EI * (k * Math.PI / L) ** 4 + kf); return -s; };
+  for (let i = 1; i < n; i++) close(ra.cases[0].disp.get(i + 1)![1], y(L * i / n), 1e-4);
   // vertical equilibrium: the bed reactions and the end reactions carry the whole load
   let sum = 0; for (const r of ra.cases[0].reactions.values()) sum += r[1];
-  close(sum, 5 * L, 1e-6);
+  close(sum, q * L, 1e-9);
 });
 
 test('continuous support in the local z direction of a member rotated by 90 degrees acts vertically', () => {

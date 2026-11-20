@@ -124,8 +124,9 @@ export function About({ onClose }: { onClose: () => void }) {
           The result is the factor by which the whole case would be multiplied to cause elastic buckling. Members need to be subdivided for the
           higher modes and for members that buckle between their nodes.</P>
         <Formula>(<b>K</b> + <i>λ</i> <b>K</b><sub>g</sub>) <b>φ</b> = 0</Formula>
-        <P>Natural frequencies use a lumped mass matrix: half the mass of each member at each of its nodes, plus the node masses entered in the
-          Masses datasheet. Rotational inertia is ignored. Members need to be subdivided for the mass distribution along them to be represented.
+        <P>Natural frequencies use a consistent mass matrix: the mass of each member, its section's plus any distributed mass added to it, is spread along it
+          (cubic in bending, linear axially and in twist), plus the node masses entered in the Masses datasheet. Rotational inertia of bending is ignored, so
+          the frequencies converge from above as members are subdivided.
           Both problems are solved by subspace iteration.</P>
       </CollapsePanel>
       <CollapsePanel title="Section Library">
