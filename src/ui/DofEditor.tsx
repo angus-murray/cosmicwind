@@ -55,8 +55,12 @@ export function DofEditor<T>({ spec, row, at, onChange, onClose }: { spec: DofSp
           <div className="text-xs font-semibold text-slate-700">{spec.title(row)}</div>
           <button className="-mt-1 -mr-1 w-6 h-6 shrink-0 flex items-center justify-center rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100" aria-label="Close" onClick={onClose}><X className="w-3.5 h-3.5" /></button>
         </div>
-        <div className="flex flex-wrap gap-1">
-          {spec.presets.map(([c, l]) => <button key={c + l} className="btn !h-6 !px-2 !text-[11px]" onClick={() => set((c === '–' ? spec.dflt : c).split(''), k)}><span>{sym(l)}</span></button>)}
+        <div className="space-y-1">
+          {Array.from({ length: Math.ceil(spec.presets.length / 3) }, (_, r) => spec.presets.slice(r * 3, r * 3 + 3)).map((row, r) => ( // three to a line: Free, Fixed and Pinned, then the symmetry planes
+            <div key={r} className="flex flex-wrap gap-1">
+              {row.map(([c, l]) => <button key={c + l} className="btn !h-6 !px-2 !text-[11px]" onClick={() => set((c === '–' ? spec.dflt : c).split(''), k)}><span>{sym(l)}</span></button>)}
+            </div>
+          ))}
         </div>
         <div className="space-y-1.5">
           {six.map((c, i) => (
