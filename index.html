@@ -12,14 +12,17 @@
     <script>try{document.documentElement.dataset.theme=localStorage.getItem('theme')==='dark'?'dark':'light'}catch{}</script>
     <script>
       // Font preview: open the app with ?font=flex to try Google Sans Flex (remembered), or ?font=default to go back. The default font is unchanged.
+      let on = false;
+      try { on = new URLSearchParams(location.search).get('font') === 'flex'; } catch {}
       try {
         const q = new URLSearchParams(location.search).get('font');
         if (q === 'flex') localStorage.setItem('font', 'flex'); else if (q === 'default') localStorage.removeItem('font');
-        if (localStorage.getItem('font') === 'flex') {
-          document.documentElement.dataset.font = 'flex';
-          const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = 'https://fonts.googleapis.com/css2?family=Google+Sans+Flex:wght@300..800&display=swap'; document.head.appendChild(l);
-        }
-      } catch {}
+        on = on || (q !== 'default' && localStorage.getItem('font') === 'flex');
+      } catch {} // storage can be unavailable (private windows): the address still works for that visit
+      if (on) {
+        document.documentElement.dataset.font = 'flex';
+        const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = 'https://fonts.googleapis.com/css2?family=Google+Sans+Flex:wght@300..800&display=swap'; document.head.appendChild(l);
+      }
     </script>
     <!-- Vercel Web Analytics -->
     <script defer src="/_vercel/insights/script.js"></script>
