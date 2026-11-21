@@ -58,7 +58,7 @@ export default function App() {
   const [tab, setTab] = useState<Tab>('structure');
   const [sel, setSel] = useState<Sel>(noSel);
   const [tool, setTool] = useState<Tool>('select');
-  const [opts, setOpts] = useState<ViewOpts>({ notes: true, nodeNo: false, memberNo: false, secNames: false, loads: true, localAxes: false, diagrams: { N: false, T: false, Vy: false, Vz: false, Vres: false, Mz: false, My: false, Mres: false }, stress: 'none', geometry: 'undeformed', defLabels: 'none', origin: true, restraints: true, releases: true, masses: true, reactions: false, scale: 1, defScale: 1, solid: false });
+  const [opts, setOpts] = useState<ViewOpts>({ notes: true, nodeNo: false, memberNo: false, secNames: false, loads: true, localAxes: false, diagrams: { N: false, T: false, Vy: false, Vz: false, Vres: false, Mz: false, My: false, Mres: false }, stress: 'none', geometry: 'undeformed', defLabels: 'none', origin: true, restraints: true, releases: true, masses: true, reactions: false, scale: 1, defScale: 20, solid: false });
   const o = <K extends keyof ViewOpts>(k: K) => (v: ViewOpts[K]) => setOpts(p => ({ ...p, [k]: v }));
   const [caseId, setCaseId] = useState(1);
   const [modeIx, setModeIx] = useState<{ kind: 'buckling' | 'modal'; i: number } | null>(null);

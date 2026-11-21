@@ -193,7 +193,9 @@ export const Viewer = React.forwardRef<ViewerHandle, {
     src.members.forEach(r => r.dy.forEach((v, i) => { m = Math.max(m, Math.hypot(r.dx[i], v, r.dz[i])); }));
     return m;
   }, [src]);
-  const dsc = src ? 0.07 * bounds.S * opts.defScale / dmax * (animating ? Math.sin(phase) : 1) : 0; // the largest displacement drawn is 7 % of the size of the model times the deflection scale
+  // A static result is drawn at its true size times the deflection scale (1× is the real displacement). A mode has no size of its own (it is normalised), so
+  // its largest displacement is drawn as 7 % of the size of the model times the scale.
+  const dsc = src ? (mode ? 0.07 * bounds.S * opts.defScale / dmax : opts.defScale) * (animating ? Math.sin(phase) : 1) : 0;
   const nodeMap = useMemo(() => (!deformedOn || !src ? nodeMap0 : new Map(model.nodes.map(n => { const d = src.disp.get(n.id); return [n.id, d ? { ...n, x: n.x + d[0] * dsc, y: n.y + d[1] * dsc, z: n.z + d[2] * dsc } : n]; }))), [nodeMap0, deformedOn, src, dsc, model.nodes]);
   const viewNodes = useMemo(() => [...nodeMap.values()], [nodeMap]);
 
