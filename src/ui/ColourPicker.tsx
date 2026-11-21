@@ -23,11 +23,12 @@ export function ColourPicker({ value, auto, at, onChange, onClose }: { value: st
         <div className="grid grid-cols-8 gap-1.5">
           {SWATCHES.map(c => <button key={c} title={c} className={`h-6 rounded border ${c.toLowerCase() === value.toLowerCase() && !auto ? 'ring-2 ring-offset-1 ring-blue-600 border-white' : 'border-slate-200'}`} style={{ background: c }} onClick={() => { onChange(c); onClose(); }} />)}
         </div>
-        <div className="flex items-center gap-2">
-          <input type="color" className="w-8 h-7 p-0 border border-slate-300 rounded cursor-pointer bg-white" value={HEX.test(value) ? value : '#000000'} onChange={e => onChange(e.target.value)} title="Choose any colour" />
-          <input className="control-sm w-24 tabular-nums" value={hex} spellCheck={false} autoComplete="off" onChange={e => setHex(e.target.value)} onFocus={e => e.target.select()} onBlur={commit}
+        {/* the same columns as the swatches, so the custom colour is a swatch-sized box */}
+        <div className="grid grid-cols-8 gap-1.5 items-center">
+          <input type="color" className="w-full h-6 p-0 border border-slate-300 rounded cursor-pointer bg-white [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:border-0 [&::-webkit-color-swatch]:rounded-[3px] [&::-moz-color-swatch]:border-0 [&::-moz-color-swatch]:rounded-[3px]" value={HEX.test(value) ? value : '#000000'} onChange={e => onChange(e.target.value)} title="Choose any colour" />
+          <input className="control-sm col-span-4 !w-full tabular-nums" value={hex} spellCheck={false} autoComplete="off" onChange={e => setHex(e.target.value)} onFocus={e => e.target.select()} onBlur={commit}
             onKeyDown={e => { if (e.key === 'Enter') { commit(); (e.target as HTMLElement).blur(); } }} />
-          <button className="btn !h-7 !px-2 !text-[11px] ml-auto" disabled={auto} title="Use the colour chosen from the section number" onClick={() => { onChange(null); onClose(); }}>Automatic</button>
+          <button className="btn col-span-3 !h-7 !px-1 !text-[11px]" disabled={auto} title="Use the colour chosen from the section number" onClick={() => { onChange(null); onClose(); }}>Automatic</button>
         </div>
       </>
     </div>
