@@ -30,7 +30,3 @@ input, textarea, [contenteditable='true'], .select-text { user-select: text; -we
 
 /* The app spans the whole window: the shared header and tabs lose their 1600 px limit, the graphics column keeps a fixed width and the two outer columns take the rest */
 .app-wide .max-w-\[1600px\] { max-width: none; }
-
-/* Font preview (see index.html): Google Sans Flex in place of the theme's font. */
-:root[data-font='flex'] { --font-sans: 'Google Sans Flex', ui-sans-serif, system-ui, sans-serif; }
-:root[data-font='flex'] body, :root[data-font='flex'] :is(button, input, select, textarea, svg text) { font-family: 'Google Sans Flex', ui-sans-serif, system-ui, sans-serif; }

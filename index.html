@@ -6,24 +6,13 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
     <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:wght@300..800&display=swap" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="CosmicWind: 3D frame and truss structural analysis in the browser." />
     <title>CosmicWind</title>
     <script>try{document.documentElement.dataset.theme=localStorage.getItem('theme')==='dark'?'dark':'light'}catch{}</script>
-    <script>
-      // Font preview: open the app with ?font=flex to try Google Sans Flex (remembered), or ?font=default to go back. The default font is unchanged.
-      let on = false;
-      try { on = new URLSearchParams(location.search).get('font') === 'flex'; } catch {}
-      try {
-        const q = new URLSearchParams(location.search).get('font');
-        if (q === 'flex') localStorage.setItem('font', 'flex'); else if (q === 'default') localStorage.removeItem('font');
-        on = on || (q !== 'default' && localStorage.getItem('font') === 'flex');
-      } catch {} // storage can be unavailable (private windows): the address still works for that visit
-      if (on) {
-        document.documentElement.dataset.font = 'flex';
-        const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = 'https://fonts.googleapis.com/css2?family=Google+Sans+Flex:wght@300..800&display=swap'; document.head.appendChild(l);
-      }
-    </script>
     <!-- Vercel Web Analytics -->
     <script defer src="/_vercel/insights/script.js"></script>
   </head>
