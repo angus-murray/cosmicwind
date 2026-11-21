@@ -10,6 +10,17 @@
     <meta name="description" content="CosmicWind: 3D frame and truss structural analysis in the browser." />
     <title>CosmicWind</title>
     <script>try{document.documentElement.dataset.theme=localStorage.getItem('theme')==='dark'?'dark':'light'}catch{}</script>
+    <script>
+      // Font preview: open the app with ?font=flex to try Google Sans Flex (remembered), or ?font=default to go back. The default font is unchanged.
+      try {
+        const q = new URLSearchParams(location.search).get('font');
+        if (q === 'flex') localStorage.setItem('font', 'flex'); else if (q === 'default') localStorage.removeItem('font');
+        if (localStorage.getItem('font') === 'flex') {
+          document.documentElement.dataset.font = 'flex';
+          const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = 'https://fonts.googleapis.com/css2?family=Google+Sans+Flex:wght@300..800&display=swap'; document.head.appendChild(l);
+        }
+      } catch {}
+    </script>
     <!-- Vercel Web Analytics -->
     <script defer src="/_vercel/insights/script.js"></script>
   </head>
