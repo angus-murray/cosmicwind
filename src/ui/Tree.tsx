@@ -20,6 +20,8 @@ export interface TreeGroup {
   notice?: React.ReactNode;
   /** A group with no folder of its own: a title row (with `badge` at its right) above the items, for a tab that is the folder. */
   flat?: boolean;
+  /** With `flat`: no title row, because the tab already carries the name. */
+  bare?: boolean;
   badge?: React.ReactNode;
 }
 export interface TreeTab { key: string; label: string; icon: Icon }
@@ -52,7 +54,7 @@ export function Tree({ groups, open, onToggle, closed, onToggleGroup, tabs, tab,
       {groups.map(g => {
         if (g.flat) return (
           <div key={g.key} className="space-y-1 pt-2 first:pt-0">
-            <div className="flex flex-wrap items-center justify-between gap-2 min-h-8 px-1 pb-1.5 border-b border-slate-100"><span className="text-sm font-bold text-slate-800">{g.title}</span>{g.badge}</div>
+            {!g.bare && <div className="flex flex-wrap items-center justify-between gap-2 min-h-8 px-1 pb-1.5 border-b border-slate-100"><span className="text-sm font-bold text-slate-800">{g.title}</span>{g.badge}</div>}
             {g.notice}
             <div className="space-y-0.5">{items(g)}</div>
           </div>

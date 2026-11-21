@@ -16,7 +16,7 @@ import { About, LoadDialog, SectionDialog, type LoadSpec } from './ui/Dialogs';
 import { UnitsBar } from './ui/UnitsBar';
 import { loadUnits, saveUnits, toShown, fromShown, unitLabel, UnitsContext, type Quantity, type Units } from './model/units';
 
-type Tab = 'structure' | 'results';
+type Tab = 'structure' | 'boundary' | 'loads' | 'results';
 /** The boundary conditions are kept on the nodes and members; the Boundary Conditions datasheets list them only where they exist, one row each. */
 interface RestraintRow { node: number; r: string; k?: number[] }
 interface ReleaseRow { member: number; relA: string; relB: string; kA?: number[]; kB?: number[] }
@@ -54,7 +54,7 @@ export default function App() {
   const sh = (q: Quantity, v: number) => toShown(q, units, v), rd = (q: Quantity, v: number) => fromShown(q, units, v), ul = (q: Quantity) => unitLabel(q, units);
   /** Which items of the tree are open (each drops down in place). */
   const [openKeys, setOpenKeys] = useState<Record<string, boolean>>({});
-  /** The tab of the left-hand menu: Model, or Analysis and Results (the analysis runs and the drawing tools are hidden while it is shown). */
+  /** The tab of the left-hand menu: Model, Boundary Conditions, Loads, or Analysis and Results (the analysis runs and the drawing tools are hidden while it is shown). */
   const [tab, setTab] = useState<Tab>('structure');
   const [sel, setSel] = useState<Sel>(noSel);
   const [tool, setTool] = useState<Tool>('select');
@@ -281,7 +281,7 @@ export default function App() {
         { label: 'Add Mass…', onClick: () => ask(`Add Mass to ${nodes.length > 1 ? `${nodes.length} Nodes` : `Node ${nodes[0]}`}`, [{ label: <>Mass ({ul('mass')})</>, value: 0 }], ([v]) => {
           const mass = rd('mass', v); if (!(mass > 0)) return; // added to the mass the node has, or a new row in the Masses datasheet
           setModel(m => { const ms = m.masses.slice(); for (const node of nodes) { const i = ms.findIndex(x => x.node === node); if (i >= 0) ms[i] = { ...ms[i], m: ms[i].m + mass }; else ms.push({ node, m: mass }); } return { ...m, masses: ms }; });
-          setOpenKeys(o => ({ ...o, masses: true }));
+          setOpenKeys(o => ({ ...o, masses: true })); setTab('structure');
         }) }, 'sep', ...moveCopy, 'sep');
       items.push({ label: 'Select Connected Members', onClick: run(() => pick(sel.nodes, [...sel.members, ...model.members.filter(m => sel.nodes.has(m.a) || sel.nodes.has(m.b)).map(m => m.id)])) });
       if (edit) items.push('sep', { label: nodes.length > 1 ? 'Delete Nodes' : 'Delete Node', danger: true, onClick: run(delSel) });
@@ -300,7 +300,7 @@ export default function App() {
         releaseItem,
         { label: 'Angle…', onClick: () => ask('Member Angle', [{ label: 'Angle (°)', value: model.members.find(m => m.id === mems[0])?.angle ?? 0 }], ([ang]) => patchMembers({ angle: ang })) },
         { label: 'Distributed Mass…', onClick: () => ask(`Distributed Mass (${ul('massPerLength')})`, [{ label: <>Mass per length ({ul('massPerLength')})</>, value: sh('massPerLength', mem0?.mu ?? 0) }],
-          ([v]) => { patchMembers({ mu: Math.max(0, rd('massPerLength', v)) || undefined }); setOpenKeys(o => ({ ...o, memmasses: true })); }) },
+          ([v]) => { patchMembers({ mu: Math.max(0, rd('massPerLength', v)) || undefined }); setOpenKeys(o => ({ ...o, memmasses: true })); setTab('structure'); }) },
         { label: 'Continuous Support…', onClick: () => ask(`Continuous Support (${ul('forcePerLength2')})`, [{ label: <><i>k</i><sub>y</sub> ({ul('forcePerLength2')}), local y</>, value: sh('forcePerLength2', mem0?.ky ?? 0) }, { label: <><i>k</i><sub>z</sub> ({ul('forcePerLength2')}), local z</>, value: sh('forcePerLength2', mem0?.kz ?? 0) }],
           ([ky, kz]) => patchMembers({ ky: Math.max(0, rd('forcePerLength2', ky)) || undefined, kz: Math.max(0, rd('forcePerLength2', kz)) || undefined })) },
         { label: 'Member Type', sub: ([['N', 'Normal'], ['T', 'Tension Only'], ['C', 'Compression Only']] as const).map(([c, l]) => ({ label: l, onClick: run(() => patchMembers({ type: c })) })) },
@@ -427,11 +427,12 @@ export default function App() {
   /** A selection made on the canvas opens the datasheets of what it selects, so the rows can be seen. */
   function selectFromCanvas(s: Sel) {
     setSel(s);
+    if ((s.nodes.size || s.members.size) && tab !== 'results') setTab('structure'); // the datasheets of nodes and members are on the Model tab
     if (s.nodes.size || s.members.size) setOpenKeys(o => ({ ...o, ...(s.nodes.size ? { nodes: true } : {}), ...(s.members.size ? { members: true } : {}) }));
   }
   useEffect(() => { document.querySelector('.input-column .sheet tr.sel')?.scrollIntoView({ block: 'nearest' }); }, [sel]);
   const modelGroups: TreeGroup[] = [
-    { key: 'structure', title: 'Structure', flat: true, items: [
+    { key: 'structure', title: 'Structure', flat: true, bare: true, items: [
       { key: 'nodes', icon: Dot, label: 'Nodes', count: model.nodes.length, render: () => (
                 <Sheet rows={model.nodes} addLabel="Add Node" cols={nodeCols} onChange={set('nodes')} rowLabel={idLabel} selected={r => sel.nodes.has(r.id)} onSelect={pickN}
                   newRow={() => { const l = model.nodes[model.nodes.length - 1]; return { id: nextId(model.nodes), x: l?.x ?? 0, y: l?.y ?? 0, z: l?.z ?? 0, r: FREE }; }}
@@ -464,7 +465,7 @@ export default function App() {
           newRow={() => ({ member: model.members.find(b => !b.mu)?.id ?? model.members[0]?.id ?? 1, mu: 0.1 })} empty="No distributed masses (the section's own mass is always included)" />
       ) },
     ] },
-    { key: 'boundary', title: 'Boundary Conditions', flat: true, items: [
+    { key: 'boundary', title: 'Boundary Conditions', flat: true, bare: true, items: [
       { key: 'restraints', icon: Anchor, label: 'Node Restraints', count: restraintRows.length, render: () => (
         <Sheet rows={restraintRows} cols={restraintCols} addLabel="Add Restraint" onChange={setRestraints} rowLabel={r => r.node} selected={r => sel.nodes.has(r.node)} onSelect={(r, add) => pickN({ id: r.node }, add)}
           newRow={() => ({ node: model.nodes.find(n => nodeFree(n.r))?.id ?? model.nodes[0]?.id ?? 1, r: PIN })} empty="No restraints: every node is free" />
@@ -478,7 +479,7 @@ export default function App() {
           newRow={() => ({ member: model.members.find(b => !b.ky && !b.kz)?.id ?? model.members[0]?.id ?? 1, ky: 1000, kz: 0 })} empty="No continuous supports along members" />
       ) },
     ] },
-    { key: 'loads', title: 'Loads', flat: true, items: [
+    { key: 'loads', title: 'Loads', flat: true, bare: true, items: [
       { key: 'cases', icon: ListOrdered, label: 'Cases', count: model.loadCases.length, render: () => (
                 <Sheet rows={model.loadCases} addLabel="Add Case" onRenumber={renumberCase} isTaken={caseNumberTaken} cols={lcCols} onChange={set('loadCases')} rowLabel={idLabel} newRow={() => ({ id: nextId(cases), name: 'Load Case', gx: 0, gy: 0, gz: 0 })}
                   onDelete={r => setModel(m => {
@@ -636,8 +637,8 @@ export default function App() {
                 </div>
               </div>;
             })()}
-            <Tree groups={tab === 'results' ? [resultsGroup, staticGroup, modalGroup] : modelGroups} open={openKeys} onToggle={k => setOpenKeys(o => ({ ...o, [k]: !o[k] }))}
-              tabs={[{ key: 'structure', label: 'Model', icon: Box }, { key: 'results', label: 'Analysis and Results', icon: LineChart }]} tab={tab} onTab={k => setTab(k as Tab)} />
+            <Tree groups={tab === 'results' ? [resultsGroup, staticGroup, modalGroup] : modelGroups.filter(g => g.key === (tab === 'structure' ? 'structure' : tab))} open={openKeys} onToggle={k => setOpenKeys(o => ({ ...o, [k]: !o[k] }))}
+              tabs={[{ key: 'structure', label: 'Model', icon: Box }, { key: 'boundary', label: 'Boundary Conditions', icon: Anchor }, { key: 'loads', label: 'Loads', icon: ArrowDownToDot }, { key: 'results', label: 'Analysis and Results', icon: LineChart }]} tab={tab} onTab={k => setTab(k as Tab)} />
           </div>
 
           <div className="results-column">
