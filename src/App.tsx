@@ -227,9 +227,10 @@ export default function App() {
     const inc = (copyMode: boolean) => () => ask(copyMode ? 'Copy By Increment' : 'Move By Increment',
       [{ label: <>Δ<i>X</i> ({ul('length')})</>, value: 0 }, { label: <>Δ<i>Y</i> ({ul('length')})</>, value: 0 }, { label: <>Δ<i>Z</i> ({ul('length')})</>, value: 0 }, ...(copyMode ? [{ label: 'Number of copies', value: 1 }] : [])],
       ([sx, sy, sz, n]) => { const dx = rd('length', sx), dy = rd('length', sy), dz = rd('length', sz); if (copyMode) copyWith((q, k) => [q.x + dx * k, q.y + dy * k, q.z + dz * k], n); else moveWith(q => [q.x + dx, q.y + dy, q.z + dz]); });
-    const mirror = (copyMode: boolean): MenuItem[] => (['x', 'y', 'z'] as const).map((ax, i) => ({
-      label: `Mirror About ${ax.toUpperCase()} Plane…`,
-      onClick: () => ask(`Mirror About ${ax.toUpperCase()} =`, [{ label: <>{ax.toUpperCase()} ({ul('length')})</>, value: 0 }], ([cs]) => {
+    // The plane is named by the two axes it contains (XY, YZ, ZX); its position is the coordinate along the third axis, which the mirror reverses
+    const mirror = (copyMode: boolean): MenuItem[] => ([['XY', 2], ['YZ', 0], ['ZX', 1]] as const).map(([plane, i]) => ({
+      label: `Mirror About ${plane} Plane…`,
+      onClick: () => ask(`Mirror About ${plane} Plane`, [{ label: <>Plane at {'XYZ'[i]} ({ul('length')})</>, value: 0 }], ([cs]) => {
         const c = rd('length', cs);
         const tf = (q: Node): [number, number, number] => [i === 0 ? 2 * c - q.x : q.x, i === 1 ? 2 * c - q.y : q.y, i === 2 ? 2 * c - q.z : q.z];
         if (copyMode) copyWith(q => tf(q)); else moveWith(tf);
