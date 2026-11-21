@@ -618,7 +618,7 @@ export default function App() {
   return (
     <UnitsContext.Provider value={units}>
     <div className="fill-window app-wide min-h-screen bg-slate-100 lg:h-screen lg:overflow-hidden flex flex-col">
-      <AppHeader name="CosmicWind" logoSrc="/favicon.svg" onAbout={() => setDialog('about')}
+      <AppHeader name="CosmicWind" logoSrc="/icon-192.png" onAbout={() => setDialog('about')}
         actions={<div className="flex items-center gap-1">
           <button className="btn !px-2" title="Undo (Ctrl+Z)" disabled={!hist.past.length} onClick={undo}><Undo2 className="w-3.5 h-3.5" /></button>
           <button className="btn !px-2" title="Redo (Ctrl+Y)" disabled={!hist.future.length} onClick={redo}><Redo2 className="w-3.5 h-3.5" /></button>
